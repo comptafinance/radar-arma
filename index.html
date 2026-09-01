@@ -3514,7 +3514,16 @@ function rWeek(){
 // RÔLES — seul le référent accède à Référent et Config
 // ══════════════════════════════════════════════════════════════
 var REFERENTS = ['AD'];
-function estReferent(){ return REFERENTS.indexOf(USER_INI)>=0; }
+// Le droit referent vient du compte connecte, pas des initiales choisies dans
+// l'application, qui ne prouvent rien. Un compte au role manager ou admin dans
+// la table user_roles ouvre la partie Referent. La liste REFERENTS reste un
+// filet de secours si la session n'a pas encore ete lue.
+function estReferent(){
+  if(typeof CURRENT_USER!=='undefined' && CURRENT_USER && CURRENT_USER.role){
+    return CURRENT_USER.role==='manager' || CURRENT_USER.role==='admin';
+  }
+  return REFERENTS.indexOf(USER_INI)>=0;
+}
 function appliquerRole(){
   var ok=estReferent();
   ['ref'].forEach(function(v){
