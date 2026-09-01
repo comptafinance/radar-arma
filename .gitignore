@@ -1,0 +1,12 @@
+# OneDrive et Windows
+~$*
+*.tmp
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# sauvegardes locales et versions de travail
+Archive/
+*_ancien.html
+*_backup.html
+RADAR_v*.html
