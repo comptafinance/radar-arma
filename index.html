@@ -628,7 +628,7 @@ input[type=date],input[type=number],select{font-size:11px}
   [data-layout="desktop"] #scores{display:block;padding:8px 10px 0}
   [data-layout="desktop"] #cards-clot{display:flex;flex-direction:column;padding:0 10px}
 }
-</style><script>(function(){var t=localStorage.getItem("radar_theme");if(t)document.documentElement.setAttribute("data-theme",t);var l=localStorage.getItem("radar_layout");if(l==="desktop")document.documentElement.setAttribute("data-layout","desktop");})();</script>
+</style><script>(function(){var t=localStorage.getItem("radar_theme");if(t)document.documentElement.setAttribute("data-theme",t);var l=localStorage.getItem("radar_layout");if(!l){l=(window.innerWidth>=1000)?"desktop":"mobile";}if(l==="desktop")document.documentElement.setAttribute("data-layout","desktop");})();</script>
 </head>
 <body>
 <!-- Supabase JS Auth client -->
@@ -15361,7 +15361,10 @@ function dtSyncNav(){
 // init bouton au chargement
 (function(){
   try{
-    var l = localStorage.getItem('radar_layout');
+    // Le bouton reflete la vue reellement affichee, choisie automatiquement
+    // au premier chargement selon la taille de l'ecran.
+    var l = (document.documentElement.getAttribute('data-layout') === 'desktop')
+            ? 'desktop' : 'mobile';
     var btn = document.getElementById('layout-toggle');
     if (btn){
       if (l === 'desktop'){ btn.textContent = '📱'; btn.title='Repasser en vue téléphone'; }
