@@ -962,7 +962,7 @@ var CUR_VIEW = 'p';
 var BUD_ORDER  = null; // ordre figé budget  (reset au changement d'onglet)
 var PLAN_ORDER = null; // ordre figé planning (reset au changement d'onglet)
 var SYNC_ENABLED=true;    // v33 : données partagées entre tous les postes
-var SB_URL='https://coqlmzzlddjysxyavzof.supabase.co';
+var SB_URL='https://umlqxgajnwpufwieebjs.supabase.co';   // projet Astridsen
 var SB_ROW_ID=1;
 var SYNC_DEBOUNCE=null;
 var LAST_SYNC=null;
@@ -1145,8 +1145,11 @@ function refreshAllBadges(){
 
 // ── RENDER ALL ────────────────────────────────────────────────
 // ═══ SUPABASE SYNC ════════════════════════════════════════════
-var SB_URL='https://coqlmzzlddjysxyavzof.supabase.co';
-var SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNvcWxtenpsZGRqeXN4eWF2em9mIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY1NDMyOTQsImV4cCI6MjA5MjExOTI5NH0.JabKpl1E47vySbMPXWcRr-fR3hYdHNvXkP263Isa9zs';
+// Projet Supabase d'Astridsen, en service depuis le 02/09/2026.
+// L'ancien projet coqlmzzlddjysxyavzof, cree par Alexis, s'est mis en pause
+// et personne n'y a plus acces. Ses donnees n'ont pas pu etre reprises.
+var SB_URL='https://umlqxgajnwpufwieebjs.supabase.co';
+var SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVtbHF4Z2FqbndwdWZ3aWVlYmpzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgzNDMxMzMsImV4cCI6MjEwMzkxOTEzM30.XgrNTpNkMAtOxuHLeUlzjdNUU5B4FmSP5lyzQ_HrVDg';
 var SB_ROW_ID=1; // single row stores full app state
 var SYNC_DEBOUNCE=null;
 
