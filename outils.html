@@ -69,6 +69,23 @@
   </div>
 
   <div class="card">
+    <label>Reprise depuis une sauvegarde locale</label>
+    <p class="sub" style="margin-bottom:12px">À utiliser si l'ancien projet ne répond plus.
+       L'application garde une copie complète dans le navigateur de chaque utilisateur.
+       Récupère celle d'Alexis, la plus à jour, et dépose-la ici.</p>
+    <label for="lfic">Fichier de sauvegarde</label>
+    <input id="lfic" type="file" accept=".json,.txt" style="padding:8px">
+    <label for="ljson">Ou colle le contenu directement</label>
+    <textarea id="ljson" rows="4" placeholder='{"DATA":{…' style="width:100%;border:1.5px solid var(--b2);border-radius:9px;padding:10px 12px;font-size:12px;font-family:monospace;background:var(--bg);color:var(--t);margin-bottom:13px"></textarea>
+    <label for="lid">Identifiant sur le projet Astridsen</label>
+    <input id="lid" type="text" value="astridsenref">
+    <label for="lmdp">Mot de passe</label>
+    <input id="lmdp" type="text" placeholder="Astridsen2024!">
+    <button id="lgo" style="background:#0D9488">Reprendre ces données</button>
+    <div class="msg" id="lmsg"></div>
+  </div>
+
+  <div class="card">
     <label>Diagnostic</label>
     <p class="sub" style="margin-bottom:12px">À lancer si la création échoue. Ça teste le chemin
        jusqu'au serveur et dit précisément où ça coince.</p>
@@ -236,9 +253,9 @@ document.getElementById('diag').addEventListener('click', function(){
     return fetch(SB_URL+'/auth/v1/health',{mode:'no-cors',cache:'no-store'})
       .then(function(){ return true; }).catch(function(){ return false; });
   }
-  // 3. Le projet repond-il vraiment, avec la cle ?
-  function testProjet(){
-    return fetch(SB_URL+'/rest/v1/',{headers:{apikey:SB_KEY}})
+  // 3. Un projet donne repond-il vraiment, avec sa cle ?
+  function testProjet(url, cle){
+    return fetch(url+'/rest/v1/',{headers:{apikey:cle}})
       .then(function(x){ return {ok:true, code:x.status}; })
       .catch(function(e){ return {ok:false, err:e.message}; });
   }
@@ -247,28 +264,83 @@ document.getElementById('diag').addEventListener('click', function(){
     r.push(ligne(net?'ok':'ko','Internet '+(net?'accessible':'injoignable')));
     return testDomaine().then(function(dom){
       r.push(ligne(dom?'ok':'ko','Domaine supabase.co '+(dom?'joignable':'injoignable')));
-      return testProjet().then(function(pr){
-        if(pr.ok) r.push(ligne('ok','Projet Supabase actif, code '+pr.code));
-        else r.push(ligne('ko','Projet Supabase muet — '+pr.err));
+      return testProjet(SB_URL,SB_KEY).then(function(neuf){
+        r.push(ligne(neuf.ok?'ok':'ko','Projet Astridsen '+(neuf.ok?'actif, code '+neuf.code:'muet — '+neuf.err)));
+        return testProjet(OLD_URL,OLD_KEY).then(function(vieux){
+          r.push(ligne(vieux.ok?'ok':'ko','Ancien projet '+(vieux.ok?'actif, code '+vieux.code:'muet — '+vieux.err)));
 
-        if(!net) verdict='<b>Ton poste n\'a pas accès à internet</b>, ou un filtre bloque tout. '
-          +'Rien à voir avec l\'application.';
-        else if(!dom) verdict='<b>Ton réseau bloque supabase.co.</b> C\'est un filtrage d\'entreprise. '
-          +'Essaie depuis ton téléphone en 4G ou depuis un autre réseau pour confirmer. '
-          +'Si ça passe ailleurs, il faudra faire ouvrir le domaine, ou déplacer la base.';
-        else if(!pr.ok) verdict='<b>Le domaine répond mais pas le projet.</b> Le plus probable, '
-          +'c\'est que le projet Supabase est <b>en pause</b>. Les projets gratuits s\'arrêtent '
-          +'tout seuls après une semaine sans usage. Il faut ouvrir le tableau de bord Supabase '
-          +'et cliquer sur Restore project. Seul le propriétaire du projet peut le faire.';
-        else verdict='<b>Tout répond.</b> Réessaie la création de compte, l\'erreur venait d\'ailleurs.';
+          if(!net) verdict='<b>Ton poste n\'a pas accès à internet</b>, ou un filtre bloque tout.';
+          else if(!dom) verdict='<b>Ton réseau bloque supabase.co.</b> Filtrage d\'entreprise. '
+            +'Refais le test depuis ton téléphone en 4G pour confirmer.';
+          else if(neuf.ok && !vieux.ok) verdict='<b>Verdict clair.</b> Ton réseau va bien et le projet '
+            +'Astridsen répond. C\'est bien <b>l\'ancien projet qui est éteint</b>. Sans accès à son '
+            +'tableau de bord, personne ne peut le réveiller. Il faut passer par une sauvegarde locale, '
+            +'bloc ci-dessous.';
+          else if(!neuf.ok && !vieux.ok) verdict='<b>Aucun des deux projets ne répond</b> alors que le '
+            +'domaine est joignable. Quelque chose filtre les appels, une extension du navigateur '
+            +'ou un antivirus. Essaie en navigation privée, ou depuis un autre navigateur.';
+          else if(!neuf.ok) verdict='<b>Le projet Astridsen ne répond pas</b> mais l\'ancien oui. '
+            +'Vérifie que le script SQL a bien été exécuté sur le nouveau projet.';
+          else verdict='<b>Tout répond.</b> Les deux projets sont actifs, la reprise des données '
+            +'devrait passer. Réessaie le bloc du dessus.';
 
-        dmsg.className='msg on '+((net&&dom&&pr.ok)?'ok':'ko');
-        dmsg.innerHTML=r.join('')+'<div style="margin-top:10px;padding-top:9px;border-top:1px solid rgba(0,0,0,.12)">'
-          +verdict+'</div>';
-        b.disabled=false; b.textContent='Relancer le diagnostic';
+          dmsg.className='msg on '+((net&&dom&&neuf.ok)?'ok':'ko');
+          dmsg.innerHTML=r.join('')+'<div style="margin-top:10px;padding-top:9px;border-top:1px solid rgba(0,0,0,.12)">'
+            +verdict+'</div>';
+          b.disabled=false; b.textContent='Relancer le diagnostic';
+        });
       });
     });
   });
+});
+
+// ── Reprise depuis une sauvegarde locale ──────────────────────
+var lmsg=document.getElementById('lmsg');
+function ldire(cls, txt){ lmsg.className='msg on '+cls; lmsg.innerHTML=txt; }
+
+function envoyerEtat(etat, source){
+  var id=val('lid'), mdp=document.getElementById('lmdp').value;
+  var email = id.indexOf('@')>=0 ? id : id+'@astridsen.com';
+  if(!id||!mdp){ ldire('ko','Il faut l\'identifiant et le mot de passe du projet Astridsen.'); return; }
+  var taille=Math.round(String(etat).length/1024);
+  ldire('wa','Connexion au projet Astridsen…');
+  fetch(SB_URL+'/auth/v1/token?grant_type=password',{
+    method:'POST', headers:{apikey:SB_KEY,'Content-Type':'application/json'},
+    body:JSON.stringify({email:email,password:mdp})
+  })
+  .then(function(r){ return r.json().then(function(j){ return {ok:r.ok,j:j}; }); })
+  .then(function(a){
+    if(!a.ok||!a.j.access_token) throw new Error('Connexion refusée. Crée d\'abord le compte '+id+' dans le premier bloc.');
+    ldire('wa','Connecté. Écriture de '+taille+' Ko…');
+    return fetch(SB_URL+'/rest/v1/arma_state',{
+      method:'POST',
+      headers:{apikey:SB_KEY,'Authorization':'Bearer '+a.j.access_token,
+               'Content-Type':'application/json','Prefer':'resolution=merge-duplicates'},
+      body:JSON.stringify({id:1, data:etat, updated_at:new Date().toISOString()})
+    });
+  })
+  .then(function(r){
+    if(!r.ok) return r.text().then(function(t){ throw new Error('Écriture refusée, code '+r.status+'. '+t.slice(0,200)); });
+    ldire('ok','<b>Données reprises.</b><br>'+taille+' Ko écrits dans le projet Astridsen, depuis '+source+'.');
+  })
+  .catch(function(e){ ldire('ko','<b>Échec.</b><br>'+e.message); });
+}
+
+document.getElementById('lgo').addEventListener('click', function(){
+  var txt=document.getElementById('ljson').value.trim();
+  if(!txt){ ldire('ko','Colle d\'abord le contenu de la sauvegarde.'); return; }
+  try{
+    var o=JSON.parse(txt);
+    if(!o || !o.DATA) throw new Error('Ce n\'est pas une sauvegarde RADAR : la clé DATA est absente.');
+    var n=Object.keys(o.DATA).length;
+    envoyerEtat(txt, 'une sauvegarde locale contenant '+n+' portefeuilles');
+  }catch(e){ ldire('ko','<b>Contenu illisible.</b><br>'+e.message); }
+});
+document.getElementById('lfic').addEventListener('change', function(){
+  var f=this.files[0]; if(!f) return;
+  var fr=new FileReader();
+  fr.onload=function(){ document.getElementById('ljson').value=String(fr.result); ldire('wa','Fichier chargé, clique sur Reprendre.'); };
+  fr.readAsText(f);
 });
 </script>
 </body>
