@@ -47,6 +47,27 @@
   </div>
 
   <div class="card">
+    <label>Reprise des données vers le nouveau projet</label>
+    <p class="sub" style="margin-bottom:12px">Copie l'état complet de l'application depuis
+       l'ancien projet vers le nouveau. L'ancien doit être réveillé au moment du transfert.</p>
+
+    <label for="src">Ancien projet, URL</label>
+    <input id="src" type="text" value="https://coqlmzzlddjysxyavzof.supabase.co">
+    <label for="srck">Ancien projet, clé anon</label>
+    <input id="srck" type="text" placeholder="eyJhbGciOi…">
+    <label for="dst">Nouveau projet, URL</label>
+    <input id="dst" type="text" value="https://umlqxgajnwpufwieebjs.supabase.co">
+    <label for="dstk">Nouveau projet, clé anon</label>
+    <input id="dstk" type="text" placeholder="eyJhbGciOi…">
+    <label for="mid">Identifiant sur le nouveau projet</label>
+    <input id="mid" type="text" value="astridsenref">
+    <label for="mmdp">Mot de passe</label>
+    <input id="mmdp" type="text" placeholder="Astridsen2024!">
+    <button id="mig" style="background:#7C3AED">Copier les données</button>
+    <div class="msg" id="mmsg"></div>
+  </div>
+
+  <div class="card">
     <label>Diagnostic</label>
     <p class="sub" style="margin-bottom:12px">À lancer si la création échoue. Ça teste le chemin
        jusqu'au serveur et dit précisément où ça coince.</p>
@@ -120,6 +141,60 @@ document.getElementById('go').addEventListener('click', function(){
     dire('ko','<b>Serveur injoignable.</b><br>'+e.message+'<br>Lance le diagnostic plus bas, '
       +'il dira si c\'est ton réseau ou le serveur.');
   });
+});
+
+// ── Reprise des donnees ───────────────────────────────────────
+var mmsg=document.getElementById('mmsg');
+function mdire(cls, txt){ mmsg.className='msg on '+cls; mmsg.innerHTML=txt; }
+function val(id){ return document.getElementById(id).value.trim(); }
+
+document.getElementById('mig').addEventListener('click', function(){
+  var b=this;
+  var src=val('src').replace(/\/+$/,''), srck=val('srck');
+  var dst=val('dst').replace(/\/+$/,''), dstk=val('dstk');
+  var id=val('mid'), mdp=document.getElementById('mmdp').value;
+  if(!src||!srck||!dst||!dstk){ mdire('ko','Remplis les quatre champs des deux projets.'); return; }
+  if(!id||!mdp){ mdire('ko','Il faut un identifiant et un mot de passe du nouveau projet, sinon les regles de securite refuseront l\'ecriture.'); return; }
+  var email = id.indexOf('@')>=0 ? id : id+'@astridsen.com';
+
+  b.disabled=true; b.textContent='Transfert…';
+  mdire('wa','Lecture de l\'ancien projet…');
+
+  fetch(src+'/rest/v1/arma_state?id=eq.1&select=data,updated_at',
+        {headers:{apikey:srck,Authorization:'Bearer '+srck}})
+  .then(function(r){
+    if(!r.ok) throw new Error('Lecture refusee, code '+r.status+'. L\'ancien projet dort peut-etre encore.');
+    return r.json();
+  })
+  .then(function(rows){
+    if(!rows || !rows.length || !rows[0].data) throw new Error('L\'ancien projet ne contient aucune donnee a la ligne 1.');
+    var etat=rows[0].data, maj=rows[0].updated_at||'';
+    var taille=Math.round(String(etat).length/1024);
+    mdire('wa','Trouve : '+taille+' Ko, derniere mise a jour '+(maj?maj.slice(0,10):'inconnue')+'. Connexion au nouveau projet…');
+
+    return fetch(dst+'/auth/v1/token?grant_type=password',{
+      method:'POST', headers:{apikey:dstk,'Content-Type':'application/json'},
+      body:JSON.stringify({email:email,password:mdp})
+    })
+    .then(function(r){ return r.json().then(function(j){ return {ok:r.ok,j:j}; }); })
+    .then(function(a){
+      if(!a.ok || !a.j.access_token)
+        throw new Error('Connexion refusee sur le nouveau projet. Cree d\'abord le compte '+id+' avec le formulaire du haut.');
+      mdire('wa','Connecte. Ecriture des donnees…');
+      return fetch(dst+'/rest/v1/arma_state',{
+        method:'POST',
+        headers:{apikey:dstk,'Authorization':'Bearer '+a.j.access_token,
+                 'Content-Type':'application/json','Prefer':'resolution=merge-duplicates'},
+        body:JSON.stringify({id:1, data:etat, updated_at:new Date().toISOString()})
+      }).then(function(r){
+        if(!r.ok) return r.text().then(function(t){ throw new Error('Ecriture refusee, code '+r.status+'. '+t.slice(0,200)); });
+        mdire('ok','<b>Transfert reussi.</b><br>'+taille+' Ko copies vers le nouveau projet. '
+          +'Je peux maintenant basculer l\'application dessus.');
+      });
+    });
+  })
+  .catch(function(e){ mdire('ko','<b>Echec.</b><br>'+e.message); })
+  .then(function(){ b.disabled=false; b.textContent='Copier les donnees'; });
 });
 
 // ── Diagnostic ────────────────────────────────────────────────
