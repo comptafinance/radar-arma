@@ -15845,10 +15845,32 @@ function applyRoleUI(){
   }
 }
 
+// ── Identifiants de connexion ────────────────────────────────
+// On se connecte avec un identifiant court, pas une adresse complete.
+// Supabase exige un email, l'application ajoute donc le domaine elle-meme.
+var AUTH_DOMAINE = '@astridsen.com';
+// Droits attaches a chaque identifiant. La table user_roles reste prioritaire
+// si elle contient une ligne, ce qui permet d'affiner plus tard sans toucher
+// au code.
+var AUTH_ROLES = {
+  'astridsenref': {role:'manager', cp_key:null},   // acces referent
+  'astridsencp' : {role:'cp',      cp_key:null}    // chargés de projet, sans referent
+};
+function authIdentifiant(saisie){
+  var v=String(saisie||'').trim().toLowerCase();
+  if(!v) return '';
+  return v.indexOf('@')>=0 ? v : v+AUTH_DOMAINE;
+}
+function roleParDefaut(email){
+  var id=String(email||'').split('@')[0].toLowerCase();
+  return AUTH_ROLES[id] || {role:'reader', cp_key:null};
+}
+
 // ── Charger le rôle depuis Supabase ──────────────────────────
-function loadUserRole(userId, callback){
+function loadUserRole(userId, callback, email){
+  var defaut = roleParDefaut(email);
   var client = getSupabaseClient();
-  if(!client){ callback(null); return; }
+  if(!client){ callback(defaut); return; }
   client
     .from('user_roles')
     .select('role, cp_key')
@@ -15858,11 +15880,11 @@ function loadUserRole(userId, callback){
       if(result.data){
         callback(result.data);
       } else {
-        // Aucun rôle défini → accès reader par défaut
-        callback({role:'reader', cp_key:null});
+        // Pas de ligne dediee : on applique les droits de l'identifiant
+        callback(defaut);
       }
     })
-    .catch(function(){ callback({role:'reader', cp_key:null}); });
+    .catch(function(){ callback(defaut); });
 }
 
 // Démarrage de l'application une fois la session ouverte.
@@ -15890,7 +15912,7 @@ function showApp(session){
         cp_key: roleData ? roleData.cp_key : null
       };
       bootApp();
-    });
+    }, session.user.email);
   }
 }
 
@@ -15943,8 +15965,17 @@ function authInit(){
   var passInp   = document.getElementById('auth-password');
   var errorDiv  = document.getElementById('auth-error');
 
+  // Le champ accepte un identifiant court, le domaine est ajoute par l'app.
+  try{
+    var lb=emailInp.parentNode ? emailInp.parentNode.querySelector('label') : null;
+    if(lb) lb.textContent='Identifiant';
+    emailInp.type='text';
+    emailInp.setAttribute('autocomplete','username');
+    emailInp.placeholder='astridsenref';
+  }catch(e){}
+
   function doLogin(){
-    var email = emailInp.value.trim();
+    var email = authIdentifiant(emailInp.value);
     var pass  = passInp.value;
     if(!email || !pass) return;
     submitBtn.disabled = true;
@@ -15955,7 +15986,7 @@ function authInit(){
         submitBtn.disabled = false;
         submitBtn.textContent = 'Se connecter';
         if(result.error){
-          errorDiv.textContent = 'Email ou mot de passe incorrect.';
+          errorDiv.textContent = 'Identifiant ou mot de passe incorrect.';
           errorDiv.classList.add('show');
           passInp.value = '';
         }
