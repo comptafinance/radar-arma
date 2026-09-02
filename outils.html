@@ -34,8 +34,9 @@
 <body>
 <div class="w">
   <h1>Création d'un compte RADAR</h1>
-  <p class="sub">Cette page sert une seule fois, pour créer les comptes de connexion.
-     Elle ne montre aucune donnée de l'application. Supprime-la une fois les comptes créés.</p>
+  <p class="sub">Cette page sert une seule fois, pour créer les comptes de connexion et reprendre
+     les données. Elle ne montre aucune donnée de l'application. À supprimer une fois la bascule faite.<br>
+     Projet visé : <code>umlqxgajnwpufwieebjs</code>, le projet Astridsen.</p>
 
   <div class="card">
     <label for="id">Identifiant</label>
@@ -84,8 +85,19 @@
 </div>
 
 <script>
-var SB_URL='https://coqlmzzlddjysxyavzof.supabase.co';
-var SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNvcWxtenpsZGRqeXN4eWF2em9mIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY1NDMyOTQsImV4cCI6MjA5MjExOTI5NH0.JabKpl1E47vySbMPXWcRr-fR3hYdHNvXkP263Isa9zs';
+// Projet Astridsen. Les comptes se creent ici, pas sur l'ancien projet.
+var SB_URL='https://umlqxgajnwpufwieebjs.supabase.co';
+var SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVtbHF4Z2FqbndwdWZ3aWVlYmpzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgzNDMxMzMsImV4cCI6MjEwMzkxOTEzM30.XgrNTpNkMAtOxuHLeUlzjdNUU5B4FmSP5lyzQ_HrVDg';
+// Ancien projet d'Alexis, conserve uniquement pour la reprise des donnees.
+var OLD_URL='https://coqlmzzlddjysxyavzof.supabase.co';
+var OLD_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNvcWxtenpsZGRqeXN4eWF2em9mIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY1NDMyOTQsImV4cCI6MjA5MjExOTI5NH0.JabKpl1E47vySbMPXWcRr-fR3hYdHNvXkP263Isa9zs';
+// Champs de la reprise pre-remplis, il ne reste qu'a cliquer
+window.addEventListener('DOMContentLoaded', function(){
+  document.getElementById('src').value  = OLD_URL;
+  document.getElementById('srck').value = OLD_KEY;
+  document.getElementById('dst').value  = SB_URL;
+  document.getElementById('dstk').value = SB_KEY;
+});
 
 var msg=document.getElementById('msg');
 function dire(cls, txt){ msg.className='msg on '+cls; msg.innerHTML=txt; }
