@@ -46,6 +46,14 @@
     <div class="msg" id="msg"></div>
   </div>
 
+  <div class="card">
+    <label>Diagnostic</label>
+    <p class="sub" style="margin-bottom:12px">À lancer si la création échoue. Ça teste le chemin
+       jusqu'au serveur et dit précisément où ça coince.</p>
+    <button id="diag" style="background:#185FA5">Lancer le diagnostic</button>
+    <div class="msg" id="dmsg"></div>
+  </div>
+
   <div class="rap">
     Les deux comptes à créer :<br>
     <code>astridsenref</code> pour Alexis, qui ouvre la partie Référent.<br>
@@ -109,8 +117,70 @@ document.getElementById('go').addEventListener('click', function(){
   })
   .catch(function(e){
     b.disabled=false; b.textContent='Créer ce compte';
-    dire('ko','<b>Serveur injoignable.</b><br>'+e.message+'<br>Vérifie ta connexion, '
-      +'ou le réseau bloque peut-être supabase.co.');
+    dire('ko','<b>Serveur injoignable.</b><br>'+e.message+'<br>Lance le diagnostic plus bas, '
+      +'il dira si c\'est ton réseau ou le serveur.');
+  });
+});
+
+// ── Diagnostic ────────────────────────────────────────────────
+var dmsg=document.getElementById('dmsg');
+function ligne(etat, txt){
+  var ic = etat==='ok' ? '✓' : etat==='ko' ? '✗' : '•';
+  var co = etat==='ok' ? '#16A34A' : etat==='ko' ? '#DC2626' : '#718096';
+  return '<div style="margin:3px 0"><b style="color:'+co+'">'+ic+'</b> '+txt+'</div>';
+}
+document.getElementById('diag').addEventListener('click', function(){
+  var b=this; b.disabled=true; b.textContent='Test en cours…';
+  dmsg.className='msg on wa'; dmsg.innerHTML='Test en cours…';
+  var r=[], verdict='';
+
+  // 1. Internet fonctionne ? une image publique, sans contrainte CORS
+  function testInternet(){
+    return new Promise(function(res){
+      var i=new Image(); var fini=false;
+      i.onload=function(){ if(!fini){fini=true;res(true);} };
+      i.onerror=function(){ if(!fini){fini=true;res(false);} };
+      setTimeout(function(){ if(!fini){fini=true;res(false);} }, 6000);
+      i.src='https://www.google.com/favicon.ico?x='+Date.now();
+    });
+  }
+  // 2. Le domaine supabase repond-il, meme sans autorisation CORS ?
+  function testDomaine(){
+    return fetch(SB_URL+'/auth/v1/health',{mode:'no-cors',cache:'no-store'})
+      .then(function(){ return true; }).catch(function(){ return false; });
+  }
+  // 3. Le projet repond-il vraiment, avec la cle ?
+  function testProjet(){
+    return fetch(SB_URL+'/rest/v1/',{headers:{apikey:SB_KEY}})
+      .then(function(x){ return {ok:true, code:x.status}; })
+      .catch(function(e){ return {ok:false, err:e.message}; });
+  }
+
+  testInternet().then(function(net){
+    r.push(ligne(net?'ok':'ko','Internet '+(net?'accessible':'injoignable')));
+    return testDomaine().then(function(dom){
+      r.push(ligne(dom?'ok':'ko','Domaine supabase.co '+(dom?'joignable':'injoignable')));
+      return testProjet().then(function(pr){
+        if(pr.ok) r.push(ligne('ok','Projet Supabase actif, code '+pr.code));
+        else r.push(ligne('ko','Projet Supabase muet — '+pr.err));
+
+        if(!net) verdict='<b>Ton poste n\'a pas accès à internet</b>, ou un filtre bloque tout. '
+          +'Rien à voir avec l\'application.';
+        else if(!dom) verdict='<b>Ton réseau bloque supabase.co.</b> C\'est un filtrage d\'entreprise. '
+          +'Essaie depuis ton téléphone en 4G ou depuis un autre réseau pour confirmer. '
+          +'Si ça passe ailleurs, il faudra faire ouvrir le domaine, ou déplacer la base.';
+        else if(!pr.ok) verdict='<b>Le domaine répond mais pas le projet.</b> Le plus probable, '
+          +'c\'est que le projet Supabase est <b>en pause</b>. Les projets gratuits s\'arrêtent '
+          +'tout seuls après une semaine sans usage. Il faut ouvrir le tableau de bord Supabase '
+          +'et cliquer sur Restore project. Seul le propriétaire du projet peut le faire.';
+        else verdict='<b>Tout répond.</b> Réessaie la création de compte, l\'erreur venait d\'ailleurs.';
+
+        dmsg.className='msg on '+((net&&dom&&pr.ok)?'ok':'ko');
+        dmsg.innerHTML=r.join('')+'<div style="margin-top:10px;padding-top:9px;border-top:1px solid rgba(0,0,0,.12)">'
+          +verdict+'</div>';
+        b.disabled=false; b.textContent='Relancer le diagnostic';
+      });
+    });
   });
 });
 </script>
