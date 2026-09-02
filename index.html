@@ -2974,8 +2974,26 @@ function sbLoad(){
 }
 
 var SYNC_DEBOUNCE=null;
+
+// Rafraichissement des blocs de facturation.
+// Ils ne se recalculaient qu'a l'entree dans l'onglet Referent, via rRef().
+// Une modification d'avancement faite depuis une fiche ouverte par dessus, ou
+// depuis la liste des affaires du Referent, laissait donc la facturation figee.
+var FACTU_REFRESH=null;
+function majFactu(){
+  var v=document.getElementById('v-ref');
+  if(!v || !v.classList.contains('on')) return;   // inutile si l'onglet n'est pas affiche
+  if(FACTU_REFRESH) clearTimeout(FACTU_REFRESH);
+  FACTU_REFRESH=setTimeout(function(){
+    try{ rSynthFactu(); }catch(e){ console.warn('majFactu rSynthFactu',e); }
+    try{ rPrevFactu();  }catch(e){ console.warn('majFactu rPrevFactu',e); }
+    try{ rPrevCharge(); }catch(e){}
+  }, 250);
+}
+
 function sbSave(){
   try{ lsSaveNow(); }catch(e){}          // filet de sécurité local
+  try{ majFactu(); }catch(e){}           // la facturation suit l'avancement
   if(!SYNC_ENABLED) return;
   if(SYNC_DEBOUNCE) clearTimeout(SYNC_DEBOUNCE);
   syncIndic('\u2026','var(--amber)','Enregistrement\u2026');
