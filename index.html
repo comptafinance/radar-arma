@@ -3767,10 +3767,16 @@ function rempliBudget(a){
   var f=a.fin||{};
   return (f.budget_alloue>0)||(f.budget_previsionnel>0)||(f.budget_definitif>0);
 }
+// Portefeuilles d'un périmètre, restreints à une personne si ini est donné
+function cpsKpi(svc, ini){
+  var l=cpsOfSvc(svc);
+  if(!ini) return l;
+  return l.filter(function(cp){ return (DATA[cp]||{}).ini===ini; });
+}
 // Affaires ouvertes d'un périmètre, les clôturées ne comptent pas
-function affairesOuvertes(svc){
+function affairesOuvertes(svc, ini){
   var out=[];
-  cpsOfSvc(svc).forEach(function(cp){
+  cpsKpi(svc, ini).forEach(function(cp){
     (gAff(cp)||[]).forEach(function(a){
       var clot=false; try{ clot=isClot(a); }catch(e){}
       if(clot) return;
@@ -3780,11 +3786,19 @@ function affairesOuvertes(svc){
   });
   return out;
 }
+// Toutes les affaires d'un périmètre, clôturées comprises
+function affairesToutes(svc, ini){
+  var out=[];
+  cpsKpi(svc, ini).forEach(function(cp){
+    (gAff(cp)||[]).forEach(function(a){ out.push({cp:cp, a:a}); });
+  });
+  return out;
+}
 // Répartition des affaires ouvertes par UO restant à produire
-function chargeParUO(svc){
+function chargeParUO(svc, ini){
   var r={};
   (UO_CAT[svc]||[]).forEach(function(u){ r[u.k]=0; });
-  affairesOuvertes(svc).forEach(function(x){
+  affairesOuvertes(svc, ini).forEach(function(x){
     try{
       uoRestants(x.cp, x.a).forEach(function(u){ if(u.part>0 && r[u.k]!==undefined) r[u.k]++; });
     }catch(e){}
@@ -3821,8 +3835,9 @@ function joursSansAction(a){
   try{ return joursEntre(d, dISO()); }catch(e){ return null; }
 }
 
-function kpiOpsArma(){
-  var ouv=affairesOuvertes('ARMA'), n=ouv.length;
+// ini facultatif : restreint tous les compteurs au portefeuille d'une personne
+function kpiOpsArma(ini){
+  var ouv=affairesOuvertes('ARMA', ini), n=ouv.length;
   var c={temps:0, syno:0, planning:0, budget:0};
   var meteoRouge=0, plus100=[], ecarts=[], sansAct=[], sansDate=0;
   ouv.forEach(function(x){
@@ -3843,7 +3858,7 @@ function kpiOpsArma(){
   plus100.sort(function(p,q){ return q.delai-p.delai; });
   sansAct.sort(function(p,q){ return q.jours-p.jours; });
   // Revue et auto-revue se tiennent par portefeuille, pas par affaire
-  var cps=cpsOfSvc('ARMA'), revues=[];
+  var cps=cpsKpi('ARMA', ini), revues=[];
   cps.forEach(function(cp){
     var r={}; try{ r=getReviewDates(cp)||{}; }catch(e){}
     function age(d){ if(!d) return null; try{ return joursEntre(d, dISO()); }catch(e){ return null; } }
@@ -3851,23 +3866,38 @@ function kpiOpsArma(){
                  autoRevue:r.autoRevue||'', ageAuto:age(r.autoRevue),
                  revue:r.revue||'',        ageRevue:age(r.revue)});
   });
+  // Délai, chutes et DIE se comptent sur TOUTES les affaires, clôturées
+  // comprises : un chantier livré garde son délai et ses chutes.
+  var phases={'Primo':0,'Etude':0,'Travaux':0,'Réception':0,'Clôturée':0};
+  var delais=[], chutes=0, dieOk=0, dieTot=0, nTot=0;
+  affairesToutes('ARMA', ini).forEach(function(x){
+    var a=x.a; nTot++;
+    var ph=''; try{ ph=agPhaseOf(a); }catch(e){}
+    if(phases[ph]!==undefined) phases[ph]++;
+    chutes+=nbChutes(a);
+    var d=null; try{ d=delaiRaccordement(a); }catch(e){}
+    if(d!==null && d>0) delais.push(d);
+    var e=null; try{ e=dieEcart(a); }catch(e2){}
+    if(e!==null){ dieTot++; if(e<=0) dieOk++; }
+  });
   function pct(x){ return n?Math.round(x/n*100):null; }
-  var base=kpiArma();
-  return {n:n, cps:cps.length,
+  function moy(t){ return t.length?Math.round(t.reduce(function(s,v){return s+v;},0)/t.length):null; }
+  return {n:n, cps:cps.length, ini:ini||null,
           completude:{temps:pct(c.temps), syno:pct(c.syno),
                       planning:pct(c.planning), budget:pct(c.budget), brut:c},
-          parUO:chargeParUO('ARMA'), parEtat:base.phases, total:base.total,
-          meteoRouge:meteoRouge, delaiMoy:base.delaiMoy, nDelai:base.nDelai,
-          plus100:plus100, tauxChute:base.tauxChute, chutes:base.chutes,
-          respectDie:base.respectDie, dieTot:base.dieTot,
+          parUO:chargeParUO('ARMA', ini), parEtat:phases, total:nTot,
+          meteoRouge:meteoRouge, delaiMoy:moy(delais), nDelai:delais.length,
+          plus100:plus100, chutes:chutes,
+          tauxChute: nTot?Math.round(chutes/nTot*1000)/10:0,
+          respectDie: dieTot?Math.round(dieOk/dieTot*100):null, dieTot:dieTot,
           dieEcartMoyen: ecarts.length
             ? Math.round(ecarts.reduce(function(s,v){return s+v;},0)/ecarts.length*10)/10 : null,
           sansAction15:sansAct.length, sansActionListe:sansAct, sansDate:sansDate,
           revues:revues};
 }
 
-function kpiOpsIrve(){
-  var ouv=affairesOuvertes('IRVE'), n=ouv.length;
+function kpiOpsIrve(ini){
+  var ouv=affairesOuvertes('IRVE', ini), n=ouv.length;
   var majcomVides=0, sansAct=[], sansDate=0, parEtat={};
   IRVE_PHASES.forEach(function(p){ if(p.n>0) parEtat[p.l]=0; });
   ouv.forEach(function(x){
@@ -3884,28 +3914,33 @@ function kpiOpsIrve(){
   Object.keys(DATA).forEach(function(cp){
     (gAff(cp)||[]).forEach(function(a){ if(a.no) nosAff[String(a.no).trim()]=(DATA[cp]||{}).ini||cp; });
   });
+  // Quand on regarde une personne, on ne garde que ses propres dossiers
+  var mesAff={};
+  ouv.forEach(function(x){ if(x.a.no) mesAff[String(x.a.no).trim()]=1; });
+  var taches=IRVE_TACHES.filter(function(t){
+    return ini ? !!mesAff[String(t.aff||'').trim()] : true; });
   var parAff={};
-  IRVE_TACHES.forEach(function(t){ var k=String(t.aff||'').trim(); if(k) parAff[k]=(parAff[k]||0)+1; });
+  taches.forEach(function(t){ var k=String(t.aff||'').trim(); if(k) parAff[k]=(parAff[k]||0)+1; });
   var horsPf=0, tropTaches=0, affTrop=[];
-  IRVE_TACHES.forEach(function(t){ if(nosAff[String(t.aff||'').trim()]) horsPf++; });
+  taches.forEach(function(t){ if(nosAff[String(t.aff||'').trim()]) horsPf++; });
   Object.keys(parAff).forEach(function(k){ if(parAff[k]>10){ tropTaches++; affTrop.push({aff:k, nb:parAff[k]}); } });
   affTrop.sort(function(p,q){ return q.nb-p.nb; });
-  return {n:n, majcomVides:majcomVides,
+  return {n:n, ini:ini||null, majcomVides:majcomVides,
           completude: n?Math.round((n-majcomVides)/n*100):null,
-          parUO:chargeParUO('IRVE'), parEtat:parEtat,
+          parUO:chargeParUO('IRVE', ini), parEtat:parEtat,
           sansAction15:sansAct.length, sansActionListe:sansAct, sansDate:sansDate,
-          taches:IRVE_TACHES.length,
+          taches:taches.length,
           horsPf:horsPf, tropTaches:tropTaches, affTrop:affTrop};
 }
 
-function kpiOpsMeca(){
-  var ouv=affairesOuvertes('MECA'), n=ouv.length;
+function kpiOpsMeca(ini){
+  var ouv=affairesOuvertes('MECA', ini), n=ouv.length;
   var sansAct=[], sansDate=0, comVides=0, comTot=0;
   // Les commentaires RATP sont portés par la LIGNE du tableau, pas par
   // l'affaire : clé = libellé de ligne, valeur = {text, date}.
   // Mêmes lignes que rMecaGrid : Lot, les 9 livrables, Taux de contact,
   // puis une ligne par concessionnaire.
-  cpsOfSvc('MECA').forEach(function(cp){
+  cpsKpi('MECA', ini).forEach(function(cp){
     var store=(DATA[cp]||{}).meca_com||{};
     var cles=['Lot'].concat(MECA_UOS.map(function(u){ return u.l; }), ['Taux de contact']);
     mecaConc(cp).forEach(function(cc){ cles.push('CONC::'+cc.k); });
@@ -3919,7 +3954,7 @@ function kpiOpsMeca(){
     if(j===null) sansDate++; else if(j>7) sansAct.push({cp:x.cp, a:x.a, jours:j});
   });
   sansAct.sort(function(p,q){ return q.jours-p.jours; });
-  return {n:n, comVides:comVides, comTot:comTot,
+  return {n:n, ini:ini||null, comVides:comVides, comTot:comTot,
           completude: comTot?Math.round((comTot-comVides)/comTot*100):null,
           sansAction7:sansAct.length, sansActionListe:sansAct, sansDate:sansDate};
 }
@@ -12195,18 +12230,58 @@ function carteKpi(nom, coul){
   return c;
 }
 
+// Chargé d'affaires sélectionné dans les KPI. null = tout le périmètre.
+var KPI_INI=null;
+// Personnes qui portent au moins une affaire, tous périmètres confondus
+function personnesKpi(){
+  var vus={}, out=[];
+  SERVICES.forEach(function(s){
+    cpsOfSvc(s.k).forEach(function(cp){
+      var i=(DATA[cp]||{}).ini; if(!i||vus[i]) return;
+      vus[i]=1; out.push({ini:i, nom:(DATA[cp]||{}).name||i});
+    });
+  });
+  return out.sort(function(a,b){ return a.ini<b.ini?-1:1; });
+}
+function barreChargeAffaires(){
+  var b=document.createElement('div');
+  b.style.cssText='display:flex;gap:6px;flex-wrap:wrap;padding:6px 12px 2px;align-items:center';
+  var lib=document.createElement('span');
+  lib.style.cssText='font-size:9px;font-weight:800;color:var(--t3);text-transform:uppercase;letter-spacing:.05em';
+  lib.textContent='Chargé d’affaires';
+  b.appendChild(lib);
+  var liste=[{ini:null, nom:'Tout le périmètre', l:'Tous'}]
+    .concat(personnesKpi().map(function(p){ return {ini:p.ini, nom:p.nom, l:p.ini}; }));
+  liste.forEach(function(p){
+    var actif = (KPI_INI||null)===(p.ini||null);
+    var bt=document.createElement('button');
+    bt.style.cssText='border:1.5px solid '+(actif?'var(--brand)':'var(--b2)')+';'
+      +'background:'+(actif?'var(--brand)':'var(--s2)')+';color:'+(actif?'#fff':'var(--t2)')+';'
+      +'border-radius:8px;padding:4px 11px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit';
+    bt.textContent=p.l;
+    bt.title=p.nom;
+    bt.addEventListener('click',function(){ KPI_INI=p.ini; rKpiOps(); });
+    b.appendChild(bt);
+  });
+  return b;
+}
+
 function rKpiOps(){
   var host=kpiHote(); if(!host) return;
   host.innerHTML='';
+  var ini=KPI_INI;
 
   var titre=document.createElement('div');
   titre.style.cssText='font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;'
     +'color:var(--t3);padding:10px 12px 0';
-  titre.textContent='KPI opérationnels';
+  titre.textContent='KPI opérationnels'+(ini?' — '+ini:'');
   host.appendChild(titre);
+  host.appendChild(barreChargeAffaires());
 
   // ── ARMA ──────────────────────────────────────────────────
-  var k=kpiOpsArma(), sA=svcInfo('ARMA');
+  var manquants=[];
+  var k=kpiOpsArma(ini), sA=svcInfo('ARMA');
+  if(!k.cps){ manquants.push('ARMA'); } else {
   var cA=carteKpi('ARMA — '+k.n+' affaires ouvertes', sA);
 
   cA.appendChild(sousTitre('Complétude des onglets'));
@@ -12273,9 +12348,11 @@ function rKpiOps(){
   });
   cA.appendChild(wr);
   host.appendChild(cA);
+  }
 
   // ── IRVE ──────────────────────────────────────────────────
-  var i=kpiOpsIrve(), sI=svcInfo('IRVE');
+  var i=kpiOpsIrve(ini), sI=svcInfo('IRVE');
+  if(!cpsKpi('IRVE', ini).length){ manquants.push('IRVE'); } else {
   var cI=carteKpi('IRVE — '+i.n+' affaires', sI);
   cI.appendChild(sousTitre('Complétude'));
   var h1=grilleTuiles();
@@ -12316,9 +12393,11 @@ function rKpiOps(){
   h3.appendChild(tuile('Affaires > 10 tâches', i.tropTaches, 'Affaires cumulant plus de dix tâches back-office', [1,3]));
   cI.appendChild(h3);
   host.appendChild(cI);
+  }
 
   // ── RATP ──────────────────────────────────────────────────
-  var m=kpiOpsMeca(), sM=svcInfo('MECA');
+  var m=kpiOpsMeca(ini), sM=svcInfo('MECA');
+  if(!cpsKpi('MECA', ini).length){ manquants.push('RATP'); } else {
   var cM=carteKpi('RATP — '+m.n+' affaires', sM);
   cM.appendChild(sousTitre('Complétude'));
   var j1=grilleTuiles();
@@ -12339,6 +12418,14 @@ function rKpiOps(){
     'Affaires sans aucune date renseignée', [1,3]));
   cM.appendChild(j3);
   host.appendChild(cM);
+  }
+
+  if(ini && manquants.length){
+    var note=document.createElement('div');
+    note.style.cssText='font-size:10.5px;color:var(--t3);font-style:italic;padding:2px 12px 12px;line-height:1.5';
+    note.textContent=ini+' ne porte aucun portefeuille sur '+manquants.join(', ')+'.';
+    host.appendChild(note);
+  }
 }
 function rScores(){
   var el=document.getElementById('scores');
