@@ -5363,35 +5363,151 @@ function agRowsPlanning(affs){
     },cls||'ag-date');
   }
   AG_DATE_ROWS.forEach(function(dr){ rows.push(ligneDate(dr)); });
-  // 5. Clôture : MEX réalisée + chutes, sur fond distinct
-  AG_DATE_FIN.forEach(function(dr){ rows.push(ligneDate(dr,'ag-date','#D1FAE5')); });
-  rows.push(agMakeRow('\u26a0 Chutes de chantier',affs,function(c,a){
-    c.style.cssText+=';background:#FEE2E2';
+  // 5. Clôture : une seule ligne pour l'issue du chantier, MEX ou chute
+  rows.push(agRowIssue(affs));
+  return rows;
+}
+
+// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+// ISSUE DU CHANTIER \u2014 MEX r\u00e9alis\u00e9e ou chute, sur une ligne
+// Demand\u00e9 par Alexis le 02/09/2026 : le CP tranche en un clic, la date
+// du jour est propos\u00e9e, et une chute exige un commentaire.
+// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+// S\u00e9lecteur \u00e0 plusieurs boutons, b\u00e2ti sur le gabarit de uiDialog.
+function uiChoix(titre, message, choix, onPick){
+  var ov=document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;'
+    +'display:flex;align-items:center;justify-content:center;padding:16px';
+  var box=document.createElement('div');
+  box.style.cssText='background:var(--s);border-radius:14px;width:100%;max-width:400px;'
+    +'box-shadow:0 20px 60px rgba(0,0,0,.35);overflow:hidden';
+  var hd=document.createElement('div');
+  hd.style.cssText='padding:13px 16px 6px;font-size:13px;font-weight:800;color:var(--t)';
+  hd.textContent=titre||'';
+  box.appendChild(hd);
+  if(message){
+    var ms=document.createElement('div');
+    ms.style.cssText='padding:0 16px 8px;font-size:11.5px;color:var(--t3);white-space:pre-wrap;line-height:1.5';
+    ms.textContent=message;
+    box.appendChild(ms);
+  }
+  var lst=document.createElement('div');
+  lst.style.cssText='display:flex;flex-direction:column;gap:6px;padding:4px 16px 8px';
+  function close(){ if(ov.parentNode) document.body.removeChild(ov); }
+  choix.forEach(function(c){
+    var b=document.createElement('button');
+    b.style.cssText='border:1.5px solid '+(c.coul||'var(--b2)')+';background:'+(c.fond||'var(--s2)')+';'
+      +'color:'+(c.coul||'var(--t2)')+';border-radius:9px;padding:9px 12px;font-size:12px;'
+      +'font-weight:800;cursor:pointer;font-family:inherit;text-align:left';
+    b.textContent=c.l;
+    b.addEventListener('click',function(){ close(); onPick(c.k); });
+    lst.appendChild(b);
+  });
+  box.appendChild(lst);
+  var ft=document.createElement('div');
+  ft.style.cssText='display:flex;justify-content:flex-end;padding:0 16px 14px';
+  var cancel=document.createElement('button');
+  cancel.style.cssText='border:1px solid var(--b2);background:var(--s2);color:var(--t2);border-radius:8px;'
+    +'padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit';
+  cancel.textContent='Annuler';
+  cancel.addEventListener('click',close);
+  ft.appendChild(cancel); box.appendChild(ft);
+  ov.appendChild(box); document.body.appendChild(ov);
+  ov.addEventListener('click',function(e){ if(e.target===ov) close(); });
+  document.addEventListener('keydown',function esc(e){
+    if(!ov.parentNode){ document.removeEventListener('keydown',esc); return; }
+    if(e.key==='Escape'){ close(); document.removeEventListener('keydown',esc); }
+  });
+}
+// Commentaire de chute : obligatoire, on relance tant qu'il est vide.
+function demanderMotifChute(a, iso, apres){
+  uiPrompt(a.code+' \u2014 Commentaire de la chute','',function(motif){
+    motif=String(motif||'').trim();
+    if(!motif){
+      // On rouvre la saisie seulement quand l'avertissement est ferm\u00e9,
+      // sinon les deux fen\u00eatres se superposent.
+      var relance=function(){ demanderMotifChute(a, iso, apres); };
+      uiDialog({title:'Commentaire obligatoire',
+        message:'Une chute de chantier ne s\u2019enregistre pas sans motif.\n'
+               +'Indiquez pourquoi la MEX n\u2019a pas \u00e9t\u00e9 r\u00e9alis\u00e9e.',
+        okLabel:'Saisir le motif', cancelLabel:'Abandonner',
+        onOK:relance, onCancel:function(){}});
+      return;
+    }
+    if(!a.chutes) a.chutes=[];
+    a.chutes.push({date:iso, motif:motif});
+    apres();
+  },{multiline:true, message:'MEX programm\u00e9e mais non r\u00e9alis\u00e9e. Champ obligatoire.'});
+}
+function agRowIssue(affs){
+  return agMakeRow('\ud83c\udfc1 Issue \u2014 MEX ou chute',affs,function(c,a){
+    if(!a.dates) a.dates={};
     function paint(){
-      var n=nbChutes(a);
-      c.textContent=n?String(n):'\u2014';
+      var mex=String(a.dates.date_mex||'').trim(), n=nbChutes(a);
       c.style.fontWeight='800';
-      c.style.color=n?'#B91C1C':'var(--b2)';
+      if(mex){
+        c.textContent=mex.slice(0,5)+(n?' \u00b7'+n+'\u26a0':'');
+        c.style.color='#047857'; c.style.background='#D1FAE5';
+      } else if(n){
+        c.textContent='\u26a0 '+n;
+        c.style.color='#B91C1C'; c.style.background='#FEE2E2';
+      } else {
+        c.textContent='\u2014'; c.style.fontWeight='600';
+        c.style.color='var(--b2)'; c.style.background='';
+      }
       var lst=(a.chutes||[]).map(function(x){ return '\u2022 '+dFR(x.date)+' : '+x.motif; }).join('\n');
-      c.title=(n?n+' chute(s) :\n'+lst:'Aucune chute')+'\nCliquer pour en ajouter une';
+      c.title=(mex?'MEX r\u00e9alis\u00e9e le '+mex:'MEX non r\u00e9alis\u00e9e')
+        +'\n'+(n?n+' chute(s) :\n'+lst:'Aucune chute')
+        +'\nCliquer pour saisir l\u2019issue';
+    }
+    function enregistrer(msg){
+      paint(); sbSave();
+      try{ refreshAllBadges(); }catch(e){}
+      var band=document.querySelector('#ag-wrap .ag-band-plan');
+      if(band){
+        var cell=band.children[affs.indexOf(a)+1];
+        if(cell){ var st=agModFill('planning',a); cell.textContent=agFillMark(st); cell.style.color=agFillColor(st); }
+      }
+      if(msg) showToast(msg+' \u2014 '+a.code);
     }
     paint(); c.style.cursor='pointer';
     c.addEventListener('click',function(){
-      uiPrompt(a.code+' \u2014 Date de la chute', dFR(dISO()), function(dt){
-        var iso=frToISO(dt)||dISO();
-        uiPrompt(a.code+' \u2014 Commentaire de la chute','',function(motif){
-          motif=String(motif).trim();
-          if(!motif) return;
-          if(!a.chutes) a.chutes=[];
-          a.chutes.push({date:iso, motif:motif});
-          paint(); sbSave();
-          showToast('Chute enregistr\u00e9e \u2014 '+a.code);
-        },{multiline:true,message:'MEX programm\u00e9e mais non r\u00e9alis\u00e9e.'});
-      },{message:'Date de la chute (JJ/MM/AAAA).',placeholder:'JJ/MM/AAAA'});
+      var mex=String(a.dates.date_mex||'').trim(), n=nbChutes(a);
+      var opts=[
+        {k:'mex',   l:'\u2705 MEX r\u00e9alis\u00e9e',      coul:'#047857', fond:'#D1FAE5'},
+        {k:'chute', l:'\u26a0 Chute de chantier',           coul:'#B91C1C', fond:'#FEE2E2'}
+      ];
+      if(mex) opts.push({k:'delmex', l:'\ud83d\uddd1 Effacer la date de MEX'});
+      if(n)   opts.push({k:'voir',   l:'\ud83d\udccb Voir les '+n+' chute(s)'});
+      uiChoix(a.code+' \u2014 Issue du chantier',
+        'MEX r\u00e9alis\u00e9e ou chute de chantier. La date du jour est propos\u00e9e.',
+        opts, function(k){
+        if(k==='mex'){
+          uiPrompt(a.code+' \u2014 Date de MEX r\u00e9alis\u00e9e', mex||dFR(dISO()), function(raw){
+            var nv=String(raw||'').trim();
+            a.dates.date_mex = nv===''?null:nv;
+            enregistrer(nv?'MEX enregistr\u00e9e':'Date de MEX effac\u00e9e');
+          },{message:'Format JJ/MM/AAAA \u2014 vide pour effacer.',placeholder:'JJ/MM/AAAA'});
+        } else if(k==='chute'){
+          uiPrompt(a.code+' \u2014 Date de la chute', dFR(dISO()), function(dt){
+            var iso=frToISO(dt)||dISO();
+            demanderMotifChute(a, iso, function(){ enregistrer('Chute enregistr\u00e9e'); });
+          },{message:'Date de la chute (JJ/MM/AAAA).',placeholder:'JJ/MM/AAAA'});
+        } else if(k==='delmex'){
+          a.dates.date_mex=null;
+          enregistrer('Date de MEX effac\u00e9e');
+        } else if(k==='voir'){
+          var txt=(a.chutes||[]).map(function(x,i){
+            return (i+1)+'. '+dFR(x.date)+'\n   '+x.motif; }).join('\n\n');
+          uiDialog({title:a.code+' \u2014 Chutes de chantier', message:txt,
+            okLabel:'Supprimer la derni\u00e8re', cancelLabel:'Fermer', danger:true,
+            onOK:function(){ a.chutes.pop(); enregistrer('Derni\u00e8re chute supprim\u00e9e'); }});
+        }
+      });
     });
-  },'ag-date'));
-  return rows;
+  },'ag-date');
 }
+
 
 // ══════════════════════════════════════════════════════
 // MODULE BUDGET
