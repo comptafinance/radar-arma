@@ -3747,6 +3747,183 @@ function kpiArma(){
           bloq15:bloq15, bloq30:bloq30, enCours:nEnCours, total:nTot};
 }
 
+// ══════════════════════════════════════════════════════════════
+// KPI OPERATIONNELS
+// Complétude, charge et qualité pour les trois entités.
+// Règle de complétude validée le 02/09/2026 : une affaire compte comme
+// renseignée dès qu'au moins une donnée existe dans l'onglet.
+// ══════════════════════════════════════════════════════════════
+function rempliTemps(cp,a){ try{ return tempsAff(cp,a)>0; }catch(e){ return false; } }
+function rempliSyno(a){
+  var f=a.fiche||{};
+  return Object.keys(f).some(function(k){ return String(f[k]||'').trim()!==''; });
+}
+function rempliPlanning(a){
+  var d=a.dates||{};
+  return AG_DATE_ROWS.concat(AG_DATE_FIN).some(function(r){
+    return String(d[r.k]||'').trim()!==''; });
+}
+function rempliBudget(a){
+  var f=a.fin||{};
+  return (f.budget_alloue>0)||(f.budget_previsionnel>0)||(f.budget_definitif>0);
+}
+// Affaires ouvertes d'un périmètre, les clôturées ne comptent pas
+function affairesOuvertes(svc){
+  var out=[];
+  cpsOfSvc(svc).forEach(function(cp){
+    (gAff(cp)||[]).forEach(function(a){
+      var clot=false; try{ clot=isClot(a); }catch(e){}
+      if(clot) return;
+      if(svc==='IRVE' && irvePhaseNum(a)===0) return;   // dossier supprimé
+      out.push({cp:cp, a:a});
+    });
+  });
+  return out;
+}
+// Répartition des affaires ouvertes par UO restant à produire
+function chargeParUO(svc){
+  var r={};
+  (UO_CAT[svc]||[]).forEach(function(u){ r[u.k]=0; });
+  affairesOuvertes(svc).forEach(function(x){
+    try{
+      uoRestants(x.cp, x.a).forEach(function(u){ if(u.part>0 && r[u.k]!==undefined) r[u.k]++; });
+    }catch(e){}
+  });
+  return r;
+}
+// Date de la dernière action tracée sur une affaire.
+// Deux précautions :
+//  - les dates de planning sont stockées au format français, il faut convertir ;
+//  - kpiArma appelle touchCycle à chaque rendu, ce qui écrit phase_since
+//    à la date du jour. Un phase_since daté d'aujourd'hui ne prouve donc
+//    aucune action et n'est pas retenu. Une vraie action du jour laisse
+//    de toute façon une date de planning, dont la phase est déduite.
+function derniereAction(a){
+  var best='';
+  function garde(v){
+    v=String(v||'').trim();
+    if(!v) return;
+    var iso=/^\d{4}-\d{2}-\d{2}/.test(v) ? v.slice(0,10) : frToISO(v);
+    if(iso && iso>best) best=iso;
+  }
+  var c=a.cycle||{};
+  if(c.phase_since && c.phase_since!==dISO()) garde(c.phase_since);
+  garde(c.affectation); garde(c.cloture);
+  garde((a.irve||{}).majcom);
+  var d=a.dates||{};
+  Object.keys(d).forEach(function(k){ garde(d[k]); });
+  return best||null;
+}
+// Jours écoulés depuis la dernière action. null si aucune date connue.
+function joursSansAction(a){
+  var d=derniereAction(a);
+  if(!d) return null;
+  try{ return joursEntre(d, dISO()); }catch(e){ return null; }
+}
+
+function kpiOpsArma(){
+  var ouv=affairesOuvertes('ARMA'), n=ouv.length;
+  var c={temps:0, syno:0, planning:0, budget:0};
+  var meteoRouge=0, plus100=[], ecarts=[], sansAct=[], sansDate=0;
+  ouv.forEach(function(x){
+    var a=x.a;
+    if(rempliTemps(x.cp,a)) c.temps++;
+    if(rempliSyno(a))      c.syno++;
+    if(rempliPlanning(a))  c.planning++;
+    if(rempliBudget(a))    c.budget++;
+    if(a.meteo===3) meteoRouge++;
+    var d=null; try{ d=delaiRaccordement(a); }catch(e){}
+    // format {cp, a} attendu par refModal, qui ouvre la fiche au clic
+    if(d!==null && d>100) plus100.push({cp:x.cp, a:a, delai:d});
+    var e=null; try{ e=dieEcart(a); }catch(e2){}
+    if(e!==null) ecarts.push(e);
+    var j=joursSansAction(a);
+    if(j===null) sansDate++; else if(j>15) sansAct.push({cp:x.cp, a:a, jours:j});
+  });
+  plus100.sort(function(p,q){ return q.delai-p.delai; });
+  sansAct.sort(function(p,q){ return q.jours-p.jours; });
+  // Revue et auto-revue se tiennent par portefeuille, pas par affaire
+  var cps=cpsOfSvc('ARMA'), revues=[];
+  cps.forEach(function(cp){
+    var r={}; try{ r=getReviewDates(cp)||{}; }catch(e){}
+    function age(d){ if(!d) return null; try{ return joursEntre(d, dISO()); }catch(e){ return null; } }
+    revues.push({cp:cp, ini:(DATA[cp]||{}).ini||cp,
+                 autoRevue:r.autoRevue||'', ageAuto:age(r.autoRevue),
+                 revue:r.revue||'',        ageRevue:age(r.revue)});
+  });
+  function pct(x){ return n?Math.round(x/n*100):null; }
+  var base=kpiArma();
+  return {n:n, cps:cps.length,
+          completude:{temps:pct(c.temps), syno:pct(c.syno),
+                      planning:pct(c.planning), budget:pct(c.budget), brut:c},
+          parUO:chargeParUO('ARMA'), parEtat:base.phases, total:base.total,
+          meteoRouge:meteoRouge, delaiMoy:base.delaiMoy, nDelai:base.nDelai,
+          plus100:plus100, tauxChute:base.tauxChute, chutes:base.chutes,
+          respectDie:base.respectDie, dieTot:base.dieTot,
+          dieEcartMoyen: ecarts.length
+            ? Math.round(ecarts.reduce(function(s,v){return s+v;},0)/ecarts.length*10)/10 : null,
+          sansAction15:sansAct.length, sansActionListe:sansAct, sansDate:sansDate,
+          revues:revues};
+}
+
+function kpiOpsIrve(){
+  var ouv=affairesOuvertes('IRVE'), n=ouv.length;
+  var majcomVides=0, sansAct=[], sansDate=0, parEtat={};
+  IRVE_PHASES.forEach(function(p){ if(p.n>0) parEtat[p.l]=0; });
+  ouv.forEach(function(x){
+    var a=x.a, iv=a.irve||{};
+    if(!String(iv.majcom||'').trim()) majcomVides++;
+    var j=joursSansAction(a);
+    if(j===null) sansDate++; else if(j>15) sansAct.push({cp:x.cp, a:a, jours:j});
+    var ph=null; try{ ph=irvePhase(a); }catch(e){}
+    if(ph && parEtat[ph.l]!==undefined) parEtat[ph.l]++;
+  });
+  sansAct.sort(function(p,q){ return q.jours-p.jours; });
+  // Écarts relevés sur les tâches back-office
+  var nosAff={};
+  Object.keys(DATA).forEach(function(cp){
+    (gAff(cp)||[]).forEach(function(a){ if(a.no) nosAff[String(a.no).trim()]=(DATA[cp]||{}).ini||cp; });
+  });
+  var parAff={};
+  IRVE_TACHES.forEach(function(t){ var k=String(t.aff||'').trim(); if(k) parAff[k]=(parAff[k]||0)+1; });
+  var horsPf=0, tropTaches=0, affTrop=[];
+  IRVE_TACHES.forEach(function(t){ if(nosAff[String(t.aff||'').trim()]) horsPf++; });
+  Object.keys(parAff).forEach(function(k){ if(parAff[k]>10){ tropTaches++; affTrop.push({aff:k, nb:parAff[k]}); } });
+  affTrop.sort(function(p,q){ return q.nb-p.nb; });
+  return {n:n, majcomVides:majcomVides,
+          completude: n?Math.round((n-majcomVides)/n*100):null,
+          parUO:chargeParUO('IRVE'), parEtat:parEtat,
+          sansAction15:sansAct.length, sansActionListe:sansAct, sansDate:sansDate,
+          taches:IRVE_TACHES.length,
+          horsPf:horsPf, tropTaches:tropTaches, affTrop:affTrop};
+}
+
+function kpiOpsMeca(){
+  var ouv=affairesOuvertes('MECA'), n=ouv.length;
+  var sansAct=[], sansDate=0, comVides=0, comTot=0;
+  // Les commentaires RATP sont portés par la LIGNE du tableau, pas par
+  // l'affaire : clé = libellé de ligne, valeur = {text, date}.
+  // Mêmes lignes que rMecaGrid : Lot, les 9 livrables, Taux de contact,
+  // puis une ligne par concessionnaire.
+  cpsOfSvc('MECA').forEach(function(cp){
+    var store=(DATA[cp]||{}).meca_com||{};
+    var cles=['Lot'].concat(MECA_UOS.map(function(u){ return u.l; }), ['Taux de contact']);
+    mecaConc(cp).forEach(function(cc){ cles.push('CONC::'+cc.k); });
+    cles.forEach(function(k){
+      comTot++;
+      if(!String((store[k]||{}).text||'').trim()) comVides++;
+    });
+  });
+  ouv.forEach(function(x){
+    var j=joursSansAction(x.a);
+    if(j===null) sansDate++; else if(j>7) sansAct.push({cp:x.cp, a:x.a, jours:j});
+  });
+  sansAct.sort(function(p,q){ return q.jours-p.jours; });
+  return {n:n, comVides:comVides, comTot:comTot,
+          completude: comTot?Math.round((comTot-comVides)/comTot*100):null,
+          sansAction7:sansAct.length, sansActionListe:sansAct, sansDate:sansDate};
+}
+
 function rKpiZones(){
   var host=document.getElementById('tdb-svckpi'); if(!host) return;
   host.innerHTML='';
@@ -11832,11 +12009,220 @@ function _scoreCPMetrics(cp){
 
 // ── TDB : agrège Suivi CP + Planning/Agenda + Budget ───────────
 function rTDB(){
+  try{ rKpiOps(); }catch(e){ console.warn('rKpiOps',e); }
   try{ rKpiZones(); }catch(e){ console.warn('rKpiZones',e); }
   try{ rScores(); }catch(e){ console.warn('rScores',e); }
   try{ rAgenda(); }catch(e){ console.warn('rAgenda',e); }
 
 
+}
+
+// ══════════════════════════════════════════════════════════════
+// KPI OPERATIONNELS — affichage
+// Le conteneur est cree en JavaScript et insere avant les zones
+// existantes, pour ne pas toucher au balisage du fichier.
+// ══════════════════════════════════════════════════════════════
+function kpiHote(){
+  var h=document.getElementById('tdb-kpiops');
+  if(h) return h;
+  var ancre=document.getElementById('tdb-svckpi');
+  if(!ancre) return null;
+  h=document.createElement('div');
+  h.id='tdb-kpiops';
+  ancre.parentNode.insertBefore(h, ancre);
+  return h;
+}
+// Une tuile chiffre. seuil: [orange, rouge] au dela desquels on colore.
+function tuile(lib, val, aide, seuil, suffixe){
+  var co='var(--t)';
+  if(seuil && typeof val==='number'){
+    if(val>=seuil[1]) co='var(--red)'; else if(val>=seuil[0]) co='var(--amber)';
+  }
+  var d=document.createElement('div');
+  d.style.cssText='border:1px solid var(--b);border-radius:9px;padding:7px 9px;background:var(--s)';
+  d.title=aide||'';
+  d.dataset.kpi=lib;
+  d.innerHTML='<div style="font-size:8.5px;font-weight:800;color:var(--t3);text-transform:uppercase;'
+    +'letter-spacing:.04em;line-height:1.3">'+lib+'</div>'
+    +'<div style="font-size:17px;font-weight:900;color:'+co+';margin-top:2px">'
+    +(val===null||val===undefined?'—':val)+(suffixe||'')+'</div>';
+  return d;
+}
+// Rend une tuile cliquable, qui ouvre la liste des affaires concernees
+function tuileListe(t, titre, items){
+  if(!items || !items.length) return t;
+  t.style.cursor='pointer';
+  t.title=(t.title?t.title+'\n':'')+'Cliquer pour voir la liste';
+  t.addEventListener('click',function(){ refModal(titre, items); });
+  return t;
+}
+function grilleTuiles(){
+  var g=document.createElement('div');
+  g.style.cssText='display:grid;grid-template-columns:repeat(auto-fit,minmax(104px,1fr));gap:7px;padding:8px 11px';
+  return g;
+}
+function sousTitre(t){
+  var d=document.createElement('div');
+  d.style.cssText='font-size:9px;font-weight:800;color:var(--t3);text-transform:uppercase;'
+    +'letter-spacing:.06em;padding:8px 12px 0';
+  d.textContent=t;
+  return d;
+}
+function carteKpi(nom, coul){
+  var c=document.createElement('div');
+  c.style.cssText='border:1.5px solid '+coul.fg+'33;border-radius:12px;overflow:hidden;margin:8px 10px 10px;background:var(--s)';
+  var h=document.createElement('div');
+  h.style.cssText='padding:8px 12px;background:'+coul.bg+';border-bottom:1px solid '+coul.fg+'33;'
+    +'font-size:11px;font-weight:800;color:'+coul.fg+';text-transform:uppercase;letter-spacing:.05em';
+  h.textContent=nom;
+  c.appendChild(h);
+  return c;
+}
+
+function rKpiOps(){
+  var host=kpiHote(); if(!host) return;
+  host.innerHTML='';
+
+  var titre=document.createElement('div');
+  titre.style.cssText='font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;'
+    +'color:var(--t3);padding:10px 12px 0';
+  titre.textContent='KPI opérationnels';
+  host.appendChild(titre);
+
+  // ── ARMA ──────────────────────────────────────────────────
+  var k=kpiOpsArma(), sA=svcInfo('ARMA');
+  var cA=carteKpi('ARMA — '+k.n+' affaires ouvertes', sA);
+
+  cA.appendChild(sousTitre('Complétude des onglets'));
+  var g1=grilleTuiles();
+  [['Temps passé',k.completude.temps],['Synoptique',k.completude.syno],
+   ['Planning',k.completude.planning],['Budget',k.completude.budget]]
+  .forEach(function(x){
+    g1.appendChild(tuile(x[0], x[1], x[1]===null?'':x[1]+' % des affaires ouvertes ont au moins une donnée saisie', null, ' %'));
+  });
+  cA.appendChild(g1);
+
+  cA.appendChild(sousTitre('Charge — par état de l’affaire'));
+  var g2=grilleTuiles();
+  g2.appendChild(tuile('Total', k.total, 'Toutes affaires, clôturées comprises'));
+  Object.keys(k.parEtat).forEach(function(e){
+    g2.appendChild(tuile(e, k.parEtat[e], 'Affaires en phase '+e));
+  });
+  cA.appendChild(g2);
+  cA.appendChild(sousTitre('Charge — UO restant à produire'));
+  var g2b=grilleTuiles();
+  FA_UOS.forEach(function(u){
+    g2b.appendChild(tuile(u, k.parUO[u], 'Affaires ouvertes ayant encore l’UO '+u+' à produire'));
+  });
+  cA.appendChild(g2b);
+
+  cA.appendChild(sousTitre('Qualité'));
+  var g3=grilleTuiles();
+  g3.appendChild(tuile('Météo rouge', k.meteoRouge, 'Affaires ouvertes en météo rouge', [1,5]));
+  g3.appendChild(tuile('Délai moyen', k.delaiMoy, 'Jours entre affectation et MEX réalisée, sur '+k.nDelai+' affaires', null, ' j'));
+  g3.appendChild(tuileListe(
+    tuile('Délai > 100 j', k.plus100.length, 'Affaires dont le raccordement a pris plus de 100 jours', [1,5]),
+    'Affaires à plus de 100 jours de raccordement', k.plus100));
+  g3.appendChild(tuile('Taux de chute', k.tauxChute, 'Chutes de chantier rapportées au nombre d’affaires', null, ' %'));
+  g3.appendChild(tuile('Respect DIE', k.respectDie, 'Part des affaires dont le réalisé ne dépasse pas la DIE, sur '+k.dieTot, null, ' %'));
+  g3.appendChild(tuile('Écart DIE moyen', k.dieEcartMoyen, 'Écart moyen entre réalisé et DIE', null, ' %'));
+  g3.appendChild(tuileListe(
+    tuile('Sans action > 15 j', k.sansAction15,
+      'Affaires ouvertes dont la dernière date connue remonte à plus de 15 jours', [1,5]),
+    'Affaires sans action depuis plus de 15 jours', k.sansActionListe));
+  g3.appendChild(tuile('Sans date connue', k.sansDate,
+    'Affaires ouvertes sans aucune date renseignée : elles ne peuvent pas être suivies', [1,10]));
+  cA.appendChild(g3);
+
+  cA.appendChild(sousTitre('Revue et auto-revue'));
+  var wr=document.createElement('div');
+  wr.style.cssText='padding:4px 11px 10px;display:flex;flex-direction:column;gap:5px';
+  k.revues.forEach(function(r){
+    function pastille(lib, date, age){
+      var co='var(--t3)', fond='var(--s2)';
+      if(age===null){ co='var(--red)'; fond='var(--rl)'; }
+      else if(age>30){ co='var(--red)'; fond='var(--rl)'; }
+      else if(age>25){ co='var(--amber)'; fond='var(--al)'; }
+      else { co='var(--green)'; fond='var(--gl)'; }
+      return '<span style="background:'+fond+';color:'+co+';font-size:9.5px;font-weight:700;'
+        +'padding:2px 8px;border-radius:7px">'+lib+' '
+        +(date?(dFR(date)+' · '+age+' j'):'jamais')+'</span>';
+    }
+    var l=document.createElement('div');
+    l.style.cssText='display:flex;align-items:center;gap:7px;flex-wrap:wrap';
+    l.innerHTML='<b style="font-size:10.5px;min-width:34px">'+r.ini+'</b>'
+      +pastille('Auto-revue', r.autoRevue, r.ageAuto)
+      +pastille('Revue', r.revue, r.ageRevue);
+    wr.appendChild(l);
+  });
+  cA.appendChild(wr);
+  host.appendChild(cA);
+
+  // ── IRVE ──────────────────────────────────────────────────
+  var i=kpiOpsIrve(), sI=svcInfo('IRVE');
+  var cI=carteKpi('IRVE — '+i.n+' affaires', sI);
+  cI.appendChild(sousTitre('Complétude'));
+  var h1=grilleTuiles();
+  h1.appendChild(tuile('Maj. comm. remplie', i.completude, 'Part des affaires dont le commentaire d’avancement a une date de mise à jour', null, ' %'));
+  h1.appendChild(tuile('Cases vides', i.majcomVides, 'Affaires sans date de mise à jour du commentaire', [1,10]));
+  cI.appendChild(h1);
+
+  cI.appendChild(sousTitre('Charge — par état du dossier'));
+  var h2=grilleTuiles();
+  h2.appendChild(tuile('Total', i.n, 'Affaires hors dossiers supprimés'));
+  Object.keys(i.parEtat).forEach(function(e){
+    h2.appendChild(tuile(e.replace(/^\d+ - /,''), i.parEtat[e], 'Dossiers en phase '+e));
+  });
+  cI.appendChild(h2);
+  cI.appendChild(sousTitre('Charge — UO restant à produire'));
+  var h2b=grilleTuiles();
+  (UO_CAT.IRVE||[]).forEach(function(u){
+    if(!i.parUO[u.k]) return;
+    h2b.appendChild(tuile(u.k.replace('_',' '), i.parUO[u.k],
+      u.l+' — affaires ayant encore cet UO à produire'));
+  });
+  cI.appendChild(h2b);
+  var leg=document.createElement('div');
+  leg.style.cssText='font-size:8.5px;color:var(--t3);padding:2px 12px 4px;line-height:1.4';
+  leg.textContent='H = ancien barème · S = nouveau, 50 bornes ou moins · M = nouveau, plus de 50 bornes';
+  cI.appendChild(leg);
+
+  cI.appendChild(sousTitre('Qualité'));
+  var h3=grilleTuiles();
+  h3.appendChild(tuileListe(
+    tuile('Sans action > 15 j', i.sansAction15,
+      'Dossiers dont la dernière date connue remonte à plus de 15 jours', [1,5]),
+    'Dossiers IRVE sans action depuis plus de 15 jours', i.sansActionListe));
+  h3.appendChild(tuile('Sans date connue', i.sansDate,
+    'Dossiers sans aucune date renseignée', [1,10]));
+  h3.appendChild(tuile('Tâches BO', i.taches, 'Nombre total de tâches back-office'));
+  h3.appendChild(tuile('Écart Hors PF', i.horsPf, 'Tâches portant sur une affaire de notre portefeuille, ce qui ne devrait pas arriver', [1,3]));
+  h3.appendChild(tuile('Affaires > 10 tâches', i.tropTaches, 'Affaires cumulant plus de dix tâches back-office', [1,3]));
+  cI.appendChild(h3);
+  host.appendChild(cI);
+
+  // ── RATP ──────────────────────────────────────────────────
+  var m=kpiOpsMeca(), sM=svcInfo('MECA');
+  var cM=carteKpi('RATP — '+m.n+' affaires', sM);
+  cM.appendChild(sousTitre('Complétude'));
+  var j1=grilleTuiles();
+  j1.appendChild(tuile('Commentaires remplis', m.completude, 'Part des lignes du tableau RATP portant un commentaire', null, ' %'));
+  j1.appendChild(tuile('Cases vides', m.comVides, 'Lignes sans commentaire sur '+m.comTot, [1,5]));
+  cM.appendChild(j1);
+  cM.appendChild(sousTitre('Charge'));
+  var j2=grilleTuiles();
+  j2.appendChild(tuile('Total', m.n, 'Affaires ouvertes'));
+  cM.appendChild(j2);
+  cM.appendChild(sousTitre('Qualité'));
+  var j3=grilleTuiles();
+  j3.appendChild(tuileListe(
+    tuile('Sans action > 7 j', m.sansAction7,
+      'Affaires dont la dernière date connue remonte à plus de 7 jours', [1,3]),
+    'Affaires RATP sans action depuis plus de 7 jours', m.sansActionListe));
+  j3.appendChild(tuile('Sans date connue', m.sansDate,
+    'Affaires sans aucune date renseignée', [1,3]));
+  cM.appendChild(j3);
+  host.appendChild(cM);
 }
 function rScores(){
   var el=document.getElementById('scores');
