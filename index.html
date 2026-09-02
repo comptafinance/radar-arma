@@ -8717,6 +8717,112 @@ function synthFactu(){
   return {blocs:f, total:tot, uo:nb};
 }
 
+// ══════════════════════════════════════════════════════════════
+// VALORISATION
+// Valorise : prix de l'UO multiplie par son avancement reel, quel que soit
+//            l'etat de facturation. C'est la valeur produite.
+// Facture  : part de l'UO deja facturee, au coefficient saisi.
+// Encours  : valorise total moins deja facture. Ce qui est produit et pas
+//            encore facture, independamment de ce qui est facturable.
+// On reprend exactement le parcours des fonctions revue*, seul le critere
+// change, pour que les deux lectures restent coherentes entre elles.
+// ══════════════════════════════════════════════════════════════
+function valoArma(){
+  var valo=0, fact=0;
+  cpsOfSvc('ARMA').forEach(function(cp){
+    (gAff(cp)||[]).forEach(function(a){
+      FA_UOS.forEach(function(u){
+        var val=faGetVal(a,u);
+        if(val==='NA') return;                       // UO sans objet
+        var prix=UO_PRIX[FA_KEY[u]]||0;
+        if(!prix) return;
+        var pn=null; try{ pn=uoPct(a, FA_KEY[u]); }catch(e){}
+        // Meme convention que uoFait : une phase sans avancement renseigne n'a
+        // rien a produire, elle est donc acquise. Sinon on comptabiliserait un
+        // UO facture sans la valeur correspondante.
+        var av=(pn===null?1:Math.max(0,Math.min(1,pn)));
+        valo += prix*av;
+        fact += prix*Math.min(1, faCoef(val)||0);
+      });
+    });
+  });
+  return {name:'ARMA', valo:valo, fact:fact};
+}
+function valoIrve(){
+  var valo=0, fact=0;
+  cpsOfSvc('IRVE').forEach(function(cp){
+    (gAff(cp)||[]).forEach(function(a){
+      if(irvePhaseNum(a)===0) return;                // dossier supprime
+      var iv=a.irve||{};
+      ['ETD','CRD','TRX','RCP'].forEach(function(uo){
+        var estNA=false, fa=0;
+        Object.keys(iv.fa||{}).forEach(function(k){
+          if(k.slice(-3)!==uo) return;
+          if(String(iv.fa[k]).trim().toUpperCase()==='NA'){ estNA=true; return; }
+          fa=Math.max(fa, irveCoef(iv.fa[k]));
+        });
+        if(estNA) return;
+        var prix=irvePrixUoAff(a,uo);
+        if(!prix) return;
+        var av=0;
+        if(uo==='ETD') av=(irvePhaseNum(a)>=3?1:0);
+        else if(uo==='CRD') av=(irvePhaseNum(a)>=6?1:0);
+        else { var pp=irvePhasePct(a, uo==='TRX'?'Travaux':'Réception'); av=(pp===null?0:pp/100); }
+        valo += prix*Math.max(0,Math.min(1,av));
+        fact += prix*Math.min(1,fa);
+      });
+    });
+  });
+  return {name:'IRVE', valo:valo, fact:fact};
+}
+function valoIrveBo(){
+  var m=tacheMontant(), valo=0, fact=0;
+  IRVE_TACHES.forEach(function(t){ valo+=m; if(t.crd) fact+=m; });
+  return {name:'IRVE back-office', valo:valo, fact:fact};
+}
+function valoMeca(){
+  var valo=0, fact=0;
+  cpsOfSvc('MECA').forEach(function(cp){
+    (gAff(cp)||[]).forEach(function(a){
+      var mc=a.meca||{};
+      MECA_UOS.forEach(function(u){
+        valo += (u.prix||0)*mecaPctUo(a,u.k)/100;
+        if((mc.fa||{})[u.k]) fact += (u.prix||0);
+      });
+    });
+  });
+  return {name:'RATP', valo:valo, fact:fact};
+}
+function valoSynth(){
+  var b=[valoArma(), valoIrve(), valoIrveBo(), valoMeca()];
+  var v=b.reduce(function(s,x){ return s+x.valo; },0);
+  var f=b.reduce(function(s,x){ return s+x.fact; },0);
+  return {blocs:b, valo:v, fact:f, encours:v-f};
+}
+
+// Dernier instantane portant une valorisation, qui sert de point de depart
+// pour mesurer ce qui a ete produit depuis.
+function dernierInstantaneValo(){
+  for(var i=FACTU_HIST.length-1;i>=0;i--){
+    if(FACTU_HIST[i] && typeof FACTU_HIST[i].valo==='number') return FACTU_HIST[i];
+  }
+  return null;
+}
+// Valorise du mois : ecart entre la valorisation d'aujourd'hui et celle
+// figee au dernier instantane. Sans instantane, la notion n'a pas de sens
+// et on renvoie null plutot qu'un chiffre trompeur.
+function valoDuMois(){
+  var v=valoSynth(), ref=dernierInstantaneValo(), parBloc={};
+  v.blocs.forEach(function(b){
+    if(!ref){ parBloc[b.name]=null; return; }
+    var av=0;
+    (ref.valoDetail||[]).forEach(function(x){ if(x.n===b.name) av=x.v||0; });
+    parBloc[b.name]=b.valo-av;
+  });
+  return {ref:ref, courant:v, parBloc:parBloc,
+          total: ref ? v.valo-(ref.valo||0) : null};
+}
+
 
 function nomFichier(base, svc){
   var d=new Date();
@@ -9154,6 +9260,8 @@ function rSynthFactu(){
   var body=document.createElement('div'); card.appendChild(body);
 
   var s=synthFactu();
+  var vm=valoDuMois();                 // valorisation courante et ecart depuis le dernier instantane
+  var vs=vm.courant;
   var COL={'ARMA':svcInfo('ARMA'),'IRVE':svcInfo('IRVE'),
            'IRVE back-office':{fg:'#7C3AED',bg:'#EDE9FE'},'RATP':svcInfo('MECA')};
 
@@ -9162,11 +9270,22 @@ function rSynthFactu(){
   grid.style.cssText='display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;padding:10px 12px 4px';
   s.blocs.forEach(function(b){
     var c=COL[b.name]||{fg:'var(--t2)',bg:'var(--s2)'};
+    var vb=null; vs.blocs.forEach(function(x){ if(x.name===b.name) vb=x; });
+    var dm=vm.parBloc[b.name];
     var d=document.createElement('div');
     d.style.cssText='border:1.5px solid '+c.fg+'33;background:'+c.bg+';border-radius:11px;padding:9px 11px';
-    d.innerHTML='<div style="font-size:9.5px;font-weight:800;color:'+c.fg+';text-transform:uppercase">'+b.name+'</div>'
+    var html='<div style="font-size:9.5px;font-weight:800;color:'+c.fg+';text-transform:uppercase">'+b.name+'</div>'
       +'<div style="font-size:20px;font-weight:900;color:'+c.fg+';margin:3px 0 1px">'+fmtEur(b.total)+'</div>'
       +'<div style="font-size:9.5px;color:'+c.fg+'cc">'+b.lignes+' UO \u00e0 facturer</div>';
+    if(vb){
+      html+='<div style="margin-top:6px;padding-top:6px;border-top:1px dashed '+c.fg+'44;'
+        +'font-size:9.5px;color:'+c.fg+'cc;line-height:1.6">'
+        +'<div>Valoris\u00e9 du mois <b style="color:'+c.fg+'">'
+        +(dm===null?'\u2014':fmtEur(Math.round(dm)))+'</b></div>'
+        +'<div>Encours <b style="color:'+c.fg+'">'+fmtEur(Math.round(vb.valo-vb.fact))+'</b></div>'
+        +'</div>';
+    }
+    d.innerHTML=html;
     grid.appendChild(d);
   });
   body.appendChild(grid);
@@ -9178,6 +9297,33 @@ function rSynthFactu(){
     +'<span style="font-size:10px;color:var(--green)">'+s.uo+' UO</span>'
     +'<span style="font-size:18px;font-weight:900;color:var(--green)">'+fmtEur(s.total)+'</span>';
   body.appendChild(tot);
+
+  // Valorisation : ce qui est produit, et ce qui est produit sans etre facture
+  var vtot=document.createElement('div');
+  vtot.style.cssText='margin:0 12px 10px;padding:10px 12px;border-radius:10px;background:var(--bl);'
+    +'border:1.5px solid var(--bm);display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:8px';
+  function blocValo(lib,val,aide){
+    return '<div title="'+aide+'"><div style="font-size:9.5px;font-weight:800;color:var(--blue);'
+      +'text-transform:uppercase;letter-spacing:.04em">'+lib+'</div>'
+      +'<div style="font-size:17px;font-weight:900;color:var(--blue);margin-top:2px">'+val+'</div></div>';
+  }
+  vtot.innerHTML=
+     blocValo('Valorisé du mois', vm.total===null?'—':fmtEur(Math.round(vm.total)),
+              vm.ref?('Produit depuis l’instantané du '+vm.ref.date):'Aucun instantané enregistré')
+    +blocValo('Valorisé total', fmtEur(Math.round(vs.valo)),
+              'Prix de l’UO multiplié par son avancement')
+    +blocValo('Déjà facturé', fmtEur(Math.round(vs.fact)),
+              'Part des UO déjà facturée')
+    +blocValo('Encours', fmtEur(Math.round(vs.encours)),
+              'Valorisé total moins déjà facturé');
+  body.appendChild(vtot);
+  if(vm.total===null){
+    var avv=document.createElement('div');
+    avv.style.cssText='margin:-4px 12px 10px;font-size:9.5px;color:var(--t3);line-height:1.5';
+    avv.textContent='Le valorisé du mois se mesure par rapport au dernier instantané enregistré. '
+      +'Enregistre la synthèse en fin de mois pour l’obtenir.';
+    body.appendChild(avv);
+  }
 
   // Actions
   // Exports par périmètre
@@ -9236,7 +9382,11 @@ function rSynthFactu(){
     uiPrompt('Enregistrer la synth\u00e8se','Facturation '+moisLabel(moisCourant()),function(lib){
       FACTU_HIST.push({date:dISO(), libelle:String(lib).trim()||moisLabel(moisCourant()),
         total:Math.round(s.total), uo:s.uo,
-        detail:s.blocs.map(function(b){ return {n:b.name, t:Math.round(b.total), u:b.lignes}; })});
+        detail:s.blocs.map(function(b){ return {n:b.name, t:Math.round(b.total), u:b.lignes}; }),
+        // Valorisation figee au meme instant, pour mesurer le produit du mois suivant
+        valo:Math.round(vs.valo), fact:Math.round(vs.fact), encours:Math.round(vs.encours),
+        valoDetail:vs.blocs.map(function(b){
+          return {n:b.name, v:Math.round(b.valo), f:Math.round(b.fact)}; })});
       sbSave(); rSynthFactu();
       showToast('Synth\u00e8se enregistr\u00e9e');
     },{message:'Donnez un intitul\u00e9 \u00e0 cette synth\u00e8se.'});
@@ -9266,7 +9416,8 @@ function rSynthFactu(){
     var w=document.createElement('div'); w.style.cssText='overflow-x:auto;padding-bottom:8px';
     var tb=document.createElement('table'); tb.className='fa-tbl';
     var th=document.createElement('thead'), tr=document.createElement('tr');
-    [['Date',''],['Intitul\u00e9','l'],['ARMA',''],['IRVE',''],['IRVE BO',''],['RATP',''],['Total',''],['','']]
+    [['Date',''],['Intitul\u00e9','l'],['ARMA',''],['IRVE',''],['IRVE BO',''],['RATP',''],['Total',''],
+     ['Valoris\u00e9',''],['Factur\u00e9',''],['Encours',''],['','']]
     .forEach(function(c){ var x=document.createElement('th'); if(c[1])x.className=c[1]; x.textContent=c[0]; tr.appendChild(x); });
     th.appendChild(tr); tb.appendChild(th);
     var tbo=document.createElement('tbody');
@@ -9282,6 +9433,10 @@ function rSynthFactu(){
         row.appendChild(cel(d?fmtEur(d.t):'\u2014'));
       });
       row.appendChild(cel(fmtEur(x.total),'','font-weight:800;color:var(--green)'));
+      // Valorisation figee dans l'instantane. Les anciennes lignes n'en ont pas.
+      row.appendChild(cel(typeof x.valo==='number'?fmtEur(x.valo):'—','','color:var(--blue)'));
+      row.appendChild(cel(typeof x.fact==='number'?fmtEur(x.fact):'—','','color:var(--blue)'));
+      row.appendChild(cel(typeof x.encours==='number'?fmtEur(x.encours):'—','','font-weight:800;color:var(--blue)'));
       var tda=document.createElement('td');
       var del=document.createElement('button');
       del.style.cssText='border:1px solid var(--b2);background:var(--s2);color:var(--red);border-radius:5px;'
