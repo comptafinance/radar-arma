@@ -7543,10 +7543,95 @@ function rKpiSvcBar(){
     b.addEventListener('click',function(){
       KPI_SVC=s.k;
       rKpiSvcBar();
+      try{ rKpiOpsRef(); }catch(e){}
       try{ rPerf(); rQualite(); }catch(e){}
     });
     el.appendChild(b);
   });
+}
+
+// ══════════════════════════════════════════════════════════════
+// KPI OPÉRATIONNELS DANS L'ONGLET RÉFÉRENT
+// Mêmes chiffres que dans le TDB, réduits à ce qu'a demandé Alexis
+// le 03/09/2026 : complétude des onglets et qualité, pour la seule
+// entité choisie dans la barre au-dessus. Le conteneur est créé en
+// JavaScript, comme dans le TDB, pour ne pas toucher au balisage.
+// ══════════════════════════════════════════════════════════════
+function rKpiOpsRef(){
+  var ancre=document.getElementById('ref-perf'); if(!ancre) return;
+  var host=document.getElementById('ref-kpiops');
+  if(!host){
+    host=document.createElement('div');
+    host.id='ref-kpiops';
+    ancre.parentNode.insertBefore(host, ancre);
+  }
+  host.innerHTML='';
+  var sv=svcInfo(KPI_SVC);
+  var carte=carteKpi(sv.court+' — complétude et qualité', sv);
+
+  if(KPI_SVC==='ARMA'){
+    var k=kpiOpsArma();
+    carte.firstChild.textContent='ARMA — '+k.n+' affaires ouvertes';
+    carte.appendChild(sousTitre('Complétude des onglets'));
+    var g1=grilleTuiles();
+    [['Temps passé',k.completude.temps],['Synoptique',k.completude.syno],
+     ['Planning',k.completude.planning],['Budget',k.completude.budget]]
+    .forEach(function(x){
+      g1.appendChild(tuilePct(x[0], x[1],
+        (x[1]===null?'':x[1]+' % des '+k.n+' affaires ouvertes ont au moins une donnée saisie')));
+    });
+    carte.appendChild(g1);
+    carte.appendChild(sousTitre('Qualité'));
+    var g2=grilleTuiles();
+    g2.appendChild(tuileFeu('Météo rouge', k.meteoRouge, 'Affaires ouvertes en météo rouge', [1,5]));
+    g2.appendChild(tuile('Délai moyen', k.delaiMoy, 'Jours entre affectation et MEX réalisée, sur '+k.nDelai+' affaires', null, ' j'));
+    g2.appendChild(tuileListe(
+      tuileFeu('Délai > 100 j', k.plus100.length, 'Raccordements de plus de 100 jours', [1,5]),
+      'Affaires à plus de 100 jours de raccordement', k.plus100));
+    g2.appendChild(tuileFeu('Taux de chute', k.tauxChute, 'Chutes de chantier rapportées au nombre d’affaires', [5,10], ' %'));
+    g2.appendChild(tuilePct('Respect DIE', k.respectDie, 'Réalisé dans l’enveloppe DIE, sur '+k.dieTot+' dossiers'));
+    g2.appendChild(tuile('Écart DIE moyen', k.dieEcartMoyen, 'Écart moyen entre réalisé et DIE', null, ' %'));
+    g2.appendChild(tuileListe(
+      tuileFeu('Sans action > 15 j', k.sansAction15, 'Dernière date connue de plus de 15 jours', [1,5]),
+      'Affaires sans action depuis plus de 15 jours', k.sansActionListe));
+    g2.appendChild(tuileFeu('Sans date connue', k.sansDate, 'Affaires sans aucune date renseignée', [1,10]));
+    carte.appendChild(g2);
+  } else if(KPI_SVC==='IRVE'){
+    var i=kpiOpsIrve();
+    carte.firstChild.textContent='IRVE — '+i.n+' affaires';
+    carte.appendChild(sousTitre('Complétude'));
+    var h1=grilleTuiles();
+    h1.appendChild(tuilePct('Maj. comm. remplie', i.completude,
+      'Part des affaires dont le commentaire d’avancement a une date de mise à jour'));
+    h1.appendChild(tuileFeu('Cases vides', i.majcomVides, 'Affaires sans date de mise à jour', [1,10]));
+    carte.appendChild(h1);
+    carte.appendChild(sousTitre('Qualité'));
+    var h2=grilleTuiles();
+    h2.appendChild(tuileListe(
+      tuileFeu('Sans action > 15 j', i.sansAction15, 'Dernière date connue de plus de 15 jours', [1,5]),
+      'Dossiers IRVE sans action depuis plus de 15 jours', i.sansActionListe));
+    h2.appendChild(tuileFeu('Sans date connue', i.sansDate, 'Dossiers sans aucune date renseignée', [1,10]));
+    h2.appendChild(tuile('Tâches BO', i.taches, 'Nombre total de tâches back-office'));
+    h2.appendChild(tuileFeu('Écart Hors PF', i.horsPf, 'Tâches portant sur une affaire de notre portefeuille', [1,3]));
+    h2.appendChild(tuileFeu('Affaires > 10 tâches', i.tropTaches, 'Affaires cumulant plus de dix tâches back-office', [1,3]));
+    carte.appendChild(h2);
+  } else {
+    var m=kpiOpsMeca();
+    carte.firstChild.textContent='RATP — '+m.n+' affaires';
+    carte.appendChild(sousTitre('Complétude'));
+    var j1=grilleTuiles();
+    j1.appendChild(tuilePct('Commentaires remplis', m.completude, 'Part des lignes du tableau RATP portant un commentaire'));
+    j1.appendChild(tuileFeu('Cases vides', m.comVides, 'Lignes sans commentaire sur '+m.comTot, [1,5]));
+    carte.appendChild(j1);
+    carte.appendChild(sousTitre('Qualité'));
+    var j2=grilleTuiles();
+    j2.appendChild(tuileListe(
+      tuileFeu('Sans action > 7 j', m.sansAction7, 'Dernière date connue de plus de 7 jours', [1,3]),
+      'Affaires RATP sans action depuis plus de 7 jours', m.sansActionListe));
+    j2.appendChild(tuileFeu('Sans date connue', m.sansDate, 'Affaires sans aucune date renseignée', [1,3]));
+    carte.appendChild(j2);
+  }
+  host.appendChild(carte);
 }
 
 function rPerf(){
@@ -7767,7 +7852,30 @@ var COMP_GROUPES_MECA = [
   ]}
 ];
 var COMP_REFS = {ARMA:COMP_GROUPES, IRVE:COMP_GROUPES_IRVE, MECA:COMP_GROUPES_MECA};
-function compGroupes(svc){ return COMP_REFS[svc||COMP_SVC]||COMP_GROUPES; }
+// Référentiel « Tous » : l'union des trois, une famille par entité pour
+// ce qui lui est propre, et une famille commune en tête pour ce qui est
+// partagé. Permet de tenir toute la matrice en une seule passe.
+function compGroupesTous(){
+  var vus={}, communs=[], propres={ARMA:[], IRVE:[], MECA:[]};
+  ['ARMA','IRVE','MECA'].forEach(function(k){
+    COMP_REFS[k].forEach(function(g){ g.items.forEach(function(it){
+      if(vus[it.l]) return;
+      vus[it.l]=1;
+      if(estSpecifique(it.l)) propres[k].push(it); else communs.push(it);
+    }); });
+  });
+  var out=[];
+  if(communs.length) out.push({cat:'Communes aux trois entités', items:communs});
+  ['ARMA','IRVE','MECA'].forEach(function(k){
+    if(propres[k].length) out.push({cat:'Propres à '+svcInfo(k).court, items:propres[k]});
+  });
+  return out;
+}
+function compGroupes(svc){
+  var k=svc||COMP_SVC;
+  if(k==='TOUS') return compGroupesTous();
+  return COMP_REFS[k]||COMP_GROUPES;
+}
 function competencesDe(svc){
   var l=[]; compGroupes(svc).forEach(function(g){
     g.items.forEach(function(i){ if(l.indexOf(i.l)<0) l.push(i.l); }); });
@@ -7910,32 +8018,40 @@ function rRadarComp(host){
   // Sélecteur de périmètre
   var sb=document.createElement('div');
   sb.style.cssText='display:flex;gap:6px;padding:8px 12px 4px;flex-wrap:wrap';
-  SERVICES.forEach(function(s){
+  // « Tous » réunit les trois référentiels pour tenir la matrice en une passe
+  SERVICES.concat([{k:'TOUS', court:'Tous', fg:'var(--brand)', bg:'var(--s3)',
+                    l:'Les trois référentiels réunis'}]).forEach(function(s){
     var on=(COMP_SVC===s.k);
     var b=document.createElement('button');
     b.style.cssText='font-size:10px;font-weight:800;padding:5px 12px;border-radius:8px;cursor:pointer;'
       +'border:1.5px solid '+(on?s.fg:'var(--b2)')+';background:'+(on?s.bg:'var(--s)')
       +';color:'+(on?s.fg:'var(--t3)')+';font-family:inherit';
     b.textContent=s.court;
+    b.title=s.l||s.court;
     b.addEventListener('click',function(){ COMP_SVC=s.k; COMP_ZOOM=null; rComp(); });
     sb.appendChild(b);
   });
   host.appendChild(sb);
 
   // Rappel de la r\u00e8gle de port\u00e9e, valable sur les trois r\u00e9f\u00e9rentiels
+  var tous=(COMP_SVC==='TOUS');
   var lgP=document.createElement('div');
   lgP.style.cssText='font-size:9px;color:var(--t3);padding:0 12px 4px;line-height:1.5';
   var nCom=competencesDe(COMP_SVC).filter(function(c){ return !estSpecifique(c); }).length;
   var nSp =competencesDe(COMP_SVC).length-nCom;
-  lgP.innerHTML='<b style="color:'+svcInfo(COMP_SVC).fg+'">\u2605</b> sp\u00e9cifique \u00e0 '
-    +svcInfo(COMP_SVC).court+' ('+nSp+') &nbsp;\u00b7&nbsp; <b>\u21c4</b> commune, la note se reporte '
-    +'sur les autres matrices ('+nCom+')';
+  lgP.innerHTML= tous
+    ? '<b style="color:var(--brand)">\u2605</b> propre \u00e0 une seule entit\u00e9 ('+nSp+') &nbsp;\u00b7&nbsp; '
+      +'<b>\u21c4</b> commune, la note vaut pour les autres matrices ('+nCom+') &nbsp;\u00b7&nbsp; '
+      +'toute la matrice se tient ici en une seule passe'
+    : '<b style="color:'+svcInfo(COMP_SVC).fg+'">\u2605</b> sp\u00e9cifique \u00e0 '
+      +svcInfo(COMP_SVC).court+' ('+nSp+') &nbsp;\u00b7&nbsp; <b>\u21c4</b> commune, la note se reporte '
+      +'sur les autres matrices ('+nCom+')';
   host.appendChild(lgP);
   if(COMP_SVC!=='ARMA'){
     var w=document.createElement('div');
     w.style.cssText='margin:2px 12px 8px;padding:7px 10px;border:1px solid #EAB308;border-radius:9px;'
       +'background:#FEF3C7;color:#713F12;font-size:10px;line-height:1.5';
-    w.textContent='R\u00e9f\u00e9rentiel propos\u00e9 par Astridsen, \u00e0 faire valider par Alexis : '
+    w.textContent='R\u00e9f\u00e9rentiels IRVE et RATP propos\u00e9s par Astridsen, \u00e0 faire valider par Alexis : '
       +'les familles et les pr\u00e9-requis sont une premi\u00e8re trame, pas la matrice ENEDIS officielle.';
     host.appendChild(w);
   }
@@ -8068,18 +8184,22 @@ function rComp(){
       +'text-overflow:ellipsis;white-space:nowrap';
     // Port\u00e9e de la comp\u00e9tence : propre \u00e0 ce p\u00e9rim\u00e8tre, ou partag\u00e9e et
     // donc synchronis\u00e9e avec les autres matrices.
-    var pt=portee(c), spec=estSpecifique(c);
+    var pt=portee(c), spec=estSpecifique(c), tousRef=(COMP_SVC==='TOUS');
+    var noms=pt.map(function(k){ return svcInfo(k).court; });
     var autres=pt.filter(function(k){ return k!==COMP_SVC; })
                  .map(function(k){ return svcInfo(k).court; });
     var mark=document.createElement('span');
     mark.style.cssText='display:inline-block;width:13px;font-weight:900;color:'
-      +(spec?svcInfo(COMP_SVC).fg:'var(--t3)');
+      +(spec?(tousRef?(svcInfo(pt[0])||{fg:'var(--t2)'}).fg:svcInfo(COMP_SVC).fg):'var(--t3)');
     mark.textContent=spec?'\u2605':'\u21c4';
     c0.appendChild(mark);
     c0.appendChild(document.createTextNode(c));
     c0.title=c+'\nPr\u00e9-requis : '+compRequis(c)+'\n'
-      +(spec?'\u2605 Sp\u00e9cifique \u00e0 '+svcInfo(COMP_SVC).court
-            :'\u21c4 Commune avec '+autres.join(', ')+' \u2014 la note se reporte automatiquement');
+      +(spec
+         ? '\u2605 Sp\u00e9cifique \u00e0 '+(tousRef?noms.join(', '):svcInfo(COMP_SVC).court)
+         : '\u21c4 Commune \u00e0 '+(tousRef?noms.join(', ')
+                                  :('cette matrice et '+autres.join(', ')))
+           +' \u2014 la note se reporte automatiquement');
     row.appendChild(c0);
     var somme=0, nb=0;
     gens.forEach(function(p){
@@ -9563,10 +9683,11 @@ function prevFactu(cp, nMois){
   });
   return out;
 }
-// Toutes les UO prévues sur un mois donné, tous portefeuilles confondus
-function uoDuMois(i){
+// Toutes les UO prévues sur un mois donné. svc facultatif : une seule entité.
+function uoDuMois(i, svc){
   var out=[];
   Object.keys(DATA).forEach(function(cp){
+    if(svc && svcOf(cp)!==svc) return;
     prevFactuLignes(cp).forEach(function(l){
       if(i>=l.deb && i<l.deb+l.dur) out.push(l);
     });
@@ -9669,7 +9790,7 @@ function moisLabel(i){
   var d=new Date(); d.setDate(1); d.setMonth(d.getMonth()+i);
   return moisCourt(d);
 }
-function moisUoModal(i, N){
+function moisUoModal(i, N, svc, attendu){
   var ov=document.createElement('div');
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9400;display:flex;'
     +'align-items:center;justify-content:center;padding:16px';
@@ -9688,18 +9809,56 @@ function moisUoModal(i, N){
     +'align-items:center;gap:10px;flex-wrap:wrap;flex-shrink:0';
 
   function dessiner(){
-    var lignes=uoDuMois(i);
+    var lignes=uoDuMois(i, svc);
     var tot=lignes.reduce(function(s,l){ return s+l.mens; },0);
+    var svi=svc?svcInfo(svc):null;
     hdr.innerHTML='<div style="font-size:13px;font-weight:800;color:var(--t)">'
+      +(svi?'<span style="font-size:10px;font-weight:800;color:'+svi.fg+';background:'+svi.bg
+            +';padding:2px 8px;border-radius:7px;margin-right:7px">'+svi.court+'</span>':'')
       +moisLabel(i)+' — '+fmtEur(Math.round(tot))+'</div>'
       +'<div style="font-size:10.5px;color:var(--t3);margin-top:2px">'
-      +lignes.length+' UO en production ce mois-là. Choisir un mois dans la liste déroulante '
-      +'déplace l’UO ; la facturation suit.</div>';
+      +lignes.length+' UO en production ce mois-là'+(svi?' sur '+svi.court:'')
+      +'. Choisir un mois dans la liste déroulante déplace l’UO ; la facturation suit.</div>';
     corps.innerHTML='';
     if(!lignes.length){
       corps.innerHTML='<div style="padding:22px;text-align:center;color:var(--t3);font-size:11px;'
         +'font-style:italic">Aucune UO prévue sur ce mois</div>';
       return;
+    }
+    // Récapitulatif par UO : d'où vient le montant du mois
+    var parUo={};
+    lignes.forEach(function(l){
+      var k=libelleUo(l);
+      if(!parUo[k]) parUo[k]={l:k, n:0, eur:0};
+      parUo[k].n++; parUo[k].eur+=l.mens;
+    });
+    var rec=Object.keys(parUo).map(function(k){ return parUo[k]; })
+                  .sort(function(a,b){ return b.eur-a.eur; });
+    var bloc=document.createElement('div');
+    bloc.style.cssText='display:flex;gap:5px;flex-wrap:wrap;padding:9px 15px;'
+      +'border-bottom:1px solid var(--b);background:var(--s2)';
+    rec.forEach(function(r){
+      var s=document.createElement('span');
+      s.style.cssText='display:inline-flex;align-items:center;gap:5px;font-size:9.5px;font-weight:800;'
+        +'padding:4px 9px;border-radius:8px;background:var(--s);border:1px solid var(--b);color:var(--t2)';
+      s.innerHTML=r.l+' <b style="color:var(--green)">'+fmtEur(Math.round(r.eur))+'</b>'
+        +' <span style="color:var(--t3);font-weight:600">×'+r.n+'</span>';
+      s.title=r.n+' UO '+r.l+' produites ce mois-là, pour '+fmtEur(Math.round(r.eur));
+      bloc.appendChild(s);
+    });
+    corps.appendChild(bloc);
+    // Le graphique peut inclure les affectations prévisionnelles, qui ne
+    // correspondent à aucune UO existante : on l'annonce plutôt que de
+    // laisser un écart inexpliqué entre la cellule et cette liste.
+    var ecart = (typeof attendu==='number') ? Math.round(attendu-tot) : 0;
+    if(ecart>1){
+      var na=document.createElement('div');
+      na.style.cssText='padding:7px 15px;font-size:9.5px;color:#713F12;background:#FEF3C7;'
+        +'border-bottom:1px solid var(--b);line-height:1.5';
+      na.textContent='Sur les '+fmtEur(Math.round(attendu))+' du graphique, '
+        +fmtEur(ecart)+' viennent des affectations prévisionnelles, des affaires pas encore '
+        +'créées. Seules les '+fmtEur(Math.round(tot))+' d’UO réelles sont listées ci-dessous.';
+      corps.appendChild(na);
     }
     lignes.forEach(function(l){
       var sv=svcInfo(svcOf(l.cp));
@@ -9888,25 +10047,32 @@ function rPrevFactu(){
   });
   th.appendChild(tr); tbl.appendChild(th);
   var tb=document.createElement('tbody');
-  function ligne(lib, vals, coul, gras){
+  // svc renseigné : chaque cellule ouvre le détail des UO de ce mois
+  function ligne(lib, vals, coul, gras, svc){
     var r=document.createElement('tr');
     var c0=document.createElement('td'); c0.className='l';
     c0.style.cssText='font-size:9.5px;font-weight:'+(gras?'800':'700');
     c0.textContent=lib; r.appendChild(c0);
-    vals.forEach(function(v){
+    vals.forEach(function(v,ix){
       var c=document.createElement('td');
       c.style.cssText='font-size:9px;font-weight:'+(gras?'800':'600')+';color:'+(typeof coul==='function'?coul(v):coul);
       c.textContent=Math.round(v/1000)+'k';
       c.title=fmtEur(v);
+      if(svc!==undefined && v>0){
+        c.style.cursor='pointer';
+        c.style.textDecoration='underline dotted';
+        c.title=fmtEur(v)+'\nCliquer pour voir le détail de ce montant';
+        c.addEventListener('click',function(){ moisUoModal(ix, N, svc, v); });
+      }
       r.appendChild(c);
     });
     tb.appendChild(r);
   }
   SERVICES.forEach(function(s){
     if(!parSvc[s.k].some(function(x){ return x>0; })) return;
-    ligne(s.court, parSvc[s.k], s.fg);
+    ligne(s.court, parSvc[s.k], s.fg, false, s.k);
   });
-  ligne('CA total', total, 'var(--t)', true);
+  ligne('CA total', total, 'var(--t)', true, null);
   ligne('Co\u00fbt \u00e9quipe', total.map(function(){ return cout; }), 'var(--t3)');
   ligne('Marge', total.map(function(v){ return v-cout; }),
         function(v){ return v>=0?'var(--green)':'var(--red)'; }, true);
@@ -10907,6 +11073,7 @@ function changerMdpModal(){
 function rRef(){
   try{ rRefNav(); }catch(e){}
   try{ rKpiSvcBar(); }catch(e){}
+  try{ rKpiOpsRef(); }catch(e){ console.warn('rKpiOpsRef',e); }
   try{ rPerf(); }catch(e){ console.warn('rPerf',e); }
   try{ rQualite(); }catch(e){ console.warn('rQualite',e); }
   try{ rComp(); }catch(e){ console.warn('rComp',e); }
@@ -12633,8 +12800,9 @@ function _scoreCPMetrics(cp){
 
 // ── TDB : agrège Suivi CP + Planning/Agenda + Budget ───────────
 function rTDB(){
+  // Les trois zones « KPI <entité> » ont été retirées le 03/09/2026 :
+  // les KPI opérationnels les remplacent et les recoupaient déjà.
   try{ rKpiOps(); }catch(e){ console.warn('rKpiOps',e); }
-  try{ rKpiZones(); }catch(e){ console.warn('rKpiZones',e); }
   try{ rScores(); }catch(e){ console.warn('rScores',e); }
   try{ rAgenda(); }catch(e){ console.warn('rAgenda',e); }
 
@@ -12671,6 +12839,106 @@ function tuile(lib, val, aide, seuil, suffixe){
     +'<div style="font-size:17px;font-weight:900;color:'+co+';margin-top:2px">'
     +(val===null||val===undefined?'—':val)+(suffixe||'')+'</div>';
   return d;
+}
+// ── Briques visuelles des KPI ─────────────────────────────────
+// Couleur d'un pourcentage de complétude : rouge, orange, vert.
+function coulPct(p){
+  if(p===null||p===undefined) return 'var(--b2)';
+  return p>=70 ? 'var(--green)' : p>=40 ? 'var(--amber)' : 'var(--red)';
+}
+// Couleur d'un compteur d'anomalies : vert à zéro, puis orange, puis rouge.
+function coulSeuil(v, seuil){
+  if(typeof v!=='number') return 'var(--t)';
+  if(!seuil) return 'var(--t)';
+  if(v>=seuil[1]) return 'var(--red)';
+  if(v>=seuil[0]) return 'var(--amber)';
+  return 'var(--green)';
+}
+// Petite jauge horizontale
+function jauge(pct, coul, hauteur){
+  var d=document.createElement('div');
+  d.style.cssText='margin-top:5px;height:'+(hauteur||5)+'px;border-radius:3px;'
+    +'background:var(--s3);overflow:hidden';
+  var f=document.createElement('div');
+  f.style.cssText='height:100%;border-radius:3px;background:'+coul+';width:'
+    +Math.max(0,Math.min(100,pct||0))+'%';
+  d.appendChild(f);
+  return d;
+}
+// Tuile avec pourcentage et jauge
+function tuilePct(lib, pct, aide){
+  var t=tuile(lib, pct, aide, null, ' %');
+  var v=t.lastElementChild;
+  if(v) v.style.color=coulPct(pct);
+  t.appendChild(jauge(pct, coulPct(pct)));
+  return t;
+}
+// Tuile chiffrée avec un liseré de couleur à gauche, qui donne le verdict
+function tuileFeu(lib, val, aide, seuil, suffixe){
+  var co=coulSeuil(val, seuil);
+  var t=tuile(lib, val, aide, null, suffixe);
+  t.style.borderLeft='3px solid '+(seuil?co:'var(--b)');
+  var v=t.lastElementChild;
+  if(v && seuil) v.style.color=co;
+  return t;
+}
+// Barre empilée : parts = [{l, v, fg, bg, clic}]
+function barreEmpilee(parts, aideSuffixe){
+  var tot=parts.reduce(function(s,p){ return s+(p.v||0); },0);
+  var box=document.createElement('div');
+  box.style.cssText='padding:4px 12px 2px';
+  var bar=document.createElement('div');
+  bar.style.cssText='display:flex;height:15px;border-radius:5px;overflow:hidden;background:var(--s3)';
+  parts.forEach(function(p){
+    if(!p.v) return;
+    var seg=document.createElement('div');
+    seg.style.cssText='background:'+p.fg+';flex:'+p.v+' 0 0;min-width:3px';
+    seg.title=p.l+' : '+p.v+(tot?' ('+Math.round(p.v/tot*100)+' %)':'')
+      +(aideSuffixe?'\n'+aideSuffixe:'');
+    if(p.clic){ seg.style.cursor='pointer'; seg.addEventListener('click',p.clic); }
+    bar.appendChild(seg);
+  });
+  box.appendChild(bar);
+  var lg=document.createElement('div');
+  lg.style.cssText='display:flex;gap:5px;flex-wrap:wrap;margin-top:6px';
+  parts.forEach(function(p){
+    if(!p.v) return;
+    var s=document.createElement('span');
+    s.style.cssText='display:inline-flex;align-items:center;gap:4px;font-size:9px;font-weight:800;'
+      +'padding:3px 8px;border-radius:7px;background:'+p.bg+';color:'+p.fg;
+    s.innerHTML=p.l+' <b style="font-size:10.5px">'+p.v+'</b>';
+    if(p.clic){ s.style.cursor='pointer'; s.addEventListener('click',p.clic); }
+    lg.appendChild(s);
+  });
+  box.appendChild(lg);
+  return box;
+}
+// Barres horizontales comparées, pour la charge par UO
+function barresUo(items, coul){
+  var max=Math.max.apply(null, items.map(function(x){ return x.v||0; }).concat([1]));
+  var box=document.createElement('div');
+  box.style.cssText='padding:4px 12px 6px;display:flex;flex-direction:column;gap:4px';
+  items.forEach(function(it){
+    var l=document.createElement('div');
+    l.style.cssText='display:flex;align-items:center;gap:7px';
+    l.title=it.aide||'';
+    var n=document.createElement('span');
+    n.style.cssText='font-size:9px;font-weight:800;color:var(--t3);width:52px;flex-shrink:0;'
+      +'text-transform:uppercase;letter-spacing:.03em';
+    n.textContent=it.l;
+    var t=document.createElement('div');
+    t.style.cssText='flex:1;height:11px;border-radius:3px;background:var(--s3);overflow:hidden';
+    var f=document.createElement('div');
+    f.style.cssText='height:100%;background:'+coul+';opacity:.85;width:'
+      +Math.round((it.v||0)/max*100)+'%';
+    t.appendChild(f);
+    var v=document.createElement('span');
+    v.style.cssText='font-size:10px;font-weight:900;color:var(--t2);width:30px;text-align:right;flex-shrink:0';
+    v.textContent=it.v;
+    l.appendChild(n); l.appendChild(t); l.appendChild(v);
+    box.appendChild(l);
+  });
+  return box;
 }
 // Rend une tuile cliquable, qui ouvre la liste des affaires concernees
 function tuileListe(t, titre, items){
@@ -12762,39 +13030,42 @@ function rKpiOps(){
   [['Temps passé',k.completude.temps],['Synoptique',k.completude.syno],
    ['Planning',k.completude.planning],['Budget',k.completude.budget]]
   .forEach(function(x){
-    g1.appendChild(tuile(x[0], x[1], x[1]===null?'':x[1]+' % des affaires ouvertes ont au moins une donnée saisie', null, ' %'));
+    g1.appendChild(tuilePct(x[0], x[1],
+      (x[1]===null?'':x[1]+' % des '+k.n+' affaires ouvertes ont au moins une donnée saisie')
+      +'\nRouge sous 40 %, orange sous 70 %, vert au-dessus'));
   });
   cA.appendChild(g1);
 
-  cA.appendChild(sousTitre('Charge — par état de l’affaire'));
-  var g2=grilleTuiles();
-  g2.appendChild(tuile('Total', k.total, 'Toutes affaires, clôturées comprises'));
-  Object.keys(k.parEtat).forEach(function(e){
-    g2.appendChild(tuile(e, k.parEtat[e], 'Affaires en phase '+e));
-  });
-  cA.appendChild(g2);
+  cA.appendChild(sousTitre('Charge — par état de l’affaire ('+k.total+')'));
+  cA.appendChild(barreEmpilee(Object.keys(k.parEtat).map(function(e){
+    var c=AG_PHASE_COLORS[e]||{fg:'var(--t2)',bg:'var(--s2)',l:e};
+    return {l:c.l, v:k.parEtat[e], fg:c.fg, bg:c.bg, clic:function(){
+      setService('ARMA'); AG_PHASE_FILTER=e; showV('p');
+      setTimeout(function(){ try{ rAffGrid(); rPhaseBar(); }catch(x){} },120);
+    }};
+  }), 'Cliquer pour filtrer les affaires sur cette phase'));
+
   cA.appendChild(sousTitre('Charge — UO restant à produire'));
-  var g2b=grilleTuiles();
-  FA_UOS.forEach(function(u){
-    g2b.appendChild(tuile(u, k.parUO[u], 'Affaires ouvertes ayant encore l’UO '+u+' à produire'));
-  });
-  cA.appendChild(g2b);
+  cA.appendChild(barresUo(FA_UOS.map(function(u){
+    return {l:u, v:k.parUO[u]||0,
+            aide:'Affaires ouvertes ayant encore l’UO '+u+' à produire'};
+  }), sA.fg));
 
   cA.appendChild(sousTitre('Qualité'));
   var g3=grilleTuiles();
-  g3.appendChild(tuile('Météo rouge', k.meteoRouge, 'Affaires ouvertes en météo rouge', [1,5]));
+  g3.appendChild(tuileFeu('Météo rouge', k.meteoRouge, 'Affaires ouvertes en météo rouge', [1,5]));
   g3.appendChild(tuile('Délai moyen', k.delaiMoy, 'Jours entre affectation et MEX réalisée, sur '+k.nDelai+' affaires', null, ' j'));
   g3.appendChild(tuileListe(
-    tuile('Délai > 100 j', k.plus100.length, 'Affaires dont le raccordement a pris plus de 100 jours', [1,5]),
+    tuileFeu('Délai > 100 j', k.plus100.length, 'Affaires dont le raccordement a pris plus de 100 jours', [1,5]),
     'Affaires à plus de 100 jours de raccordement', k.plus100));
-  g3.appendChild(tuile('Taux de chute', k.tauxChute, 'Chutes de chantier rapportées au nombre d’affaires', null, ' %'));
-  g3.appendChild(tuile('Respect DIE', k.respectDie, 'Part des affaires dont le réalisé ne dépasse pas la DIE, sur '+k.dieTot, null, ' %'));
+  g3.appendChild(tuileFeu('Taux de chute', k.tauxChute, 'Chutes de chantier rapportées au nombre d’affaires', [5,10], ' %'));
+  g3.appendChild(tuilePct('Respect DIE', k.respectDie, 'Part des affaires dont le réalisé ne dépasse pas la DIE, sur '+k.dieTot));
   g3.appendChild(tuile('Écart DIE moyen', k.dieEcartMoyen, 'Écart moyen entre réalisé et DIE', null, ' %'));
   g3.appendChild(tuileListe(
-    tuile('Sans action > 15 j', k.sansAction15,
+    tuileFeu('Sans action > 15 j', k.sansAction15,
       'Affaires ouvertes dont la dernière date connue remonte à plus de 15 jours', [1,5]),
     'Affaires sans action depuis plus de 15 jours', k.sansActionListe));
-  g3.appendChild(tuile('Sans date connue', k.sansDate,
+  g3.appendChild(tuileFeu('Sans date connue', k.sansDate,
     'Affaires ouvertes sans aucune date renseignée : elles ne peuvent pas être suivies', [1,10]));
   cA.appendChild(g3);
 
@@ -12829,25 +13100,24 @@ function rKpiOps(){
   var cI=carteKpi('IRVE — '+i.n+' affaires', sI);
   cI.appendChild(sousTitre('Complétude'));
   var h1=grilleTuiles();
-  h1.appendChild(tuile('Maj. comm. remplie', i.completude, 'Part des affaires dont le commentaire d’avancement a une date de mise à jour', null, ' %'));
-  h1.appendChild(tuile('Cases vides', i.majcomVides, 'Affaires sans date de mise à jour du commentaire', [1,10]));
+  h1.appendChild(tuilePct('Maj. comm. remplie', i.completude,
+    'Part des affaires dont le commentaire d’avancement a une date de mise à jour'));
+  h1.appendChild(tuileFeu('Cases vides', i.majcomVides, 'Affaires sans date de mise à jour du commentaire', [1,10]));
   cI.appendChild(h1);
 
-  cI.appendChild(sousTitre('Charge — par état du dossier'));
-  var h2=grilleTuiles();
-  h2.appendChild(tuile('Total', i.n, 'Affaires hors dossiers supprimés'));
-  Object.keys(i.parEtat).forEach(function(e){
-    h2.appendChild(tuile(e.replace(/^\d+ - /,''), i.parEtat[e], 'Dossiers en phase '+e));
-  });
-  cI.appendChild(h2);
+  cI.appendChild(sousTitre('Charge — par état du dossier ('+i.n+')'));
+  var PH_IRVE=['#EAB308','#3B82F6','#8B5CF6','#14B8A6','#F97316','#22C55E','#6B7280'];
+  cI.appendChild(barreEmpilee(Object.keys(i.parEtat).map(function(e,ix){
+    var c=PH_IRVE[ix%PH_IRVE.length];
+    return {l:e.replace(/^\d+ - /,''), v:i.parEtat[e], fg:c, bg:c+'22'};
+  })));
+
   cI.appendChild(sousTitre('Charge — UO restant à produire'));
-  var h2b=grilleTuiles();
-  (UO_CAT.IRVE||[]).forEach(function(u){
-    if(!i.parUO[u.k]) return;
-    h2b.appendChild(tuile(u.k.replace('_',' '), i.parUO[u.k],
-      u.l+' — affaires ayant encore cet UO à produire'));
-  });
-  cI.appendChild(h2b);
+  cI.appendChild(barresUo((UO_CAT.IRVE||[]).filter(function(u){ return i.parUO[u.k]; })
+    .map(function(u){
+      return {l:u.k.replace('_',' '), v:i.parUO[u.k],
+              aide:u.l+' — affaires ayant encore cet UO à produire'};
+    }), sI.fg));
   var leg=document.createElement('div');
   leg.style.cssText='font-size:8.5px;color:var(--t3);padding:2px 12px 4px;line-height:1.4';
   leg.textContent='H = ancien barème · S = nouveau, 50 bornes ou moins · M = nouveau, plus de 50 bornes';
@@ -12856,14 +13126,14 @@ function rKpiOps(){
   cI.appendChild(sousTitre('Qualité'));
   var h3=grilleTuiles();
   h3.appendChild(tuileListe(
-    tuile('Sans action > 15 j', i.sansAction15,
+    tuileFeu('Sans action > 15 j', i.sansAction15,
       'Dossiers dont la dernière date connue remonte à plus de 15 jours', [1,5]),
     'Dossiers IRVE sans action depuis plus de 15 jours', i.sansActionListe));
-  h3.appendChild(tuile('Sans date connue', i.sansDate,
+  h3.appendChild(tuileFeu('Sans date connue', i.sansDate,
     'Dossiers sans aucune date renseignée', [1,10]));
   h3.appendChild(tuile('Tâches BO', i.taches, 'Nombre total de tâches back-office'));
-  h3.appendChild(tuile('Écart Hors PF', i.horsPf, 'Tâches portant sur une affaire de notre portefeuille, ce qui ne devrait pas arriver', [1,3]));
-  h3.appendChild(tuile('Affaires > 10 tâches', i.tropTaches, 'Affaires cumulant plus de dix tâches back-office', [1,3]));
+  h3.appendChild(tuileFeu('Écart Hors PF', i.horsPf, 'Tâches portant sur une affaire de notre portefeuille, ce qui ne devrait pas arriver', [1,3]));
+  h3.appendChild(tuileFeu('Affaires > 10 tâches', i.tropTaches, 'Affaires cumulant plus de dix tâches back-office', [1,3]));
   cI.appendChild(h3);
   host.appendChild(cI);
   }
@@ -12874,8 +13144,8 @@ function rKpiOps(){
   var cM=carteKpi('RATP — '+m.n+' affaires', sM);
   cM.appendChild(sousTitre('Complétude'));
   var j1=grilleTuiles();
-  j1.appendChild(tuile('Commentaires remplis', m.completude, 'Part des lignes du tableau RATP portant un commentaire', null, ' %'));
-  j1.appendChild(tuile('Cases vides', m.comVides, 'Lignes sans commentaire sur '+m.comTot, [1,5]));
+  j1.appendChild(tuilePct('Commentaires remplis', m.completude, 'Part des lignes du tableau RATP portant un commentaire'));
+  j1.appendChild(tuileFeu('Cases vides', m.comVides, 'Lignes sans commentaire sur '+m.comTot, [1,5]));
   cM.appendChild(j1);
   cM.appendChild(sousTitre('Charge'));
   var j2=grilleTuiles();
@@ -12884,10 +13154,10 @@ function rKpiOps(){
   cM.appendChild(sousTitre('Qualité'));
   var j3=grilleTuiles();
   j3.appendChild(tuileListe(
-    tuile('Sans action > 7 j', m.sansAction7,
+    tuileFeu('Sans action > 7 j', m.sansAction7,
       'Affaires dont la dernière date connue remonte à plus de 7 jours', [1,3]),
     'Affaires RATP sans action depuis plus de 7 jours', m.sansActionListe));
-  j3.appendChild(tuile('Sans date connue', m.sansDate,
+  j3.appendChild(tuileFeu('Sans date connue', m.sansDate,
     'Affaires sans aucune date renseignée', [1,3]));
   cM.appendChild(j3);
   host.appendChild(cM);
@@ -13660,10 +13930,23 @@ function showLU(lv){
 function closeLU(){document.getElementById('lu').classList.remove('show');}
 
 // ── NAVIGATION ────────────────────────────────────────────────
+// L'onglet ouvert est retenu d'une session à l'autre : au rechargement,
+// on revient là où on était et non sur Ma semaine.
+function memoOnglet(v){ try{ localStorage.setItem('radar_vue', v); }catch(e){} }
+function ongletMemo(){
+  var v=null;
+  try{ v=localStorage.getItem('radar_vue'); }catch(e){}
+  if(!v || !document.getElementById('v-'+v)) return null;
+  // Un onglet masqué pour ce rôle ne se restaure pas
+  var nb=document.getElementById('nb-'+v);
+  if(nb && nb.offsetParent===null && getComputedStyle(nb).display==='none') return null;
+  return v;
+}
 function showV(v){
   document.querySelectorAll('.view').forEach(function(el){el.classList.remove('on');});
   document.querySelectorAll('.nb').forEach(function(b){b.classList.remove('on');});
   document.getElementById('v-'+v).classList.add('on');
+  memoOnglet(v);
   var nb=document.getElementById('nb-'+v);if(nb)nb.classList.add('on');
   document.getElementById('scroll').scrollTop=0;
   // Masquer profil+stats dans Référent, restaurer ailleurs
@@ -16958,8 +17241,11 @@ function bootApp(){
   buildTabs(); renderAll();
   try{
     var uc=document.getElementById('user-chip'); if(uc) uc.textContent=USER_INI||'?';
-    showV('week');
-    try{ rWeek(); dtSyncNav(); appliquerRole(); }catch(e){}
+    // On rouvre l'onglet quitté la dernière fois. Le Référent est protégé
+    // par mot de passe : on ne le rouvre pas tout seul au démarrage.
+    var vue=ongletMemo();
+    showV((!vue || vue==='ref') ? 'week' : vue);
+    try{ if(!vue||vue==='week') rWeek(); dtSyncNav(); appliquerRole(); }catch(e){}
     if(!USER_INI) setTimeout(function(){ choisirUtilisateur(false); },500);
   }catch(e){}
 }
