@@ -7308,7 +7308,12 @@ function rPrevCharge(){
     }
     chart.appendChild(colDiv);
   });
-  body.appendChild(chart);
+  // Graphique et tableau dans le même conteneur défilant, pour que la
+  // colonne d'un mois tombe sur celle du même mois dans le tableau.
+  var zone=document.createElement('div'); zone.style.cssText='overflow-x:auto';
+  var inner=document.createElement('div');
+  inner.appendChild(chart);
+  body.appendChild(zone);
 
   var lg=document.createElement('div');
   lg.style.cssText='display:flex;gap:8px;flex-wrap:wrap;padding:2px 12px 4px';
@@ -7318,7 +7323,6 @@ function rPrevCharge(){
     e.innerHTML='<span style="width:11px;height:11px;border-radius:3px;background:'+s.fg+'"></span>'+s.court;
     lg.appendChild(e);
   });
-  body.appendChild(lg);
   var labs=document.createElement('div');
   labs.style.cssText='display:flex;gap:3px;padding:0 12px 6px';
   totals.forEach(function(t){
@@ -7327,7 +7331,8 @@ function rPrevCharge(){
     l.textContent=moisCourt(t.d).replace(' ','\u00a0');
     labs.appendChild(l);
   });
-  body.appendChild(labs);
+  inner.appendChild(labs);
+  body.appendChild(lg);
 
   // ── Alerte : mois où la charge devient insuffisante ──
   var seuil=Math.round(capTot*0.5);
@@ -7348,7 +7353,7 @@ function rPrevCharge(){
   body.appendChild(al);
 
   // ── Détail par portefeuille ──
-  var wrap=document.createElement('div'); wrap.style.cssText='overflow-x:auto';
+  var wrap=document.createElement('div');
   var tbl=document.createElement('table'); tbl.className='fa-tbl';
   var th=document.createElement('thead'); var tr=document.createElement('tr');
   var h0=document.createElement('th'); h0.className='l'; h0.textContent='Portefeuille'; tr.appendChild(h0);
@@ -7400,12 +7405,69 @@ function rPrevCharge(){
     c.textContent= enH ? (Math.round(t.h/CAP_HEURES*100)/100) : t.n; trT.appendChild(c);
   });
   tb.appendChild(trT);
-  tbl.appendChild(tb); wrap.appendChild(tbl); body.appendChild(wrap);
+  tbl.appendChild(tb); wrap.appendChild(tbl);
+  inner.appendChild(wrap); zone.appendChild(inner);
+  suivreAlignement(chart, tbl, labs);
 
   host.appendChild(card);
   try{ makeCollapsibleRef(hdr, body, 'prev_referent'); }catch(e){}
 }
 
+
+// ══════════════════════════════════════════════════════════════
+// ALIGNER UN HISTOGRAMME SUR LE TABLEAU QUI LE SUIT
+// Demandé par Steve le 03/09/2026 : la colonne de septembre du
+// graphique doit tomber sur celle de septembre du tableau.
+// On mesure les cellules réelles après rendu plutôt que de deviner des
+// largeurs, et on réaligne quand le conteneur change de taille : le
+// graphique reste calé même si la carte est repliée puis rouverte.
+// ══════════════════════════════════════════════════════════════
+function alignerGraphTableau(chart, tbl, labs){
+  var ths=tbl.querySelectorAll('thead th');
+  if(ths.length<2 || !chart.children.length) return false;
+  var l0=ths[0].getBoundingClientRect().width;
+  if(!l0) return false;                       // carte repliée, rien à mesurer
+  var w=[];
+  for(var i=0;i<ths.length;i++) w.push(ths[i].getBoundingClientRect().width);
+  [chart, labs].forEach(function(el){
+    if(!el) return;
+    el.style.paddingLeft=l0+'px';
+    el.style.paddingRight='0px';
+    el.style.gap='0px';
+  });
+  function caler(el){
+    if(!el) return;
+    [].slice.call(el.children).forEach(function(c){
+      if(getComputedStyle(c).position==='absolute'){
+        c.style.left=l0+'px'; c.style.right='0px'; return;
+      }
+      var k=[].slice.call(el.children).filter(function(x){
+        return getComputedStyle(x).position!=='absolute'; }).indexOf(c);
+      var lw=w[k+1];
+      if(lw===undefined) return;
+      c.style.flex='0 0 '+lw+'px';
+      c.style.width=lw+'px';
+      c.style.boxSizing='border-box';
+      c.style.paddingLeft='1px'; c.style.paddingRight='1px';
+    });
+  }
+  caler(chart); caler(labs);
+  return true;
+}
+// Réaligne dès que la largeur bouge, et une première fois au rendu
+function suivreAlignement(chart, tbl, labs){
+  function faire(){ try{ alignerGraphTableau(chart, tbl, labs); }catch(e){} }
+  setTimeout(faire, 0);
+  setTimeout(faire, 250);
+  try{
+    if(window.ResizeObserver){
+      var ro=new ResizeObserver(function(){ faire(); });
+      ro.observe(tbl);
+    } else {
+      window.addEventListener('resize', faire);
+    }
+  }catch(e){}
+}
 
 // ══════════════════════════════════════════════════════════════
 // RENTABILITÉ ET PRODUCTIVITÉ (Référent)
@@ -10154,7 +10216,12 @@ function rPrevFactu(){
     colDiv.addEventListener('click',function(){ moisUoModal(i, N); });
     chart.appendChild(colDiv);
   });
-  body.appendChild(chart);
+  // Le graphique et le tableau vivent dans le même conteneur défilant :
+  // les mois restent alignés, même quand le tableau déborde.
+  var zone=document.createElement('div'); zone.style.cssText='overflow-x:auto';
+  var inner=document.createElement('div');
+  inner.appendChild(chart);
+  body.appendChild(zone);
 
   var labs=document.createElement('div');
   labs.style.cssText='display:flex;gap:3px;padding:0 12px 6px';
@@ -10165,10 +10232,10 @@ function rPrevFactu(){
     l.textContent=moisCourt(d).replace(' ','\u00a0');
     labs.appendChild(l);
   });
-  body.appendChild(labs);
+  inner.appendChild(labs);
 
   // Tableau CA / coût / marge
-  var wrap=document.createElement('div'); wrap.style.cssText='overflow-x:auto';
+  var wrap=document.createElement('div');
   var tbl=document.createElement('table'); tbl.className='fa-tbl';
   var th=document.createElement('thead'), tr=document.createElement('tr');
   var h0=document.createElement('th'); h0.className='l'; h0.textContent=''; tr.appendChild(h0);
@@ -10207,7 +10274,7 @@ function rPrevFactu(){
   ligne('CA total', total, 'var(--t)', true, null);
   ligne('Co\u00fbt \u00e9quipe', total.map(function(){ return cout; }), 'var(--t3)');
   ligne('Marge', total.map(function(v){ return v-cout; }),
-        function(v){ return v>=0?'var(--green)':'var(--red)'; }, true);
+        function(v){ return v>=0?'var(--green)':'var(--red)'; }, true, undefined);
   // Marge en pourcentage du chiffre d'affaires
   (function(){
     var r=document.createElement('tr');
@@ -10226,7 +10293,9 @@ function rPrevFactu(){
     });
     tb.appendChild(r);
   })();
-  tbl.appendChild(tb); wrap.appendChild(tbl); body.appendChild(wrap);
+  tbl.appendChild(tb); wrap.appendChild(tbl);
+  inner.appendChild(wrap); zone.appendChild(inner);
+  suivreAlignement(chart, tbl, labs);
 
   // Synthèse
   var caTot=total.reduce(function(s,x){ return s+x; },0);
@@ -17507,7 +17576,7 @@ setInterval(sbPoll, 20000);
 // On ne recharge jamais de force, une saisie en cours serait perdue :
 // on propose, la personne choisit son moment.
 // ══════════════════════════════════════════════════════════════
-var APP_VERSION='2026-09-03-5';
+var APP_VERSION='2026-09-03-6';
 var MAJ_VUE=false;
 function bandeauMaj(v){
   if(MAJ_VUE || document.getElementById('maj-banner')) return;
