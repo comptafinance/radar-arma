@@ -9733,6 +9733,28 @@ function setDecalUo(a,k,v){
 function dureeEffective(dur, tx){
   return Math.max(1, dur, Math.round(dur/Math.max(tx,0.05)));
 }
+// Part de l'UO DÉJÀ FACTURÉE, entre 0 et 1. Renvoie -1 si l'UO est sans
+// objet. À ne pas confondre avec l'avancement : une étude produite à 64 %
+// mais jamais facturée se facturera entière, pas à 64 %. Seul un
+// coefficient de facturation déjà saisi (0,3 · 0,5 · 0,75) réduit le reste.
+function uoFacture(cp, a, k){
+  var svc=svcOf(cp);
+  if(svc==='ARMA'){
+    var val=faGetVal(a,k);
+    if(val==='NA') return -1;
+    return Math.min(1, faCoef(val)||0);
+  }
+  if(svc==='IRVE'){
+    var iv=a.irve||{}, uo=k.slice(-3), f=0, na=false;
+    Object.keys(iv.fa||{}).forEach(function(x){
+      if(x.slice(-3)!==uo) return;
+      if(String(iv.fa[x]).trim().toUpperCase()==='NA'){ na=true; return; }
+      f=Math.max(f, irveCoef(iv.fa[x]));
+    });
+    return na ? -1 : Math.min(1,f);
+  }
+  return ((a.meca||{}).fa||{})[k] ? 1 : 0;
+}
 function prevFactuLignes(cp){
   var out=[], svc=svcOf(cp), tx=tauxDe(svc);
   var parallele=(svc==='MECA');       // les livrables RATP se mènent de front
@@ -9747,14 +9769,20 @@ function prevFactuLignes(cp){
       var durEff=dureeEffective(dur, tx);
       var debutEff = parallele ? 0 : offset;
       if(!parallele) offset+=durEff;
-      var px=uoPrixRestant(cp,a,u)*u.part;
+      // L'avancement dit QUAND l'UO sera prête, pas COMBIEN on facture.
+      // Le montant est le prix de l'UO moins ce qui en a déjà été facturé.
+      var fact=uoFacture(cp,a,u.k);
+      if(fact<0) return;                      // UO sans objet
+      var reste=1-fact;
+      if(reste<=0.001) return;                // déjà facturée en entier
+      var px=uoPrixRestant(cp,a,u)*reste;
       if(!px) return;
       var man=decalUo(a,u.k);
       var base=Math.max(0, debutEff+dec);
       var deb=Math.max(0, base+man);
       out.push({cp:cp, a:a, k:u.k, px:px, dur:dur, durEff:durEff, decal:man, tx:tx,
                 base:base, baseFin:base+durEff-1, deb:deb, fin:deb+durEff-1,
-                montant:px, part:u.part});
+                montant:px, part:reste, avance:u.part});
     });
   });
   return out;
@@ -9957,11 +9985,11 @@ function moisUoModal(i, N, svc, attendu){
       r.style.cssText='display:flex;align-items:center;gap:9px;padding:8px 15px;'
         +'border-bottom:1px solid var(--b);flex-wrap:wrap';
       var g=document.createElement('div'); g.style.cssText='flex:1;min-width:150px';
-      // Le montant est celui de l'UO, entier. Ce qui bouge, c'est la date :
-      // le taux d'activité allonge la durée de production.
+      // Le montant est celui de l'UO, entier. Il n'est réduit que si une
+      // part a DÉJÀ été facturée, jamais à cause de l'avancement.
       var reste = (l.part<0.999)
         ? '<span style="color:var(--t3)"> ('+fmtEur(Math.round(l.px/Math.max(l.part,0.0001)))
-          +' × '+Math.round(l.part*100)+' % restant)</span>' : '';
+          +', déjà facturé à '+Math.round((1-l.part)*100)+' %)</span>' : '';
       var delai = l.durEff>l.dur
         ? l.dur+' mois de production, '+l.durEff+' avec le rythme de '
           +Math.round(l.tx*100)+' %'
@@ -17479,7 +17507,7 @@ setInterval(sbPoll, 20000);
 // On ne recharge jamais de force, une saisie en cours serait perdue :
 // on propose, la personne choisit son moment.
 // ══════════════════════════════════════════════════════════════
-var APP_VERSION='2026-09-03-4';
+var APP_VERSION='2026-09-03-5';
 var MAJ_VUE=false;
 function bandeauMaj(v){
   if(MAJ_VUE || document.getElementById('maj-banner')) return;
