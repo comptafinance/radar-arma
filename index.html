@@ -3584,10 +3584,28 @@ var REF_SECS=[
   {k:'comp',   l:'Comp\u00e9tences',  ico:'\ud83c\udf93'},
   {k:'admin',  l:'Administration', ico:'\u2699\ufe0f'}
 ];
+// Sections retirées de l'onglet Référent, masquées en JavaScript pour ne
+// pas toucher au balisage. « kpi » a été retirée le 03/09/2026 : le suivi
+// se fait depuis l'onglet TDB, filtre par chargé d'affaires compris.
+var REF_SECS_MASQUEES = ['kpi'];
+function masquerSectionsRef(){
+  REF_SECS_MASQUEES.forEach(function(k){
+    var s=document.querySelector('.ref-sec[data-sec="'+k+'"]');
+    if(s) s.style.display='none';
+  });
+  // Renumérotation des sections encore visibles
+  var n=0;
+  document.querySelectorAll('#v-ref .ref-sec').forEach(function(sec){
+    if(sec.style.display==='none') return;
+    n++;
+    var num=sec.querySelector('.ref-sec-n');
+    if(num) num.textContent=n;
+  });
+}
 function rRefNav(){
   var el=document.getElementById('ref-nav'); if(!el) return;
   el.innerHTML='';
-  REF_SECS.forEach(function(s){
+  REF_SECS.filter(function(s){ return REF_SECS_MASQUEES.indexOf(s.k)<0; }).forEach(function(s){
     var b=document.createElement('button');
     b.style.cssText='display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:800;'
       +'padding:6px 12px;border-radius:9px;cursor:pointer;border:1.5px solid var(--b2);'
@@ -9656,7 +9674,10 @@ function setDecalUo(a,k,v){
   if(v) a.decal[k]=v; else delete a.decal[k];
   if(a.decal && !Object.keys(a.decal).length) delete a.decal;
 }
-// Lignes prévisionnelles détaillées d'un portefeuille, une par UO restante
+// Lignes prévisionnelles détaillées d'un portefeuille, une par UO restante.
+// Une UO se facture en UNE FOIS, au mois où elle s'achève : c'est ainsi
+// qu'elle se facture à ENEDIS. La durée sert seulement à savoir QUAND.
+// Corrigé le 03/09/2026 ; jusque-là le montant était étalé sur la durée.
 function prevFactuLignes(cp){
   var out=[], tx=tauxDe(svcOf(cp));
   (gAff(cp)||[]).forEach(function(a){
@@ -9670,8 +9691,10 @@ function prevFactuLignes(cp){
       var dur=Math.max(1, Math.round(u.duree||1));
       var man=decalUo(a,u.k);
       var base=Math.max(0, Math.round(u.debut)+dec);
-      out.push({cp:cp, a:a, k:u.k, px:px, dur:dur, decal:man,
-                base:base, deb:Math.max(0, base+man), mens:px/dur*tx});
+      var deb=Math.max(0, base+man);
+      out.push({cp:cp, a:a, k:u.k, px:px, dur:dur, decal:man, tx:tx,
+                base:base, baseFin:base+dur-1, deb:deb, fin:deb+dur-1,
+                montant:px*tx, part:u.part});
     });
   });
   return out;
@@ -9679,25 +9702,24 @@ function prevFactuLignes(cp){
 function prevFactu(cp, nMois){
   var out=new Array(nMois).fill(0);
   prevFactuLignes(cp).forEach(function(l){
-    for(var m=l.deb; m<l.deb+l.dur && m<nMois; m++) out[m]+=l.mens;
+    if(l.fin<nMois) out[l.fin]+=l.montant;
   });
   return out;
 }
-// Toutes les UO prévues sur un mois donné. svc facultatif : une seule entité.
+// UO facturées sur un mois donné. svc facultatif : une seule entité.
 function uoDuMois(i, svc){
   var out=[];
   Object.keys(DATA).forEach(function(cp){
     if(svc && svcOf(cp)!==svc) return;
-    prevFactuLignes(cp).forEach(function(l){
-      if(i>=l.deb && i<l.deb+l.dur) out.push(l);
-    });
+    prevFactuLignes(cp).forEach(function(l){ if(l.fin===i) out.push(l); });
   });
-  out.sort(function(x,y){ return y.mens-x.mens; });
+  out.sort(function(x,y){ return y.montant-x.montant; });
   return out;
 }
-// Déplacer une UO vers un autre mois. suite : entraîner les UO qui la suivent.
+// Déplacer une UO vers un autre mois de facturation.
+// suite : entraîner les UO qui la suivent sur la même affaire.
 function deplacerUo(l, moisCible, suite){
-  var delta=moisCible-l.deb;
+  var delta=moisCible-l.fin;
   if(!delta) return 0;
   var liste=uoRestants(l.cp, l.a).map(function(u){ return u.k; });
   var i=liste.indexOf(l.k);
@@ -9810,19 +9832,24 @@ function moisUoModal(i, N, svc, attendu){
 
   function dessiner(){
     var lignes=uoDuMois(i, svc);
-    var tot=lignes.reduce(function(s,l){ return s+l.mens; },0);
+    var tot=lignes.reduce(function(s,l){ return s+l.montant; },0);
     var svi=svc?svcInfo(svc):null;
     hdr.innerHTML='<div style="font-size:13px;font-weight:800;color:var(--t)">'
       +(svi?'<span style="font-size:10px;font-weight:800;color:'+svi.fg+';background:'+svi.bg
             +';padding:2px 8px;border-radius:7px;margin-right:7px">'+svi.court+'</span>':'')
       +moisLabel(i)+' — '+fmtEur(Math.round(tot))+'</div>'
       +'<div style="font-size:10.5px;color:var(--t3);margin-top:2px">'
-      +lignes.length+' UO en production ce mois-là'+(svi?' sur '+svi.court:'')
-      +'. Choisir un mois dans la liste déroulante déplace l’UO ; la facturation suit.</div>';
+      +lignes.length+' UO facturées ce mois-là'+(svi?' sur '+svi.court:'')
+      +'. Chaque UO se facture en une fois, au mois où elle s’achève. '
+      +'Choisir un mois dans la liste déroulante la déplace.'
+      +(svc && tauxDe(svc)<0.999
+        ? ' Les montants sont pondérés par le taux d’activité ' +svi.court+' de '
+          +Math.round(tauxDe(svc)*100)+' %, réglable dans Configuration.'
+        : '')+'</div>';
     corps.innerHTML='';
     if(!lignes.length){
       corps.innerHTML='<div style="padding:22px;text-align:center;color:var(--t3);font-size:11px;'
-        +'font-style:italic">Aucune UO prévue sur ce mois</div>';
+        +'font-style:italic">Aucune UO facturée sur ce mois</div>';
       return;
     }
     // Récapitulatif par UO : d'où vient le montant du mois
@@ -9830,7 +9857,7 @@ function moisUoModal(i, N, svc, attendu){
     lignes.forEach(function(l){
       var k=libelleUo(l);
       if(!parUo[k]) parUo[k]={l:k, n:0, eur:0};
-      parUo[k].n++; parUo[k].eur+=l.mens;
+      parUo[k].n++; parUo[k].eur+=l.montant;
     });
     var rec=Object.keys(parUo).map(function(k){ return parUo[k]; })
                   .sort(function(a,b){ return b.eur-a.eur; });
@@ -9866,11 +9893,18 @@ function moisUoModal(i, N, svc, attendu){
       r.style.cssText='display:flex;align-items:center;gap:9px;padding:8px 15px;'
         +'border-bottom:1px solid var(--b);flex-wrap:wrap';
       var g=document.createElement('div'); g.style.cssText='flex:1;min-width:150px';
+      // On montre le calcul : prix de l'UO, part restante, taux d'activité.
+      var calc='';
+      if(l.part<0.999) calc+=' × '+Math.round(l.part*100)+' % restant';
+      if(l.tx<0.999)   calc+=' × '+Math.round(l.tx*100)+' % d’activité';
       g.innerHTML='<div style="font-size:11px;font-weight:800;color:var(--t)">'
         +(l.a.no||l.a.code||'')+' <span style="font-size:9px;font-weight:700;color:'+sv.fg
         +';background:'+sv.bg+';padding:1px 6px;border-radius:6px">'+sv.court+'</span></div>'
         +'<div style="font-size:10px;color:var(--t3);margin-top:1px">'+libelleUo(l)
-        +' · '+fmtEur(Math.round(l.mens))+'/mois sur '+l.dur+' mois'
+        +' · <b style="color:var(--green)">'+fmtEur(Math.round(l.montant))+'</b> en une fois'
+        +(calc?'<span style="color:var(--t3)"> ('+fmtEur(Math.round(l.px/Math.max(l.part,0.0001)))
+              +calc+')</span>':'')
+        +(l.dur>1?' · produite sur '+l.dur+' mois':'')
         +(l.decal?' · <b style="color:var(--amber)">décalée de '
           +(l.decal>0?'+':'')+l.decal+' mois</b>':'')+'</div>';
       r.appendChild(g);
@@ -9880,10 +9914,10 @@ function moisUoModal(i, N, svc, attendu){
       for(var m=0;m<N;m++){
         var o=document.createElement('option');
         o.value=String(m); o.textContent=moisLabel(m);
-        if(m===l.deb) o.selected=true;
+        if(m===l.fin) o.selected=true;
         sel.appendChild(o);
       }
-      sel.title='Mois de démarrage de cette UO';
+      sel.title='Mois de facturation de cette UO';
       sel.addEventListener('change',function(){
         var n=deplacerUo(l, +sel.value, suite.on);
         sbSave();
@@ -9898,7 +9932,7 @@ function moisUoModal(i, N, svc, attendu){
         rz.style.cssText='border:1px solid var(--b2);background:var(--s2);color:var(--t3);'
           +'border-radius:7px;padding:4px 8px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit';
         rz.textContent='↺';
-        rz.title='Revenir au mois calculé automatiquement ('+moisLabel(l.base)+')';
+        rz.title='Revenir au mois calculé automatiquement ('+moisLabel(l.baseFin)+')';
         rz.addEventListener('click',function(){
           setDecalUo(l.a, l.k, 0); sbSave();
           showToast('Décalage annulé');
@@ -9979,9 +10013,10 @@ function rPrevFactu(){
 
   var info=document.createElement('div');
   info.style.cssText='font-size:10px;color:var(--t3);padding:8px 12px 4px;line-height:1.5';
-  info.innerHTML='Chiffre d\u2019affaires attendu sur '+N+' mois, calcul\u00e9 \u00e0 partir des UO restants '
-    +'et de leur dur\u00e9e. Co\u00fbt mensuel de l\u2019\u00e9quipe : <b>'+fmtEur(cout)+'</b>. '
-    +'Cliquer sur une barre ouvre les UO du mois, o\u00f9 on peut les d\u00e9placer.';
+  info.innerHTML='Chiffre d\u2019affaires attendu sur '+N+' mois. Chaque UO restante est '
+    +'factur\u00e9e en une fois, au mois o\u00f9 elle s\u2019ach\u00e8ve. Co\u00fbt mensuel de l\u2019\u00e9quipe : '
+    +'<b>'+fmtEur(cout)+'</b>. Cliquer sur une barre ou sur un montant ouvre le d\u00e9tail, '
+    +'o\u00f9 l\u2019on peut d\u00e9placer une UO d\u2019un mois \u00e0 l\u2019autre.';
   body.appendChild(info);
 
   // Histogramme empilé, seuil de rentabilité en pointillés
@@ -11072,10 +11107,9 @@ function changerMdpModal(){
 
 function rRef(){
   try{ rRefNav(); }catch(e){}
-  try{ rKpiSvcBar(); }catch(e){}
-  try{ rKpiOpsRef(); }catch(e){ console.warn('rKpiOpsRef',e); }
-  try{ rPerf(); }catch(e){ console.warn('rPerf',e); }
-  try{ rQualite(); }catch(e){ console.warn('rQualite',e); }
+  try{ masquerSectionsRef(); }catch(e){ console.warn('masquerSectionsRef',e); }
+  // Section KPI opérationnels retirée : rKpiSvcBar, rKpiOpsRef, rPerf et
+  // rQualite ne sont plus rendus ici. Le suivi passe par l'onglet TDB.
   try{ rComp(); }catch(e){ console.warn('rComp',e); }
   try{
     var ad=document.getElementById('ref-admin');
@@ -17241,11 +17275,12 @@ function bootApp(){
   buildTabs(); renderAll();
   try{
     var uc=document.getElementById('user-chip'); if(uc) uc.textContent=USER_INI||'?';
-    // On rouvre l'onglet quitté la dernière fois. Le Référent est protégé
-    // par mot de passe : on ne le rouvre pas tout seul au démarrage.
-    var vue=ongletMemo();
-    showV((!vue || vue==='ref') ? 'week' : vue);
-    try{ if(!vue||vue==='week') rWeek(); dtSyncNav(); appliquerRole(); }catch(e){}
+    // On rouvre l'onglet quitté la dernière fois, Référent compris : son
+    // déverrouillage est retenu dans sessionStorage, donc le mot de passe
+    // n'est pas redemandé tant que l'onglet du navigateur vit.
+    var vue=ongletMemo()||'week';
+    showV(vue);
+    try{ if(vue==='week') rWeek(); dtSyncNav(); appliquerRole(); }catch(e){}
     if(!USER_INI) setTimeout(function(){ choisirUtilisateur(false); },500);
   }catch(e){}
 }
