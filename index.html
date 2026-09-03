@@ -17471,6 +17471,54 @@ buildTabs();renderAll();
 setTimeout(function(){ sbLoad(); }, 400);
 setInterval(sbPoll, 20000);
 
+// ══════════════════════════════════════════════════════════════
+// NOUVELLE VERSION EN LIGNE
+// Le navigateur garde l'application en cache : sans cela, chacun
+// travaille sur la version qu'il avait le jour où il l'a ouverte.
+// On compare la version embarquée à version.json, publié à côté.
+// On ne recharge jamais de force, une saisie en cours serait perdue :
+// on propose, la personne choisit son moment.
+// ══════════════════════════════════════════════════════════════
+var APP_VERSION='2026-09-03-4';
+var MAJ_VUE=false;
+function bandeauMaj(v){
+  if(MAJ_VUE || document.getElementById('maj-banner')) return;
+  MAJ_VUE=true;
+  var b=document.createElement('div');
+  b.id='maj-banner';
+  b.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:9600;background:#1D4ED8;'
+    +'color:#fff;padding:10px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;'
+    +'font-family:inherit;box-shadow:0 -4px 18px rgba(0,0,0,.25)';
+  var t=document.createElement('span');
+  t.style.cssText='flex:1;font-size:11.5px;font-weight:700;line-height:1.4';
+  t.textContent='Une nouvelle version de RADAR est en ligne. '
+    +'Recharge quand tu as fini ta saisie en cours.';
+  t.title='Version ouverte : '+APP_VERSION+'\nVersion en ligne : '+v;
+  var ok=document.createElement('button');
+  ok.style.cssText='border:none;background:#fff;color:#1D4ED8;border-radius:8px;padding:6px 14px;'
+    +'font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit';
+  ok.textContent='Recharger';
+  ok.addEventListener('click',function(){
+    try{ sbSaveNow(); }catch(e){}
+    setTimeout(function(){ location.reload(true); },250);
+  });
+  var no=document.createElement('button');
+  no.style.cssText='border:1px solid rgba(255,255,255,.5);background:transparent;color:#fff;'
+    +'border-radius:8px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit';
+  no.textContent='Plus tard';
+  no.addEventListener('click',function(){ if(b.parentNode) document.body.removeChild(b); });
+  b.appendChild(t); b.appendChild(ok); b.appendChild(no);
+  document.body.appendChild(b);
+}
+function verifierVersion(){
+  fetch('version.json?t='+Date.now(), {cache:'no-store'})
+    .then(function(r){ return r.ok?r.json():null; })
+    .then(function(j){ if(j && j.v && j.v!==APP_VERSION) bandeauMaj(j.v); })
+    .catch(function(){});
+}
+setTimeout(verifierVersion, 4000);
+setInterval(verifierVersion, 600000);   // toutes les dix minutes
+
 
 
 </script>
