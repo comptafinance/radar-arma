@@ -7376,11 +7376,19 @@ function rPrevCharge(){
       var val2= enH ? (p.h||0) : p.n;
       var base= enH ? CAP_HEURES : CHARGE_CAP;
       var pct=base?Math.round(val2/base*100):0;
-      var col=chargeColor(pct);
       var c=document.createElement('td');
-      c.style.cssText='font-size:9px;font-weight:700;color:'+col.fg+';background:'+col.bg+'55';
+      // La couleur ne vaut que pour la charge d'une personne. Sur une
+      // sous-ligne de p\u00e9rim\u00e8tre, elle ferait croire \u00e0 une surcharge alors
+      // qu'il ne s'agit que d'une part de son portefeuille.
+      if(s.perso){
+        var col=chargeColor(pct);
+        c.style.cssText='font-size:9px;font-weight:700;color:'+col.fg+';background:'+col.bg+'55';
+      } else {
+        c.style.cssText='font-size:9px;font-weight:600;color:var(--t3)';
+      }
       c.textContent=pct+'%';
-      c.title=moisCourt(p.d)+' \u2014 '+(enH?(val2+' h'):(val2+' affaires'))+' ('+pct+' %)';
+      c.title=moisCourt(p.d)+' \u2014 '+(enH?(val2+' h'):(val2+' affaires'))+' ('+pct+' %)'
+        +(s.perso?'':'\nPart de ce p\u00e9rim\u00e8tre dans le portefeuille');
       row.appendChild(c);
     });
     tb.appendChild(row);
@@ -7972,6 +7980,14 @@ function scoreConseiller(ini, svc){
 var COMP_SVC='ARMA';        // référentiel affiché
 var COMP_ZOOM=null;         // famille ouverte en détail
 var COMP_DETAIL=false;      // afficher le tableau détaillé
+var COMP_PERS=null;         // initiales du consultant seul à l'écran, null = tous
+// Palette des consultants, fixée par leur rang dans personnes()
+var COMP_PAL=['#185FA5','#7C3AED','#B45309','#047857','#BE185D','#0F766E'];
+// Personnes affichées sur le radar, avec leur rang d'origine pour la couleur
+function gensRadar(){
+  return personnes().map(function(p,i){ p._i=i; return p; })
+                    .filter(function(p){ return !COMP_PERS || p.ini===COMP_PERS; });
+}
 
 function moyenneFamille(ini,g){
   var t=0,n=0;
@@ -8007,15 +8023,18 @@ function svgRadar(gens){
     return (cx+r*Math.cos(ang)).toFixed(1)+','+(cy+r*Math.sin(ang)).toFixed(1);
   }).join(' ');
   s+='<polygon points="'+pr+'" fill="none" stroke="#B91C1C" stroke-width="1.5" stroke-dasharray="4 3" opacity=".8"/>';
-  // consultants
-  var PAL=['#185FA5','#7C3AED','#B45309','#047857','#BE185D','#0F766E'];
+  // consultants. La couleur suit la personne, pas son rang dans la liste
+  // affichée, pour qu'un filtre ne change pas les couleurs.
+  var seul=(gens.length===1);
   gens.forEach(function(p,k){
-    var col=PAL[k%PAL.length];
+    var col=COMP_PAL[(p._i===undefined?k:p._i)%COMP_PAL.length];
     var pts=G.map(function(g,i){
       var ang=-Math.PI/2 + i*2*Math.PI/N, r=R*moyenneFamille(p.ini,g)/4;
       return (cx+r*Math.cos(ang)).toFixed(1)+','+(cy+r*Math.sin(ang)).toFixed(1);
     }).join(' ');
-    s+='<polygon points="'+pts+'" fill="'+col+'" fill-opacity=".10" stroke="'+col+'" stroke-width="2"/>';
+    // Seul sur le graphe, on remplit franchement pour que la forme se lise
+    s+='<polygon points="'+pts+'" fill="'+col+'" fill-opacity="'+(seul?'.22':'.10')
+      +'" stroke="'+col+'" stroke-width="'+(seul?'2.5':'2')+'"/>';
   });
   // libellés cliquables
   G.forEach(function(g,i){
@@ -8032,7 +8051,7 @@ function svgRadar(gens){
 }
 
 function rRadarComp(host){
-  var gens=personnes();
+  var gens=gensRadar();
   // Sélecteur de périmètre
   var sb=document.createElement('div');
   sb.style.cssText='display:flex;gap:6px;padding:8px 12px 4px;flex-wrap:wrap';
@@ -8050,6 +8069,29 @@ function rRadarComp(host){
     sb.appendChild(b);
   });
   host.appendChild(sb);
+
+  // Sélecteur de consultant : voir le graphe d'une seule personne
+  var pb=document.createElement('div');
+  pb.style.cssText='display:flex;gap:6px;padding:0 12px 4px;flex-wrap:wrap;align-items:center';
+  var pl=document.createElement('span');
+  pl.style.cssText='font-size:9px;font-weight:800;color:var(--t3);text-transform:uppercase;letter-spacing:.05em';
+  pl.textContent='Consultant';
+  pb.appendChild(pl);
+  [{ini:null, l:'Tous'}].concat(personnes().map(function(p,i){
+    return {ini:p.ini, l:p.ini, nom:p.nom, col:COMP_PAL[i%COMP_PAL.length]};
+  })).forEach(function(p){
+    var on=((COMP_PERS||null)===(p.ini||null));
+    var co=p.col||'var(--brand)';
+    var b=document.createElement('button');
+    b.style.cssText='font-size:10px;font-weight:800;padding:4px 11px;border-radius:8px;cursor:pointer;'
+      +'border:1.5px solid '+(on?co:'var(--b2)')+';background:'+(on?co:'var(--s)')
+      +';color:'+(on?'#fff':'var(--t3)')+';font-family:inherit';
+    b.textContent=p.l;
+    b.title=p.nom||'Tous les consultants';
+    b.addEventListener('click',function(){ COMP_PERS=p.ini; rComp(); });
+    pb.appendChild(b);
+  });
+  host.appendChild(pb);
 
   // Rappel de la r\u00e8gle de port\u00e9e, valable sur les trois r\u00e9f\u00e9rentiels
   var tous=(COMP_SVC==='TOUS');
@@ -8089,12 +8131,13 @@ function rRadarComp(host){
   // Légende des consultants
   var lg=document.createElement('div');
   lg.style.cssText='display:flex;gap:6px;flex-wrap:wrap;padding:4px 12px 8px';
-  var PAL=['#185FA5','#7C3AED','#B45309','#047857','#BE185D','#0F766E'];
   gens.forEach(function(p,k){
     var s=document.createElement('span');
     s.style.cssText='display:inline-flex;align-items:center;gap:5px;font-size:9.5px;font-weight:700;color:var(--t2)';
-    s.innerHTML='<span style="width:12px;height:3px;border-radius:2px;background:'+PAL[k%PAL.length]+'"></span>'
+    s.innerHTML='<span style="width:12px;height:3px;border-radius:2px;background:'
+      +COMP_PAL[(p._i===undefined?k:p._i)%COMP_PAL.length]+'"></span>'
       +p.ini+' <span style="color:var(--t3)">'+scoreConseiller(p.ini)+'%</span>';
+    s.title=p.nom;
     lg.appendChild(s);
   });
   var pr=document.createElement('span');
@@ -8161,7 +8204,8 @@ function rComp(){
   var tbl=document.createElement('table'); tbl.className='cmp-tbl';
   var th=document.createElement('thead'); var tr=document.createElement('tr');
   var h0=document.createElement('th'); h0.className='l'; h0.textContent='Comp\u00e9tence'; tr.appendChild(h0);
-  var gens=personnes();
+  // Le tableau détaillé suit le même filtre que le radar
+  var gens=gensRadar();
   gens.forEach(function(p){
     var x=document.createElement('th');
     x.textContent=p.ini; x.title=p.nom; tr.appendChild(x);
@@ -9675,26 +9719,42 @@ function setDecalUo(a,k,v){
   if(a.decal && !Object.keys(a.decal).length) delete a.decal;
 }
 // Lignes prévisionnelles détaillées d'un portefeuille, une par UO restante.
-// Une UO se facture en UNE FOIS, au mois où elle s'achève : c'est ainsi
-// qu'elle se facture à ENEDIS. La durée sert seulement à savoir QUAND.
-// Corrigé le 03/09/2026 ; jusque-là le montant était étalé sur la durée.
+//
+// Deux règles posées par Steve le 03/09/2026 :
+//  1. Une UO se facture en UNE FOIS, au mois où elle s'achève. On ne
+//     facture pas une réception à 75 % : soit elle est faite, soit non.
+//  2. Le taux d'activité ne rogne donc PAS le montant, il REPOUSSE la
+//     réalisation : à 75 % de rythme, ce qui demande 3 mois en prend 4,
+//     parce qu'une part du portefeuille est bloquée. L'enchaînement des
+//     UO est recalculé ici avec ces durées allongées.
+// Arrondi au plus proche, jamais en dessous de la durée nominale : à 75 %
+// de rythme, une UO de 3 mois en prend 4, une UO d'un mois reste à un mois
+// plutôt que de doubler.
+function dureeEffective(dur, tx){
+  return Math.max(1, dur, Math.round(dur/Math.max(tx,0.05)));
+}
 function prevFactuLignes(cp){
-  var out=[], tx=tauxDe(svcOf(cp));
+  var out=[], svc=svcOf(cp), tx=tauxDe(svc);
+  var parallele=(svc==='MECA');       // les livrables RATP se mènent de front
   (gAff(cp)||[]).forEach(function(a){
-    if(svcOf(cp)==='IRVE' && irvePhaseNum(a)===0) return;
+    if(svc==='IRVE' && irvePhaseNum(a)===0) return;
     var clot=false; try{ clot=isClot(a); }catch(e){}
     if(clot) return;
     var dec=affaireEnAttente(cp,a)?2:0;
+    var offset=0;
     uoRestants(cp,a).forEach(function(u){
+      var dur=Math.max(1, Math.round(u.duree||1));
+      var durEff=dureeEffective(dur, tx);
+      var debutEff = parallele ? 0 : offset;
+      if(!parallele) offset+=durEff;
       var px=uoPrixRestant(cp,a,u)*u.part;
       if(!px) return;
-      var dur=Math.max(1, Math.round(u.duree||1));
       var man=decalUo(a,u.k);
-      var base=Math.max(0, Math.round(u.debut)+dec);
+      var base=Math.max(0, debutEff+dec);
       var deb=Math.max(0, base+man);
-      out.push({cp:cp, a:a, k:u.k, px:px, dur:dur, decal:man, tx:tx,
-                base:base, baseFin:base+dur-1, deb:deb, fin:deb+dur-1,
-                montant:px*tx, part:u.part});
+      out.push({cp:cp, a:a, k:u.k, px:px, dur:dur, durEff:durEff, decal:man, tx:tx,
+                base:base, baseFin:base+durEff-1, deb:deb, fin:deb+durEff-1,
+                montant:px, part:u.part});
     });
   });
   return out;
@@ -9743,14 +9803,17 @@ function factuAffectation(svc, nMois){
     if(svc==='MECA') d=Math.max(d,p.d||0); else d+=p.d||0;
   });
   if(!ca) return out;
-  var dur=Math.max(1, Math.round(d||1));
+  // Même règle que les UO réelles : facturation en une fois à l'achèvement,
+  // et le taux d'activité allonge le délai au lieu de rogner le montant.
+  var dur=dureeEffective(Math.max(1, Math.round(d||1)), tauxDe(svc));
   var maxDeb=nMois, fin=AFFECT_FIN[svc];
   if(fin){
     var df=new Date(fin+(fin.length===7?'-01':'')), now=new Date();
     maxDeb=Math.max(0, Math.min(nMois,(df.getFullYear()-now.getFullYear())*12+(df.getMonth()-now.getMonth())+1));
   }
   for(var deb=1; deb<maxDeb; deb++){
-    for(var m=deb; m<deb+dur && m<nMois; m++) out[m]+=n*ca/dur;
+    var m=deb+dur-1;
+    if(m<nMois) out[m]+=n*ca;
   }
   return out;
 }
@@ -9840,11 +9903,12 @@ function moisUoModal(i, N, svc, attendu){
       +moisLabel(i)+' — '+fmtEur(Math.round(tot))+'</div>'
       +'<div style="font-size:10.5px;color:var(--t3);margin-top:2px">'
       +lignes.length+' UO facturées ce mois-là'+(svi?' sur '+svi.court:'')
-      +'. Chaque UO se facture en une fois, au mois où elle s’achève. '
-      +'Choisir un mois dans la liste déroulante la déplace.'
+      +'. Chaque UO se facture en une fois et pour son montant entier, '
+      +'au mois où elle s’achève. Choisir un mois dans la liste déroulante la déplace.'
       +(svc && tauxDe(svc)<0.999
-        ? ' Les montants sont pondérés par le taux d’activité ' +svi.court+' de '
-          +Math.round(tauxDe(svc)*100)+' %, réglable dans Configuration.'
+        ? ' Le taux d’activité '+svi.court+' de '+Math.round(tauxDe(svc)*100)
+          +' % ne réduit pas les montants : il allonge les délais, une part du '
+          +'portefeuille étant bloquée. Réglable dans Configuration.'
         : '')+'</div>';
     corps.innerHTML='';
     if(!lignes.length){
@@ -9893,18 +9957,21 @@ function moisUoModal(i, N, svc, attendu){
       r.style.cssText='display:flex;align-items:center;gap:9px;padding:8px 15px;'
         +'border-bottom:1px solid var(--b);flex-wrap:wrap';
       var g=document.createElement('div'); g.style.cssText='flex:1;min-width:150px';
-      // On montre le calcul : prix de l'UO, part restante, taux d'activité.
-      var calc='';
-      if(l.part<0.999) calc+=' × '+Math.round(l.part*100)+' % restant';
-      if(l.tx<0.999)   calc+=' × '+Math.round(l.tx*100)+' % d’activité';
+      // Le montant est celui de l'UO, entier. Ce qui bouge, c'est la date :
+      // le taux d'activité allonge la durée de production.
+      var reste = (l.part<0.999)
+        ? '<span style="color:var(--t3)"> ('+fmtEur(Math.round(l.px/Math.max(l.part,0.0001)))
+          +' × '+Math.round(l.part*100)+' % restant)</span>' : '';
+      var delai = l.durEff>l.dur
+        ? l.dur+' mois de production, '+l.durEff+' avec le rythme de '
+          +Math.round(l.tx*100)+' %'
+        : l.dur+' mois de production';
       g.innerHTML='<div style="font-size:11px;font-weight:800;color:var(--t)">'
         +(l.a.no||l.a.code||'')+' <span style="font-size:9px;font-weight:700;color:'+sv.fg
         +';background:'+sv.bg+';padding:1px 6px;border-radius:6px">'+sv.court+'</span></div>'
         +'<div style="font-size:10px;color:var(--t3);margin-top:1px">'+libelleUo(l)
         +' · <b style="color:var(--green)">'+fmtEur(Math.round(l.montant))+'</b> en une fois'
-        +(calc?'<span style="color:var(--t3)"> ('+fmtEur(Math.round(l.px/Math.max(l.part,0.0001)))
-              +calc+')</span>':'')
-        +(l.dur>1?' · produite sur '+l.dur+' mois':'')
+        +reste+' · '+delai
         +(l.decal?' · <b style="color:var(--amber)">décalée de '
           +(l.decal>0?'+':'')+l.decal+' mois</b>':'')+'</div>';
       r.appendChild(g);
@@ -10014,8 +10081,10 @@ function rPrevFactu(){
   var info=document.createElement('div');
   info.style.cssText='font-size:10px;color:var(--t3);padding:8px 12px 4px;line-height:1.5';
   info.innerHTML='Chiffre d\u2019affaires attendu sur '+N+' mois. Chaque UO restante est '
-    +'factur\u00e9e en une fois, au mois o\u00f9 elle s\u2019ach\u00e8ve. Co\u00fbt mensuel de l\u2019\u00e9quipe : '
-    +'<b>'+fmtEur(cout)+'</b>. Cliquer sur une barre ou sur un montant ouvre le d\u00e9tail, '
+    +'factur\u00e9e <b>en une fois et pour son montant entier</b>, au mois o\u00f9 elle s\u2019ach\u00e8ve. '
+    +'Le taux d\u2019activit\u00e9 de chaque p\u00e9rim\u00e8tre allonge les d\u00e9lais, il ne r\u00e9duit pas les '
+    +'montants. Co\u00fbt mensuel de l\u2019\u00e9quipe : <b>'+fmtEur(cout)+'</b>. '
+    +'Cliquer sur une barre ou sur un montant ouvre le d\u00e9tail, '
     +'o\u00f9 l\u2019on peut d\u00e9placer une UO d\u2019un mois \u00e0 l\u2019autre.';
   body.appendChild(info);
 
