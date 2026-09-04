@@ -1168,7 +1168,7 @@ function sbHeaders(){
 // Serialize full app state to JSON
 function serializeState(){
   return JSON.stringify({
-    DATA:DATA,AVC:AVC,DXP:DXP,COMMENTS:COMMENTS,ENGAGE_HIST:ENGAGE_HIST,PERIM:PERIM,CHARGE_CAP:CHARGE_CAP,CAP_SVC:CAP_SVC,DUREE_SVC:DUREE_SVC,UO_PARAMS:UO_PARAMS,CAP_HEURES:CAP_HEURES,IRVE_TACHES:IRVE_TACHES,TACHES_PREV:TACHES_PREV,AFFECT_PREV:AFFECT_PREV,FACTU_HIST:FACTU_HIST,REF_MDP:REF_MDP,UO_PRIX:UO_PRIX,IRVE_PRIX:IRVE_PRIX,TACHE_MONTANT:TACHE_MONTANT,COUT_MENSUEL:COUT_MENSUEL,MECA_PRIX:MECA_UOS.map(function(u){return u.prix;}),AFFECT_FIN:AFFECT_FIN,TAUX_ACTIVITE:TAUX_ACTIVITE,SVC_CUR:SVC_CUR,TIME_LOG:TIME_LOG,TJM:TJM,HISTO_SEM:HISTO_SEM,SKILLS:SKILLS,ECARTS:ECARTS,
+    DATA:DATA,AVC:AVC,DXP:DXP,COMMENTS:COMMENTS,ENGAGE_HIST:ENGAGE_HIST,PERIM:PERIM,CHARGE_CAP:CHARGE_CAP,CAP_SVC:CAP_SVC,DUREE_SVC:DUREE_SVC,UO_PARAMS:UO_PARAMS,CAP_HEURES:CAP_HEURES,IRVE_TACHES:IRVE_TACHES,TACHES_PREV:TACHES_PREV,MARCHE_MONTANT:MARCHE_MONTANT,AFFECT_PREV:AFFECT_PREV,FACTU_HIST:FACTU_HIST,REF_MDP:REF_MDP,UO_PRIX:UO_PRIX,IRVE_PRIX:IRVE_PRIX,TACHE_MONTANT:TACHE_MONTANT,COUT_MENSUEL:COUT_MENSUEL,MECA_PRIX:MECA_UOS.map(function(u){return u.prix;}),AFFECT_FIN:AFFECT_FIN,TAUX_ACTIVITE:TAUX_ACTIVITE,SVC_CUR:SVC_CUR,TIME_LOG:TIME_LOG,TJM:TJM,HISTO_SEM:HISTO_SEM,SKILLS:SKILLS,ECARTS:ECARTS,
     LINKS_DATA:LINKS_DATA,
     MAIL_DATA:MAIL_DATA,
     HISTORY:HISTORY,
@@ -1225,6 +1225,7 @@ function applyState(json){
     if(Array.isArray(s.IRVE_TACHES)){ IRVE_TACHES.length=0; s.IRVE_TACHES.forEach(function(x){IRVE_TACHES.push(x);}); }
     if(s.TACHES_PREV){ Object.keys(TACHES_PREV).forEach(function(k){delete TACHES_PREV[k];});
       Object.keys(s.TACHES_PREV).forEach(function(k){TACHES_PREV[k]=s.TACHES_PREV[k];}); }
+    if(s.MARCHE_MONTANT) Object.keys(s.MARCHE_MONTANT).forEach(function(k){MARCHE_MONTANT[k]=s.MARCHE_MONTANT[k];});
     if(s.TIME_LOG){ Object.keys(TIME_LOG).forEach(function(k){delete TIME_LOG[k];});
       Object.keys(s.TIME_LOG).forEach(function(k){TIME_LOG[k]=s.TIME_LOG[k];}); }
     if(s.TJM){ Object.keys(s.TJM).forEach(function(k){TJM[k]=s.TJM[k];}); }
@@ -1898,8 +1899,17 @@ function rSvcBar(){
   var el=document.getElementById('svc-bar');
   if(!el) return;
   el.innerHTML='';
+  // Le compteur suit le chargé de projet choisi. Sur « Tous », il donne
+  // bien le total du périmètre. Sinon, un total qui ne bouge pas quand on
+  // change de personne laisse croire que le filtre n'a pas pris.
+  var vus=selCps();
   SERVICES.forEach(function(s){
-    var n=cpsOfSvc(s.k).reduce(function(t,cp){ return t+nbActives(cp); },0);
+    var liste=cpsOfSvc(s.k);
+    var retenus = (s.k===SVC_CUR && vus.length && vus.length<liste.length)
+      ? liste.filter(function(cp){ return vus.indexOf(cp)>=0; })
+      : liste;
+    var n=retenus.reduce(function(t,cp){ return t+nbActives(cp); },0);
+    var partiel=(retenus.length<liste.length);
     var on=(SVC_CUR===s.k);
     var b=document.createElement('button');
     b.style.cssText='display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:800;'
@@ -1911,7 +1921,9 @@ function rSvcBar(){
       +(on?s.fg:'var(--b)')+';color:'+(on?'#fff':'var(--t3)');
     badge.textContent=n;
     b.appendChild(badge);
-    b.title=s.l+' \u2014 '+n+' affaire(s) en cours';
+    b.title=s.l+' \u2014 '+n+' affaire(s) en cours'
+      +(partiel ? ' pour '+retenus.map(function(cp){ return DATA[cp].ini||cp; }).join(', ')
+                : '');
     b.addEventListener('click',function(){ setService(s.k); AG_VUE_BO=false; });
     el.appendChild(b);
   });
@@ -2382,6 +2394,7 @@ function rDtCpSel(){
       if(cpIci){
         CP_SEL=[cpIci]; CCP=cpIci;
         buildTabs(); rDtCpSel();
+        try{ rSvcBar(); }catch(e){}
         try{ agSetMode(AG_MODE); rWeek(); }catch(e){}
       } else {
         // La personne ne travaille pas sur ce p\u00e9rim\u00e8tre : on bascule sur le sien
@@ -2404,6 +2417,7 @@ function rDtCpSel(){
     bt.addEventListener('click',function(){
       CP_SEL=list.slice();
       buildTabs(); rDtCpSel();
+      try{ rSvcBar(); }catch(e){}
       try{ agSetMode(AG_MODE); rWeek(); }catch(e){}
     });
     el.appendChild(bt);
@@ -9693,6 +9707,29 @@ function valoSynth(){
   return {blocs:b, valo:v, fact:f, encours:v-f};
 }
 
+// ══════════════════════════════════════════════════════════════
+// CONSOMMATION DU MARCHÉ
+// Montant vendu par périmètre, ce qui en a été facturé, ce qui reste.
+// Le montant est saisi : il vient du marché, pas de l'application.
+// ══════════════════════════════════════════════════════════════
+var MARCHE_MONTANT = {ARMA:0, IRVE:0, MECA:0};
+function marcheDe(svc){ return +(MARCHE_MONTANT[svc]||0)||0; }
+// Facturé par périmètre, back-office IRVE compris
+function factureDe(svc){
+  var s=valoSynth(), t=0;
+  s.blocs.forEach(function(b){
+    if(svc==='ARMA' && b.name==='ARMA') t+=b.fact;
+    if(svc==='IRVE' && (b.name==='IRVE'||b.name==='IRVE back-office')) t+=b.fact;
+    if(svc==='MECA' && b.name==='RATP') t+=b.fact;
+  });
+  return t;
+}
+function consoMarche(svc){
+  var m=marcheDe(svc), f=factureDe(svc);
+  return {marche:m, facture:f, reste:m-f,
+          pct: m>0 ? Math.round(f/m*1000)/10 : null};
+}
+
 // Dernier instantane portant une valorisation, qui sert de point de depart
 // pour mesurer ce qui a ete produit depuis.
 function dernierInstantaneValo(){
@@ -11195,6 +11232,129 @@ function rFactu(){
   try{ makeCollapsibleRef(hdr, body, 'factu_referent'); }catch(e){}
 }
 
+// ══════════════════════════════════════════════════════════════
+// CONSOMMATION DU MARCHÉ — affichage
+// Placé après le module Facturation. Le conteneur est créé en
+// JavaScript, comme les autres ajouts, pour ne pas toucher au balisage.
+// ══════════════════════════════════════════════════════════════
+function rMarche(){
+  var ancre=document.getElementById('ref-factu'); if(!ancre) return;
+  var host=document.getElementById('ref-marche');
+  if(!host){
+    host=document.createElement('div');
+    host.id='ref-marche';
+    ancre.parentNode.insertBefore(host, ancre.nextSibling);
+  }
+  host.innerHTML='';
+  var card=document.createElement('div');
+  card.style.cssText='background:var(--s);border:1.5px solid var(--b);border-radius:12px;overflow:hidden;margin:0 10px 12px';
+  var hdr=document.createElement('div');
+  hdr.style.cssText='padding:9px 12px;background:var(--s2);border-bottom:1px solid var(--b);display:flex;align-items:center;gap:8px;flex-wrap:wrap';
+  var tit=document.createElement('span');
+  tit.style.cssText='font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--t2)';
+  tit.textContent='📐 Consommation du marché';
+  hdr.appendChild(tit); card.appendChild(hdr);
+  var body=document.createElement('div'); card.appendChild(body);
+
+  var info=document.createElement('div');
+  info.style.cssText='font-size:10px;color:var(--t3);padding:8px 12px 2px;line-height:1.5';
+  info.textContent='Montant vendu de chaque marché, ce qui en a déjà été facturé, '
+    +'et ce qu’il reste à consommer. Le montant du marché se saisit ici, '
+    +'il ne se déduit pas des affaires.';
+  body.appendChild(info);
+
+  SERVICES.forEach(function(s){
+    var c=consoMarche(s.k);
+    var bloc=document.createElement('div');
+    bloc.style.cssText='margin:8px 12px;border:1.5px solid '+s.fg+'33;border-radius:11px;overflow:hidden';
+    var h=document.createElement('div');
+    h.style.cssText='display:flex;align-items:center;gap:9px;padding:8px 11px;background:'+s.bg
+      +';color:'+s.fg+';flex-wrap:wrap';
+    var nom=document.createElement('span');
+    nom.style.cssText='font-size:11px;font-weight:900;flex:1';
+    nom.textContent=s.court;
+    h.appendChild(nom);
+    var lab=document.createElement('span');
+    lab.style.cssText='font-size:9.5px;font-weight:700;opacity:.85';
+    lab.textContent='Montant du marché';
+    h.appendChild(lab);
+    var inp=document.createElement('input');
+    inp.type='number'; inp.min='0'; inp.step='1000';
+    inp.value=marcheDe(s.k)||'';
+    inp.placeholder='0';
+    inp.style.cssText='width:110px;border:1.5px solid '+s.fg+'55;border-radius:7px;padding:4px 7px;'
+      +'font-size:12px;font-weight:800;text-align:right;background:var(--s);color:'+s.fg
+      +';font-family:inherit';
+    inp.title='Montant total vendu sur '+s.court+', en euros';
+    inp.addEventListener('change',function(){
+      MARCHE_MONTANT[s.k]=Math.max(0, +inp.value||0);
+      sbSave();
+      sansBouger(function(){ rMarche(); });
+    });
+    h.appendChild(inp);
+    bloc.appendChild(h);
+
+    if(!c.marche){
+      var vide=document.createElement('div');
+      vide.style.cssText='padding:9px 11px;font-size:10.5px;color:var(--t3);font-style:italic';
+      vide.textContent='Renseigne le montant du marché pour suivre sa consommation. '
+        +'Déjà facturé sur ce périmètre : '+fmtEur(Math.round(c.facture))+'.';
+      bloc.appendChild(vide);
+      body.appendChild(bloc);
+      return;
+    }
+
+    // Jauge de consommation
+    var pct=Math.max(0, Math.min(100, c.pct||0));
+    var jz=document.createElement('div');
+    jz.style.cssText='padding:10px 11px 4px';
+    var bar=document.createElement('div');
+    bar.style.cssText='height:18px;border-radius:6px;background:var(--s3);overflow:hidden;position:relative';
+    var fill=document.createElement('div');
+    var coul = pct>=95 ? 'var(--red)' : pct>=80 ? 'var(--amber)' : s.fg;
+    fill.style.cssText='height:100%;width:'+pct+'%;background:'+coul+';opacity:.9';
+    bar.appendChild(fill);
+    var txt=document.createElement('div');
+    txt.style.cssText='position:absolute;inset:0;display:flex;align-items:center;'
+      +'justify-content:center;font-size:10px;font-weight:900;color:var(--t)';
+    txt.textContent=(c.pct===null?'—':String(c.pct).replace('.',','))+' %';
+    bar.appendChild(txt);
+    jz.appendChild(bar);
+    bloc.appendChild(jz);
+
+    var g=document.createElement('div');
+    g.style.cssText='display:grid;grid-template-columns:repeat(auto-fit,minmax(108px,1fr));gap:7px;padding:6px 11px 11px';
+    function tuileM(lib, val, co, aide){
+      var d=document.createElement('div');
+      d.style.cssText='border:1px solid var(--b);border-radius:9px;padding:7px 9px;background:var(--s)';
+      d.title=aide||'';
+      d.innerHTML='<div style="font-size:8.5px;font-weight:800;color:var(--t3);text-transform:uppercase;'
+        +'letter-spacing:.04em">'+lib+'</div>'
+        +'<div style="font-size:15px;font-weight:900;color:'+co+';margin-top:2px">'+val+'</div>';
+      return d;
+    }
+    g.appendChild(tuileM('Marché', fmtEur(c.marche), 'var(--t)', 'Montant total vendu'));
+    g.appendChild(tuileM('Déjà facturé', fmtEur(Math.round(c.facture)), 'var(--green)',
+      'Somme des UO facturés, back-office compris pour IRVE'));
+    g.appendChild(tuileM('Reste', fmtEur(Math.round(c.reste)),
+      c.reste<0 ? 'var(--red)' : 'var(--blue)',
+      c.reste<0 ? 'Marché dépassé' : 'Ce qu’il reste à consommer'));
+    bloc.appendChild(g);
+
+    if(c.reste<0){
+      var al=document.createElement('div');
+      al.style.cssText='margin:0 11px 10px;padding:7px 10px;border-radius:9px;background:var(--rl);'
+        +'border:1px solid var(--red);color:var(--red);font-size:10px;font-weight:700;line-height:1.5';
+      al.textContent='Marché dépassé de '+fmtEur(Math.round(-c.reste))+'. À vérifier avec ENEDIS.';
+      bloc.appendChild(al);
+    }
+    body.appendChild(bloc);
+  });
+
+  host.appendChild(card);
+  try{ makeCollapsibleRef(hdr, body, 'marche_referent'); }catch(e){}
+}
+
 // Repli du module (chevron à droite, comme les autres modules)
 function makeCollapsibleRef(headerEl, bodyEl, storeKey){
   if(headerEl.dataset.collapsibleInit) return;
@@ -11598,6 +11758,7 @@ function rRef(){
   try{ rReaffect(); }catch(e){ console.warn('rReaffect',e); }
   try{ rSynthFactu(); }catch(e){ console.warn('rSynthFactu',e); }
   try{ rPrevFactu(); }catch(e){ console.warn('rPrevFactu',e); }
+  try{ rMarche(); }catch(e){ console.warn('rMarche',e); }
   try{ rFactu(); }catch(e){ console.warn('rFactu',e); }
   // Build CP filter strip ABOVE KPI tiles
   var stripEl=document.getElementById('ref-cp-strip');
