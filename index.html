@@ -1167,7 +1167,7 @@ function sbHeaders(){
 // Serialize full app state to JSON
 function serializeState(){
   return JSON.stringify({
-    DATA:DATA,AVC:AVC,DXP:DXP,COMMENTS:COMMENTS,ENGAGE_HIST:ENGAGE_HIST,PERIM:PERIM,CHARGE_CAP:CHARGE_CAP,CAP_SVC:CAP_SVC,DUREE_SVC:DUREE_SVC,UO_PARAMS:UO_PARAMS,CAP_HEURES:CAP_HEURES,IRVE_TACHES:IRVE_TACHES,TACHES_PREV:TACHES_PREV,MARCHE_MONTANT:MARCHE_MONTANT,AFFECT_PREV:AFFECT_PREV,FACTU_HIST:FACTU_HIST,REF_MDP:REF_MDP,UO_PRIX:UO_PRIX,IRVE_PRIX:IRVE_PRIX,TACHE_MONTANT:TACHE_MONTANT,COUT_MENSUEL:COUT_MENSUEL,MECA_PRIX:MECA_UOS.map(function(u){return u.prix;}),AFFECT_FIN:AFFECT_FIN,TAUX_ACTIVITE:TAUX_ACTIVITE,SVC_CUR:SVC_CUR,TIME_LOG:TIME_LOG,TJM:TJM,HISTO_SEM:HISTO_SEM,SKILLS:SKILLS,ECARTS:ECARTS,COMP_REFS:COMP_REFS,FORMATIONS:FORMATIONS,IDEES:IDEES,
+    DATA:DATA,AVC:AVC,DXP:DXP,COMMENTS:COMMENTS,ENGAGE_HIST:ENGAGE_HIST,PERIM:PERIM,CHARGE_CAP:CHARGE_CAP,CAP_SVC:CAP_SVC,DUREE_SVC:DUREE_SVC,UO_PARAMS:UO_PARAMS,CAP_HEURES:CAP_HEURES,IRVE_TACHES:IRVE_TACHES,TACHES_PREV:TACHES_PREV,MARCHE_MONTANT:MARCHE_MONTANT,AFFECT_PREV:AFFECT_PREV,FACTU_HIST:FACTU_HIST,REF_MDP:REF_MDP,UO_PRIX:UO_PRIX,IRVE_PRIX:IRVE_PRIX,TACHE_MONTANT:TACHE_MONTANT,COUT_MENSUEL:COUT_MENSUEL,MECA_PRIX:MECA_UOS.map(function(u){return u.prix;}),AFFECT_FIN:AFFECT_FIN,TAUX_ACTIVITE:TAUX_ACTIVITE,SVC_CUR:SVC_CUR,TIME_LOG:TIME_LOG,TJM:TJM,HISTO_SEM:HISTO_SEM,SKILLS:SKILLS,ECARTS:ECARTS,COMP_REFS:COMP_REFS,FORMATIONS:FORMATIONS,IDEES:IDEES,COMP_REQ_PAR_ENTITE:COMP_REQ_PAR_ENTITE,
     LINKS_DATA:LINKS_DATA,
     MAIL_DATA:MAIL_DATA,
     HISTORY:HISTORY,
@@ -1242,6 +1242,7 @@ function applyState(json){
     if(s.FORMATIONS){ Object.keys(FORMATIONS).forEach(function(k){delete FORMATIONS[k];});
       Object.keys(s.FORMATIONS).forEach(function(k){FORMATIONS[k]=s.FORMATIONS[k];}); }
     if(Array.isArray(s.IDEES)){ IDEES.length=0; s.IDEES.forEach(function(x){IDEES.push(x);}); }
+    if(typeof s.COMP_REQ_PAR_ENTITE==='boolean') COMP_REQ_PAR_ENTITE=s.COMP_REQ_PAR_ENTITE;
     if(s.LINKS_DATA&&s.LINKS_DATA.length)LINKS_DATA.splice(0,LINKS_DATA.length,...s.LINKS_DATA);
     if(s.MAIL_DATA)Object.keys(s.MAIL_DATA).forEach(function(k){MAIL_DATA[k]=s.MAIL_DATA[k];});
     if(s.HISTORY)Object.keys(s.HISTORY).forEach(function(k){HISTORY[k]=s.HISTORY[k];});
@@ -6701,6 +6702,7 @@ var FA_OPTS  = ['', '1', '0,75', '0,5', '2', 'NA', '~OK'];
 var FA_CP_FILTER = 'all';
 var FA_SVC = 'ARMA';
 var FA_FILTER = 'all';
+var FA_MOIS = '';   // mois de facturation prévue, vide = tous
 var FA_SEUIL = 100;   // seuil d'avancement pour l'extraction
 
 function faGetVal(a,uo){
@@ -8162,14 +8164,32 @@ function setFormation(c, v){ if(v) FORMATIONS[c]=v; else delete FORMATIONS[c]; }
 // ── Modifier le référentiel ────────────────────────────────────
 // Le pré-requis se change sur place. En mode « Tous », il s'applique
 // partout où la compétence existe, sinon la matrice se contredirait.
+// Par défaut, un pré-requis vaut pour les trois entités. La case
+// « requis par entité » libère la valeur périmètre par périmètre.
+var COMP_REQ_PAR_ENTITE=false;
 function setCompRequis(c, svc, v){
   v=Math.max(0, Math.min(4, +v||0));
-  var cibles = (svc==='TOUS'||!svc) ? ['ARMA','IRVE','MECA'] : [svc];
+  var cibles = (COMP_REQ_PAR_ENTITE && svc && svc!=='TOUS') ? [svc] : ['ARMA','IRVE','MECA'];
   cibles.forEach(function(k){
     (COMP_REFS[k]||[]).forEach(function(g){
       g.items.forEach(function(it){ if(it.l===c) it.req=v; });
     });
   });
+}
+// Les pré-requis d'une compétence, entité par entité, pour signaler
+// quand ils divergent.
+function requisParEntite(c){
+  var r={};
+  ['ARMA','IRVE','MECA'].forEach(function(k){
+    (COMP_REFS[k]||[]).forEach(function(g){
+      g.items.forEach(function(it){ if(it.l===c) r[k]=it.req; });
+    });
+  });
+  return r;
+}
+function requisDivergent(c){
+  var r=requisParEntite(c), v=Object.keys(r).map(function(k){ return r[k]; });
+  return v.length>1 && v.some(function(x){ return x!==v[0]; });
 }
 function ajouterCompetence(svc, cat, libelle, req){
   libelle=String(libelle||'').trim();
@@ -8407,6 +8427,32 @@ function rRadarComp(host){
       +svcInfo(COMP_SVC).court+' ('+nSp+') &nbsp;\u00b7&nbsp; <b>\u21c4</b> commune, la note se reporte '
       +'sur les autres matrices ('+nCom+')';
   host.appendChild(lgP);
+
+  // Case à cocher : un pré-requis par entité, ou le même partout
+  var cw=document.createElement('label');
+  cw.style.cssText='display:inline-flex;align-items:center;gap:6px;padding:2px 12px 6px;'
+    +'font-size:9.5px;font-weight:700;color:var(--t2);cursor:pointer';
+  var ck=document.createElement('input'); ck.type='checkbox';
+  ck.checked=COMP_REQ_PAR_ENTITE;
+  ck.style.cssText='width:14px;height:14px;cursor:pointer';
+  ck.addEventListener('change',function(){
+    COMP_REQ_PAR_ENTITE=ck.checked;
+    sbSave();
+    sansBouger(function(){ rComp(); });
+  });
+  cw.appendChild(ck);
+  cw.appendChild(document.createTextNode('Pré-requis différent par entité'));
+  cw.title='Décochée, une note de pré-requis s’applique aux trois matrices.\n'
+    +'Cochée, chaque entité garde la sienne.';
+  host.appendChild(cw);
+  var nDiv=competencesDe(COMP_SVC).filter(requisDivergent).length;
+  if(nDiv){
+    var nd=document.createElement('span');
+    nd.style.cssText='font-size:9px;color:var(--amber);font-weight:700;padding-left:4px';
+    nd.textContent='· '+nDiv+' compétence(s) ont déjà un pré-requis différent selon l’entité';
+    cw.appendChild(nd);
+  }
+
   if(COMP_SVC!=='ARMA'){
     var w=document.createElement('div');
     w.style.cssText='margin:2px 12px 8px;padding:7px 10px;border:1px solid #EAB308;border-radius:9px;'
@@ -8612,9 +8658,15 @@ function rComp(){
       selR.value=String(req);
       var sous=gens.filter(function(p){ return skillOf(p.ini,c)<req; }).length;
       selR.style.color = sous?'var(--red)':'var(--green)';
+      var rr=requisParEntite(c);
+      var detail=Object.keys(rr).map(function(k){ return svcInfo(k).court+' '+rr[k]; }).join(' · ');
+      selR.style.borderColor = requisDivergent(c) ? 'var(--amber)' : 'var(--b2)';
       selR.title='Pré-requis '+req
         +(sous?(' — '+sous+' personne(s) en écart'):' — atteint par tous')
-        +'\nModifiable'+(COMP_SVC==='TOUS'?' : la valeur s’applique aux trois référentiels':'');
+        +'\n'+detail
+        +'\n'+(COMP_REQ_PAR_ENTITE
+                ? 'Modifiable pour cette entité seulement'
+                : 'Modifiable : la valeur s’applique aux trois entités');
     }
     peindreReq();
     selR.addEventListener('change',function(){
@@ -9432,6 +9484,55 @@ function rReaffect(){
   info.style.cssText='font-size:10px;color:var(--t3);padding:2px 10px 6px';
   info.textContent=rows.length+' affaire(s) \u2014 choisissez le nouveau chargé de projet dans la liste.';
   body.appendChild(info);
+
+  // \u2500\u2500 Transfert en masse \u2500\u2500
+  // R\u00e9affecter un portefeuille entier ligne \u00e0 ligne, c'est des dizaines de
+  // manipulations et autant d'occasions de se tromper.
+  var bm=document.createElement('div');
+  bm.style.cssText='display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:0 10px 8px';
+  var lbm=document.createElement('span');
+  lbm.style.cssText='font-size:9.5px;font-weight:800;color:var(--t3);text-transform:uppercase;letter-spacing:.04em';
+  lbm.textContent='Tout transf\u00e9rer';
+  bm.appendChild(lbm);
+  function listeCp(){
+    var s=document.createElement('select');
+    s.style.cssText='border:1.5px solid var(--b2);border-radius:7px;padding:4px 7px;font-size:11px;'
+      +'font-weight:700;background:var(--bg);color:var(--t);font-family:inherit';
+    Object.keys(DATA).forEach(function(k){
+      var o=document.createElement('option');
+      o.value=k;
+      o.textContent=(DATA[k].ini||k)+' \u00b7 '+svcInfo(svcOf(k)).court+' ('+(gAff(k)||[]).length+')';
+      s.appendChild(o);
+    });
+    return s;
+  }
+  var sDe=listeCp(), sVers=listeCp();
+  var fl=document.createElement('span');
+  fl.style.cssText='font-size:11px;color:var(--t3);font-weight:800'; fl.textContent='\u2192';
+  var bGo=document.createElement('button');
+  bGo.style.cssText='border:none;background:var(--brand);color:#fff;border-radius:7px;padding:5px 12px;'
+    +'font-size:10.5px;font-weight:800;cursor:pointer;font-family:inherit';
+  bGo.textContent='Transf\u00e9rer';
+  bGo.addEventListener('click',function(){
+    var de=sDe.value, vers=sVers.value;
+    if(de===vers){ showToast('Choisis deux portefeuilles diff\u00e9rents'); return; }
+    var liste=(gAff(de)||[]).slice();
+    if(!liste.length){ showToast('Ce portefeuille est vide'); return; }
+    uiConfirm('Transf\u00e9rer '+liste.length+' affaire(s)',
+      (DATA[de].name||de)+' \u00b7 '+svcInfo(svcOf(de)).court+'\nvers\n'
+      +(DATA[vers].name||vers)+' \u00b7 '+svcInfo(svcOf(vers)).court
+      +'\n\nToutes les affaires changent de charg\u00e9 de projet. '
+      +'Leur avancement, leurs dates et leur facturation les suivent.',
+      function(){
+        var n=0;
+        liste.forEach(function(a){ if(moveAffaire(a, de, vers)) n++; });
+        showToast(n+' affaire(s) transf\u00e9r\u00e9e(s)');
+        try{ buildTabs(); rSvcBar(); }catch(e){}
+        sansBouger(function(){ rReaffect(); rCharge(); rPrevCharge(); });
+      }, false);
+  });
+  bm.appendChild(sDe); bm.appendChild(fl); bm.appendChild(sVers); bm.appendChild(bGo);
+  body.appendChild(bm);
 
   var wrap=document.createElement('div');
   wrap.style.cssText='overflow-x:auto;max-height:380px;overflow-y:auto';
@@ -11260,6 +11361,34 @@ function rFactu(){
     b.addEventListener('click',function(){ FA_FILTER=x[0]; rFactu(); });
     bar.appendChild(b);
   });
+  // Filtre par mois de facturation prévue : on ne garde que les affaires
+  // dont au moins un UO tombe sur le mois choisi.
+  var sep2=document.createElement('span');
+  sep2.style.cssText='width:1px;height:18px;background:var(--b2);margin:0 3px';
+  bar.appendChild(sep2);
+  var lm=document.createElement('span');
+  lm.style.cssText='font-size:9px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.04em';
+  lm.textContent='Factu prévue';
+  bar.appendChild(lm);
+  var selMois=document.createElement('select');
+  selMois.style.cssText='border:1.5px solid '+(FA_MOIS?'#1D4ED8':'var(--b2)')+';border-radius:7px;'
+    +'padding:3px 7px;font-size:10px;font-weight:700;font-family:inherit;background:'
+    +(FA_MOIS?'#DBEAFE':'var(--bg)')+';color:'+(FA_MOIS?'#1D4ED8':'var(--t3)');
+  var o0=document.createElement('option'); o0.value=''; o0.textContent='Tous les mois';
+  selMois.appendChild(o0);
+  for(var fm=PREV_RETRO; fm<PREV_MOIS; fm++){
+    var om=document.createElement('option');
+    om.value=moisISO(fm); om.textContent=moisLabel(fm);
+    selMois.appendChild(om);
+  }
+  var onc2=document.createElement('option');
+  onc2.value=PREV_NC; onc2.textContent='Date indéterminée';
+  selMois.appendChild(onc2);
+  selMois.value=FA_MOIS||'';
+  selMois.title='N’afficher que les affaires dont un UO se facture ce mois-là';
+  selMois.addEventListener('change',function(){ FA_MOIS=selMois.value; rFactu(); });
+  bar.appendChild(selMois);
+
   var sp=document.createElement('span'); sp.style.flex='1'; bar.appendChild(sp);
   body.appendChild(bar);
 
@@ -11329,6 +11458,7 @@ function rFactu(){
 
   // Mois calculés une seule fois par portefeuille : les recalculer par
   // ligne rendrait le tableau quadratique et l'onglet lent.
+  var _filtreMois=FA_MOIS;
   var moisCalcules={};
   cpsOfSvc(FA_SVC).forEach(function(cp){
     var m=new Map();
@@ -11340,6 +11470,24 @@ function rFactu(){
     }catch(e){}
     moisCalcules[cp]=m;
   });
+
+  // Le filtre par mois s'applique après le calcul, il a besoin des mois
+  var cibleMois = _filtreMois ? moisIndex(_filtreMois) : null;
+  if(_filtreMois){
+    rows=rows.filter(function(r){
+      var calc=(moisCalcules[r.cp]||new Map()).get(r.a)||{};
+      if(_filtreMois===PREV_NC){
+        return UOS.some(function(u){
+          var cle=(FA_SVC==='IRVE')?(irveProfil(r.a)+'_'+u):u;
+          return prevEstNC(r.a, cle);
+        });
+      }
+      return Object.keys(calc).some(function(k){
+        if(prevEstNC(r.a,k)) return false;
+        return calc[k]===cibleMois;
+      });
+    });
+  }
 
   var sum=document.createElement('div'); sum.className='fa-sum';
   function chip(t){ var s=document.createElement('span'); s.className='fa-chip'; s.textContent=t; return s; }
@@ -15054,15 +15202,31 @@ function boutonIdees(){
   b.addEventListener('mouseleave',function(){ ouvrir(false); });
   b.addEventListener('click',function(){ showV('idees'); });
   app.appendChild(b);
-  // Fixé par rapport à l'écran, il faut donc le caler sur le bord gauche
-  // de l'application, qui est centrée quand la fenêtre est large.
+  // En vue ordinateur, le bouton prend la place du pied de la barre
+  // latérale, qui ne disait rien d'utile. Sinon il se cale sur le bord
+  // gauche de l'application, centrée quand la fenêtre est large.
+  var pied=document.querySelector('.dt-foot');
   function caler(){
+    var desktop=(document.documentElement.getAttribute('data-layout')==='desktop');
+    if(pied) pied.style.display = desktop ? 'none' : '';
+    if(desktop && pied){
+      var rp=pied.getBoundingClientRect();
+      if(rp.width){
+        b.style.left=Math.round(rp.left+8)+'px';
+        b.style.bottom=Math.round(window.innerHeight-rp.bottom+6)+'px';
+        return;
+      }
+    }
     var r=app.getBoundingClientRect();
     b.style.left=Math.round(r.left+8)+'px';
+    b.style.bottom='60px';
   }
   caler();
   window.addEventListener('resize', caler);
   try{ if(window.ResizeObserver) new ResizeObserver(caler).observe(app); }catch(e){}
+  // Le pied a une hauteur nulle tant qu'il est masqué : on recale une fois
+  // la mise en page stabilisée.
+  setTimeout(caler, 300);
   majPastilleIdees();
   return b;
 }
@@ -18506,7 +18670,18 @@ function loadUserRole(userId, callback, email){
 }
 
 // Démarrage de l'application une fois la session ouverte.
+// Le bandeau RADAR du haut ne portait qu'un logo et un numéro de version :
+// retiré le 04/09/2026 pour rendre la hauteur à l'écran. Masqué en
+// JavaScript, le balisage du fichier n'est pas touché.
+function masquerBandeau(){
+  try{
+    var app=document.querySelector('.app'); if(!app) return;
+    var t=app.firstElementChild;
+    if(t && /powered by astridsen/i.test(t.textContent||'')) t.style.display='none';
+  }catch(e){}
+}
 function bootApp(){
+  try{ masquerBandeau(); }catch(e){}
   try{ applyRoleUI(); }catch(e){}
   buildTabs(); renderAll();
   try{
