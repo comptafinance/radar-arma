@@ -4673,12 +4673,13 @@ function rIrveTaches(){
   var wrap=document.createElement('div'); wrap.style.cssText='overflow-x:auto;max-height:340px;overflow-y:auto';
   var tbl=document.createElement('table'); tbl.className='fa-tbl';
   var th=document.createElement('thead'), tr=document.createElement('tr');
-  [['',''],['Date',''],['N\u00b0 affaire','l'],['T\u00e2che','l'],['Pour qui','l'],['CP',''],['CRD',''],['','']]
+  [['',''],['Date',''],['N\u00b0 affaire','l'],['T\u00e2che','l'],['Pour qui','l'],['CP',''],['CRD',''],
+   ['CMD / FSS',''],['','']]
   .forEach(function(c){ var x=document.createElement('th'); if(c[1])x.className=c[1]; x.textContent=c[0]; tr.appendChild(x); });
   th.appendChild(tr); tbl.appendChild(th);
   var tb=document.createElement('tbody');
   if(!IRVE_TACHES.length){
-    var tr0=document.createElement('tr'); var td0=document.createElement('td'); td0.colSpan=8;
+    var tr0=document.createElement('tr'); var td0=document.createElement('td'); td0.colSpan=9;
     td0.style.cssText='padding:14px;text-align:center;font-style:italic;color:var(--t3);font-size:10.5px';
     td0.textContent='Aucune t\u00e2che enregistr\u00e9e';
     tr0.appendChild(td0); tb.appendChild(tr0);
@@ -4776,6 +4777,28 @@ function rIrveTaches(){
     });
     tdC.appendChild(sel);
     row.appendChild(tdC);
+
+    // Commande et FSS, comme sur les autres p\u00e9rim\u00e8tres
+    var tdF=document.createElement('td');
+    tdF.style.padding='2px 3px';
+    var sf=document.createElement('select');
+    CMD_ETATS.forEach(function(e){
+      var o=document.createElement('option'); o.value=e.k; o.textContent=e.l; sf.appendChild(o);
+    });
+    function peindreF(){
+      var e=cmdEtatInfo(t.fss);
+      sf.value=e.k;
+      sf.style.cssText='border:1px solid '+e.fg+'66;border-radius:5px;padding:1px 3px;'
+        +'font-size:8.5px;font-weight:800;background:'+e.bg+';color:'+e.fg
+        +';font-family:inherit;max-width:72px';
+      sf.title=e.t+(FSS_SOURCE?'':'\nSaisie manuelle : le dossier des commandes et FSS n\u2019est pas encore branch\u00e9');
+    }
+    peindreF();
+    sf.addEventListener('change',function(){
+      if(sf.value) t.fss=sf.value; else delete t.fss;
+      peindreF(); sbSave();
+    });
+    tdF.appendChild(sf); row.appendChild(tdF);
 
     var tdX=document.createElement('td');
     tdX.style.cssText='padding:2px 3px;width:22px';
@@ -10250,6 +10273,32 @@ function moisIndex(iso){
   var n=new Date();
   return (+m[1]-n.getFullYear())*12 + (+m[2]-1-n.getMonth());
 }
+// ══════════════════════════════════════════════════════════════
+// COMMANDES ET FSS
+// Trois états par UO : commande absente, commande passée, FSS reçue.
+// Le dossier SharePoint qui portera les pièces n'existe pas encore :
+// l'état se saisit à la main en attendant, et brancherFss() prendra le
+// relais le jour où le dossier sera là, sans rien changer à l'affichage.
+// ══════════════════════════════════════════════════════════════
+var CMD_ETATS = [
+  {k:'',     l:'CMD ABS', fg:'#B91C1C', bg:'#FEE2E2', t:'Commande absente'},
+  {k:'cmd',  l:'CMD OK',  fg:'#B45309', bg:'#FEF3C7', t:'Commande passée, FSS non reçue'},
+  {k:'fss',  l:'FSS OK',  fg:'#047857', bg:'#D1FAE5', t:'FSS reçue, facturation possible'}
+];
+function cmdEtatInfo(k){
+  return CMD_ETATS.filter(function(e){ return e.k===(k||''); })[0] || CMD_ETATS[0];
+}
+function cmdDe(a,k){ return ((a.cmd||{})[k])||''; }
+function setCmd(a,k,v){
+  if(!a.cmd) a.cmd={};
+  if(v) a.cmd[k]=v; else delete a.cmd[k];
+  if(a.cmd && !Object.keys(a.cmd).length) delete a.cmd;
+}
+// Point d'entrée pour la lecture automatique du dossier SharePoint.
+// Tant qu'il n'existe pas, on ne touche à rien : la saisie manuelle fait foi.
+var FSS_SOURCE=null;   // à renseigner quand le dossier sera créé
+function brancherFss(source){ FSS_SOURCE=source||null; }
+
 // Valeur spéciale : la date n'est pas connue, l'UO n'entre pas dans le
 // prévisionnel. Elle reste visible et modifiable dans le tableau.
 var PREV_NC='NC';
@@ -11314,7 +11363,32 @@ function rFactu(){
   }
   majAcquis();
   sum.appendChild(c1);
+  // Résumé des commandes et FSS, recalculé sans reconstruire le tableau
+  var c2=chip('');
+  c2.style.cssText+=';border-color:#7C3AED;color:#7C3AED;background:#EDE9FE';
+  function majResumeCmd(){
+    var n={'':0, cmd:0, fss:0};
+    rows.forEach(function(r){
+      UOS.forEach(function(u){
+        var cle=(FA_SVC==='IRVE') ? (irveProfil(r.a)+'_'+u) : u;
+        n[cmdDe(r.a,cle)||'']++;
+      });
+    });
+    c2.textContent=n.fss+' FSS · '+n.cmd+' CMD · '+n['']+' sans commande';
+    c2.title='État des commandes et FSS sur les '+(rows.length*UOS.length)+' UO affichés';
+  }
+  majResumeCmd();
+  sum.appendChild(c2);
   body.appendChild(sum);
+  if(!FSS_SOURCE){
+    var nf=document.createElement('div');
+    nf.style.cssText='margin:0 12px 6px;padding:6px 10px;border:1px solid #EAB308;border-radius:9px;'
+      +'background:#FEF3C7;color:#713F12;font-size:9.5px;line-height:1.5';
+    nf.textContent='Commandes et FSS : saisie manuelle pour l’instant. '
+      +'Le dossier SharePoint qui portera les pièces n’est pas encore créé ; '
+      +'la lecture automatique s’y branchera sans changer ce tableau.';
+    body.appendChild(nf);
+  }
 
   var wrap=document.createElement('div');
   wrap.style.cssText='overflow-x:auto;max-height:430px;overflow-y:auto';
@@ -11341,6 +11415,7 @@ function rFactu(){
   }
   trg.appendChild(groupe('Mois de facturation pr\u00e9vu', UOS.length, '#1D4ED8', '#DBEAFE'));
   trg.appendChild(groupe('Factur\u00e9', UOS.length, '#047857', '#D1FAE5'));
+  trg.appendChild(groupe('Commandes et FSS', UOS.length, '#7C3AED', '#EDE9FE'));
   thead.appendChild(trg);
 
   cols.forEach(function(c){ var th=document.createElement('th'); if(c.cls)th.className=c.cls;
@@ -11356,11 +11431,12 @@ function rFactu(){
   }
   entetes.forEach(function(e,ei){ trh.appendChild(enteteUo(e, ei, ei===0, '#1D4ED8')); });
   entetes.forEach(function(e,ei){ trh.appendChild(enteteUo(e, ei, ei===0, '#047857')); });
+  entetes.forEach(function(e,ei){ trh.appendChild(enteteUo(e, ei, ei===0, '#7C3AED')); });
   thead.appendChild(trh); tbl.appendChild(thead);
   var tb=document.createElement('tbody');
   if(!rows.length){
     var tr0=document.createElement('tr'); var td0=document.createElement('td');
-    td0.colSpan=cols.length+UOS.length*2;
+    td0.colSpan=cols.length+UOS.length*3;
     td0.style.cssText='padding:14px;text-align:center;font-style:italic;color:var(--t3)';
     td0.textContent='Aucune affaire';
     tr0.appendChild(td0); tb.appendChild(tr0);
@@ -11551,6 +11627,36 @@ function rFactu(){
         box.appendChild(sel);
       }
       td.appendChild(box); tr.appendChild(td);
+    });
+
+    // ── Commandes et FSS ──
+    UOS.forEach(function(u,ui){
+      var td=document.createElement('td'); td.className='fa-uo';
+      if(ui===0) td.style.borderLeft='2px solid #7C3AED55';
+      td.style.padding='2px 3px';
+      var cle = (FA_SVC==='IRVE') ? (irveProfil(a)+'_'+u) : u;
+      var sc=document.createElement('select');
+      CMD_ETATS.forEach(function(e){
+        var o=document.createElement('option'); o.value=e.k; o.textContent=e.l;
+        sc.appendChild(o);
+      });
+      function peindreCmd(){
+        var e=cmdEtatInfo(cmdDe(a,cle));
+        sc.value=e.k;
+        sc.style.cssText='border:1px solid '+e.fg+'66;border-radius:5px;padding:1px 3px;'
+          +'font-size:8.5px;font-weight:800;background:'+e.bg+';color:'+e.fg
+          +';font-family:inherit;max-width:72px';
+        sc.title=u+' — '+e.t
+          +(FSS_SOURCE?'' : '\nSaisie manuelle : le dossier des commandes et FSS n’est pas encore branché');
+      }
+      peindreCmd();
+      sc.addEventListener('change',function(){
+        setCmd(a, cle, sc.value);
+        peindreCmd();
+        sbSave();
+        majResumeCmd();
+      });
+      td.appendChild(sc); tr.appendChild(td);
     });
     tb.appendChild(tr);
   });
@@ -18550,7 +18656,7 @@ setInterval(sbPoll, 20000);
 // On ne recharge jamais de force, une saisie en cours serait perdue :
 // on propose, la personne choisit son moment.
 // ══════════════════════════════════════════════════════════════
-var APP_VERSION='2026-09-04-3';
+var APP_VERSION='2026-09-04-4';
 var MAJ_VUE=false;
 function bandeauMaj(v){
   if(MAJ_VUE || document.getElementById('maj-banner')) return;
