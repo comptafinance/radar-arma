@@ -4663,7 +4663,7 @@ function rIrveTaches(){
   var wrap=document.createElement('div'); wrap.style.cssText='overflow-x:auto;max-height:340px;overflow-y:auto';
   var tbl=document.createElement('table'); tbl.className='fa-tbl';
   var th=document.createElement('thead'), tr=document.createElement('tr');
-  [['',''],['Date',''],['N\u00b0 affaire','l'],['T\u00e2che','l'],['Pour qui','l'],['CP',''],['CRD','']]
+  [['',''],['Date',''],['N\u00b0 affaire','l'],['T\u00e2che','l'],['Pour qui','l'],['CP',''],['CRD',''],['','']]
   .forEach(function(c){ var x=document.createElement('th'); if(c[1])x.className=c[1]; x.textContent=c[0]; tr.appendChild(x); });
   th.appendChild(tr); tbl.appendChild(th);
   var tb=document.createElement('tbody');
@@ -4680,13 +4680,69 @@ function rIrveTaches(){
     cb.checked=!!TACHE_SEL[i];
     cb.addEventListener('change',function(){ TACHE_SEL[i]=cb.checked; rIrveTaches(); });
     tdC.appendChild(cb); row.appendChild(tdC);
-    function cel(v,cls){ var td=document.createElement('td'); if(cls)td.className=cls;
-      td.style.fontSize='9.5px'; td.textContent=v||'\u2014'; td.title=v||''; return td; }
-    row.appendChild(cel(t.date?dFR(t.date):''));
-    row.appendChild(cel(t.aff,'l'));
-    row.appendChild(cel(t.tache,'l'));
-    row.appendChild(cel(t.pour,'l'));
-    row.appendChild(cel(t.cp));
+
+    // \u2500\u2500 \u00c9dition directe dans le tableau \u2500\u2500
+    // Plus besoin du stylet : chaque champ se modifie sur place. La bordure
+    // n'appara\u00eet qu'au survol pour ne pas charger la grille.
+    var ST_IN='width:100%;border:1px solid transparent;border-radius:5px;padding:2px 4px;'
+      +'font-size:9.5px;background:transparent;color:var(--t2);font-family:inherit;box-sizing:border-box';
+    function champ(val, ph, onSet, cls, liste){
+      var td=document.createElement('td'); if(cls) td.className=cls;
+      td.style.padding='2px 3px';
+      var inp=document.createElement('input');
+      inp.type='text'; inp.value=val||''; inp.placeholder=ph||'\u2014';
+      inp.style.cssText=ST_IN;
+      if(liste) inp.setAttribute('list', liste);
+      inp.title=(val||ph||'')+'\nModifiable directement';
+      inp.addEventListener('focus',function(){
+        inp.style.borderColor='var(--b2)'; inp.style.background='var(--bg)'; });
+      inp.addEventListener('mouseenter',function(){
+        if(document.activeElement!==inp) inp.style.borderColor='var(--b)'; });
+      inp.addEventListener('mouseleave',function(){
+        if(document.activeElement!==inp) inp.style.borderColor='transparent'; });
+      inp.addEventListener('blur',function(){
+        inp.style.borderColor='transparent'; inp.style.background='transparent';
+        onSet(inp.value.trim());
+        sbSave();
+      });
+      td.appendChild(inp);
+      return td;
+    }
+
+    // Date : une date fran\u00e7aise devient une date, tout autre texte reste
+    // tel quel. \u00ab \u00c0 r\u00e9aliser \u00bb se pose d'un clic sur le sablier.
+    var tdD=document.createElement('td');
+    tdD.style.cssText='padding:2px 3px;white-space:nowrap';
+    var inD=document.createElement('input');
+    inD.type='text';
+    inD.value = t.date ? (frToISO(t.date)?dFR(t.date):(dFR(t.date)||t.date)) : '';
+    inD.placeholder='JJ/MM/AAAA';
+    inD.style.cssText=ST_IN+';width:calc(100% - 20px);display:inline-block';
+    inD.title='Date de r\u00e9alisation, ou un texte libre comme \u00ab \u00c0 r\u00e9aliser \u00bb';
+    inD.addEventListener('focus',function(){ inD.style.borderColor='var(--b2)'; inD.style.background='var(--bg)'; });
+    inD.addEventListener('blur',function(){
+      inD.style.borderColor='transparent'; inD.style.background='transparent';
+      var v=inD.value.trim();
+      var iso=frToISO(v);
+      if(iso) t.date=iso; else if(v) t.date=v; else delete t.date;
+      sbSave();
+    });
+    tdD.appendChild(inD);
+    var bAf=document.createElement('button');
+    bAf.style.cssText='border:none;background:transparent;cursor:pointer;font-size:10px;padding:0 2px';
+    bAf.textContent='\u23f3';
+    bAf.title='Marquer \u00ab \u00c0 r\u00e9aliser \u00bb';
+    bAf.addEventListener('click',function(){
+      t.date='\u00c0 r\u00e9aliser'; inD.value='\u00c0 r\u00e9aliser'; sbSave();
+    });
+    tdD.appendChild(bAf);
+    row.appendChild(tdD);
+
+    row.appendChild(champ(t.aff, 'RAC-\u2026', function(v){ if(v) t.aff=v; else delete t.aff; }, 'l'));
+    row.appendChild(champ(t.tache, 'Nom de la t\u00e2che',
+      function(v){ if(v) t.tache=v; else delete t.tache; }, 'l', 'liste-taches'));
+    row.appendChild(champ(t.pour, 'Pour qui', function(v){ if(v) t.pour=v; else delete t.pour; }, 'l'));
+    row.appendChild(champ(t.cp, 'CP', function(v){ if(v) t.cp=v; else delete t.cp; }, '', 'liste-cp'));
     // UO coordination : 0,1 par tâche, à basculer quand facturé
     var tdC=document.createElement('td');
     var sel=document.createElement('select');
@@ -4710,9 +4766,52 @@ function rIrveTaches(){
     });
     tdC.appendChild(sel);
     row.appendChild(tdC);
+
+    var tdX=document.createElement('td');
+    tdX.style.cssText='padding:2px 3px;width:22px';
+    var bx=document.createElement('button');
+    bx.style.cssText='border:none;background:transparent;color:var(--b2);cursor:pointer;'
+      +'font-size:11px;padding:0 3px;font-family:inherit';
+    bx.textContent='✕';
+    bx.title='Supprimer cette tâche';
+    bx.addEventListener('mouseenter',function(){ bx.style.color='var(--red)'; });
+    bx.addEventListener('mouseleave',function(){ bx.style.color='var(--b2)'; });
+    bx.addEventListener('click',function(){
+      uiConfirm('Supprimer la tâche',
+        (t.tache||'Cette tâche')+(t.aff?(' sur '+t.aff):'')+' sera retirée de la liste.',
+        function(){
+          IRVE_TACHES.splice(i,1);
+          TACHE_SEL={};
+          sbSave();
+          sansBouger(function(){ rIrveTaches(); });
+        }, true);
+    });
+    tdX.appendChild(bx); row.appendChild(tdX);
     tb.appendChild(row);
   });
   tbl.appendChild(tb); wrap.appendChild(tbl); body.appendChild(wrap);
+
+  // Listes de suggestions, partagées par toutes les lignes
+  var dlT=document.createElement('datalist'); dlT.id='liste-taches';
+  var vusT={};
+  TACHE_TYPES.concat(IRVE_TACHES.map(function(x){ return x.tache; }))
+    .forEach(function(x){
+      x=String(x||'').trim();
+      if(!x || vusT[x]) return; vusT[x]=1;
+      var o=document.createElement('option'); o.value=x; dlT.appendChild(o);
+    });
+  body.appendChild(dlT);
+  var dlC=document.createElement('datalist'); dlC.id='liste-cp';
+  var vusC={};
+  personnes().map(function(p){ return p.ini; })
+    .concat(IRVE_TACHES.map(function(x){ return x.cp; }))
+    .forEach(function(x){
+      x=String(x||'').trim();
+      if(!x || vusC[x]) return; vusC[x]=1;
+      var o=document.createElement('option'); o.value=x; dlC.appendChild(o);
+    });
+  body.appendChild(dlC);
+
   host.appendChild(card);
   try{ makeCollapsibleRef(hdr, body, 'taches_referent'); }catch(e){}
 }
@@ -4733,13 +4832,23 @@ function tacheModal(idx){
     x.textContent=l; d.appendChild(x); d.appendChild(el); return d; }
   var iD=document.createElement('input'); iD.style.cssText=ST; iD.value=dFR(t.date); iD.placeholder='JJ/MM/AAAA';
   var iA=document.createElement('input'); iA.style.cssText=ST; iA.value=t.aff; iA.placeholder='RAC-...';
-  var sT=document.createElement('select'); sT.style.cssText=ST;
-  TACHE_TYPES.forEach(function(x){ var o=document.createElement('option'); o.value=x; o.textContent=x;
-    if(x===t.tache) o.selected=true; sT.appendChild(o); });
+  // Le nom de la tâche est libre : les types courants sont proposés,
+  // sans empêcher d'en écrire un autre.
+  var sT=document.createElement('input'); sT.style.cssText=ST;
+  sT.value=t.tache||''; sT.placeholder='Nom de la tâche';
+  sT.setAttribute('list','liste-taches-modal');
+  var dlM=document.createElement('datalist'); dlM.id='liste-taches-modal';
+  var vusM={};
+  TACHE_TYPES.concat(IRVE_TACHES.map(function(x){ return x.tache; })).forEach(function(x){
+    x=String(x||'').trim();
+    if(!x || vusM[x]) return; vusM[x]=1;
+    var o=document.createElement('option'); o.value=x; dlM.appendChild(o);
+  });
   var iP=document.createElement('input'); iP.style.cssText=ST; iP.value=t.pour; iP.placeholder='Nom du demandeur';
   var iC=document.createElement('input'); iC.style.cssText=ST; iC.value=t.cp; iC.placeholder='Initiales';
   f.appendChild(champ('Date',iD)); f.appendChild(champ('N\u00b0 affaire',iA));
-  f.appendChild(champ('T\u00e2che',sT)); f.appendChild(champ('R\u00e9alis\u00e9e pour',iP));
+  f.appendChild(champ('T\u00e2che',sT)); f.appendChild(dlM);
+  f.appendChild(champ('R\u00e9alis\u00e9e pour',iP));
   f.appendChild(champ('Par (CP)',iC));
   box.appendChild(f);
   var ft=document.createElement('div');
