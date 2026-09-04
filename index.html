@@ -1168,7 +1168,7 @@ function sbHeaders(){
 // Serialize full app state to JSON
 function serializeState(){
   return JSON.stringify({
-    DATA:DATA,AVC:AVC,DXP:DXP,COMMENTS:COMMENTS,ENGAGE_HIST:ENGAGE_HIST,PERIM:PERIM,CHARGE_CAP:CHARGE_CAP,CAP_SVC:CAP_SVC,DUREE_SVC:DUREE_SVC,UO_PARAMS:UO_PARAMS,CAP_HEURES:CAP_HEURES,IRVE_TACHES:IRVE_TACHES,AFFECT_PREV:AFFECT_PREV,FACTU_HIST:FACTU_HIST,REF_MDP:REF_MDP,UO_PRIX:UO_PRIX,IRVE_PRIX:IRVE_PRIX,TACHE_MONTANT:TACHE_MONTANT,COUT_MENSUEL:COUT_MENSUEL,MECA_PRIX:MECA_UOS.map(function(u){return u.prix;}),AFFECT_FIN:AFFECT_FIN,TAUX_ACTIVITE:TAUX_ACTIVITE,SVC_CUR:SVC_CUR,TIME_LOG:TIME_LOG,TJM:TJM,HISTO_SEM:HISTO_SEM,SKILLS:SKILLS,ECARTS:ECARTS,
+    DATA:DATA,AVC:AVC,DXP:DXP,COMMENTS:COMMENTS,ENGAGE_HIST:ENGAGE_HIST,PERIM:PERIM,CHARGE_CAP:CHARGE_CAP,CAP_SVC:CAP_SVC,DUREE_SVC:DUREE_SVC,UO_PARAMS:UO_PARAMS,CAP_HEURES:CAP_HEURES,IRVE_TACHES:IRVE_TACHES,TACHES_PREV:TACHES_PREV,AFFECT_PREV:AFFECT_PREV,FACTU_HIST:FACTU_HIST,REF_MDP:REF_MDP,UO_PRIX:UO_PRIX,IRVE_PRIX:IRVE_PRIX,TACHE_MONTANT:TACHE_MONTANT,COUT_MENSUEL:COUT_MENSUEL,MECA_PRIX:MECA_UOS.map(function(u){return u.prix;}),AFFECT_FIN:AFFECT_FIN,TAUX_ACTIVITE:TAUX_ACTIVITE,SVC_CUR:SVC_CUR,TIME_LOG:TIME_LOG,TJM:TJM,HISTO_SEM:HISTO_SEM,SKILLS:SKILLS,ECARTS:ECARTS,
     LINKS_DATA:LINKS_DATA,
     MAIL_DATA:MAIL_DATA,
     HISTORY:HISTORY,
@@ -1223,6 +1223,8 @@ function applyState(json){
     if(s.TAUX_ACTIVITE) Object.keys(s.TAUX_ACTIVITE).forEach(function(k){TAUX_ACTIVITE[k]=s.TAUX_ACTIVITE[k];});
     if(s.AFFECT_FIN) Object.keys(s.AFFECT_FIN).forEach(function(k){AFFECT_FIN[k]=s.AFFECT_FIN[k];});
     if(Array.isArray(s.IRVE_TACHES)){ IRVE_TACHES.length=0; s.IRVE_TACHES.forEach(function(x){IRVE_TACHES.push(x);}); }
+    if(s.TACHES_PREV){ Object.keys(TACHES_PREV).forEach(function(k){delete TACHES_PREV[k];});
+      Object.keys(s.TACHES_PREV).forEach(function(k){TACHES_PREV[k]=s.TACHES_PREV[k];}); }
     if(s.TIME_LOG){ Object.keys(TIME_LOG).forEach(function(k){delete TIME_LOG[k];});
       Object.keys(s.TIME_LOG).forEach(function(k){TIME_LOG[k]=s.TIME_LOG[k];}); }
     if(s.TJM){ Object.keys(s.TJM).forEach(function(k){TJM[k]=s.TJM[k];}); }
@@ -4522,8 +4524,30 @@ var TACHE_TYPES = ['Synoptique','EOTP/OCB','Plans 200e+1000e','DMEO','CMD Ext','
                    'DMR','ICP/PPS','Contr\u00f4le N1','Autre'];
 var TACHE_MONTANT = 100;    // montant factur\u00e9 par t\u00e2che, en euros
 var TACHE_SEL = {};
+// T\u00e2ches back-office attendues sur les mois \u00e0 venir : { '2026-11': 12 }
+// Elles alimentent la facturation pr\u00e9visionnelle IRVE et la charge,
+// \u00e0 raison d'une heure par t\u00e2che.
+var TACHES_PREV = {};
+var TACHE_HEURES = 1;
 
 function tacheMontant(){ return TACHE_MONTANT||0; }
+function tachesPrevMois(iso){ return +(TACHES_PREV[iso]||0)||0; }
+function setTachesPrev(iso, n){
+  n=+n||0;
+  if(n>0) TACHES_PREV[iso]=n; else delete TACHES_PREV[iso];
+}
+// Chiffre d'affaires attendu des t\u00e2ches back-office, mois par mois
+function factuTachesPrev(nMois){
+  var out=new Array(nMois).fill(0);
+  for(var i=0;i<nMois;i++) out[i]=tachesPrevMois(moisISO(i))*tacheMontant();
+  return out;
+}
+// Charge correspondante, en heures : une t\u00e2che vaut une heure
+function heuresTachesPrev(nMois){
+  var out=new Array(nMois).fill(0);
+  for(var i=0;i<nMois;i++) out[i]=tachesPrevMois(moisISO(i))*TACHE_HEURES;
+  return out;
+}
 
 function rIrveTaches(){
   var host=document.getElementById('ref-taches'); if(!host) return;
@@ -4566,6 +4590,61 @@ function rIrveTaches(){
   exp.addEventListener('click',exportTaches);
   bar.appendChild(exp);
   body.appendChild(bar);
+
+  // ── Tâches attendues sur les mois à venir ──
+  // Elles nourrissent la facturation prévisionnelle IRVE et la charge,
+  // à raison d'une heure par tâche.
+  var tp=document.createElement('div');
+  tp.style.cssText='margin:0 12px 10px;border:1.5px solid #7C3AED33;border-radius:11px;overflow:hidden';
+  var tph=document.createElement('div');
+  tph.style.cssText='padding:7px 11px;background:#EDE9FE;color:#7C3AED;font-size:10px;font-weight:800;'
+    +'text-transform:uppercase;letter-spacing:.04em';
+  tph.textContent='Tâches attendues sur les mois à venir';
+  tp.appendChild(tph);
+  var tpi=document.createElement('div');
+  tpi.style.cssText='font-size:9.5px;color:var(--t3);padding:7px 11px 2px;line-height:1.5';
+  tpi.innerHTML='Nombre de tâches prévues chaque mois. Chacune vaut <b>'+fmtEur(tacheMontant())
+    +'</b> en facturation et <b>'+TACHE_HEURES+' h</b> de charge pour les chargés de projet.';
+  tp.appendChild(tpi);
+  var tpg=document.createElement('div');
+  tpg.style.cssText='display:grid;grid-template-columns:repeat(auto-fit,minmax(74px,1fr));gap:6px;padding:8px 11px';
+  for(var mi=0; mi<PREV_MOIS; mi++){
+    (function(i){
+      var iso=moisISO(i);
+      var c=document.createElement('div');
+      c.style.cssText='border:1px solid var(--b);border-radius:8px;padding:5px 7px;background:var(--s)';
+      var lb=document.createElement('div');
+      lb.style.cssText='font-size:8.5px;font-weight:800;color:var(--t3);text-transform:uppercase';
+      lb.textContent=moisLabel(i);
+      var inp=document.createElement('input');
+      inp.type='number'; inp.min='0'; inp.step='1';
+      inp.value=tachesPrevMois(iso)||'';
+      inp.placeholder='0';
+      inp.style.cssText='width:100%;border:none;border-bottom:1.5px solid var(--b2);background:transparent;'
+        +'font-size:15px;font-weight:900;color:#7C3AED;font-family:inherit;padding:2px 0;text-align:center';
+      inp.title=moisLabel(i)+' — nombre de tâches back-office attendues';
+      inp.addEventListener('change',function(){
+        setTachesPrev(iso, inp.value);
+        inp.value=tachesPrevMois(iso)||'';
+        sbSave();
+        try{ rPrevFactu(); rPrevCharge(); }catch(e){}
+        majTotTaches();
+      });
+      c.appendChild(lb); c.appendChild(inp); tpg.appendChild(c);
+    })(mi);
+  }
+  tp.appendChild(tpg);
+  var tpt=document.createElement('div');
+  tpt.style.cssText='padding:2px 11px 9px;font-size:10.5px;font-weight:800;color:#7C3AED';
+  function majTotTaches(){
+    var n=0;
+    for(var i=0;i<PREV_MOIS;i++) n+=tachesPrevMois(moisISO(i));
+    tpt.textContent=n+' tâche(s) attendue(s) sur '+PREV_MOIS+' mois — '
+      +fmtEur(n*tacheMontant())+' et '+(n*TACHE_HEURES)+' h de charge';
+  }
+  majTotTaches();
+  tp.appendChild(tpt);
+  body.appendChild(tp);
 
   var wrap=document.createElement('div'); wrap.style.cssText='overflow-x:auto;max-height:340px;overflow-y:auto';
   var tbl=document.createElement('table'); tbl.className='fa-tbl';
@@ -7245,6 +7324,11 @@ function rPrevCharge(){
       var ad=heuresAffectation(s.k, PREV_MOIS);
       for(var m2=0;m2<PREV_MOIS;m2++) arr[m2]+=ad[m2];
     }
+    // Les tâches back-office attendues pèsent une heure chacune
+    if(s.k==='IRVE'){
+      var th=heuresTachesPrev(PREV_MOIS);
+      for(var m4=0;m4<PREV_MOIS;m4++) arr[m4]+=th[m4];
+    }
     parSvc[s.k]=arr;
   });
   var totals=[];
@@ -9770,10 +9854,30 @@ function uoPrixRestant(cp,a,u){
   return m?m.prix:0;
 }
 // Chiffre d'affaires projeté, mois par mois, pour un portefeuille
-// Décalage manuel d'une UO, en mois, saisi depuis la facturation
-// prévisionnelle. Le mois d'une UO n'est pas stocké, il est déduit de
-// l'enchaînement des UO non achevées : on garde donc seulement l'écart
-// voulu par rapport à ce calcul, et le reste continue de vivre.
+// ══════════════════════════════════════════════════════════════
+// MOIS DE FACTURATION CHOISI POUR UNE UO
+// a.prev = { ETD:'2026-11', TRX:'2027-02', … }
+// Une date absolue, pas un décalage : elle ne glisse pas avec le temps.
+// Quand elle est vide, le mois est déduit de l'enchaînement des UO.
+// ══════════════════════════════════════════════════════════════
+function moisISO(i){
+  var d=new Date(); d.setDate(1); d.setMonth(d.getMonth()+i);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+}
+// Index du mois par rapport au mois courant. null si la valeur est vide.
+function moisIndex(iso){
+  var m=String(iso||'').match(/^(\d{4})-(\d{2})/);
+  if(!m) return null;
+  var n=new Date();
+  return (+m[1]-n.getFullYear())*12 + (+m[2]-1-n.getMonth());
+}
+function prevUo(a,k){ return ((a.prev||{})[k])||''; }
+function setPrevUo(a,k,iso){
+  if(!a.prev) a.prev={};
+  if(iso) a.prev[k]=iso; else delete a.prev[k];
+  if(a.prev && !Object.keys(a.prev).length) delete a.prev;
+}
+// Ancien décalage relatif, gardé en repli pour ne rien perdre
 function decalUo(a,k){ return ((a.decal||{})[k])||0; }
 function setDecalUo(a,k,v){
   if(!a.decal) a.decal={};
@@ -9841,10 +9945,15 @@ function prevFactuLignes(cp){
       if(!px) return;
       var man=decalUo(a,u.k);
       var base=Math.max(0, debutEff+dec);
-      var deb=Math.max(0, base+man);
+      var baseFin=base+durEff-1;
+      // Un mois saisi dans l'onglet Facturation prime sur le calcul.
+      var choisi=moisIndex(prevUo(a,u.k));
+      var fin, deb;
+      if(choisi!==null){ fin=Math.max(0,choisi); deb=Math.max(0, fin-durEff+1); }
+      else { deb=Math.max(0, base+man); fin=deb+durEff-1; }
       out.push({cp:cp, a:a, k:u.k, px:px, dur:dur, durEff:durEff, decal:man, tx:tx,
-                base:base, baseFin:base+durEff-1, deb:deb, fin:deb+durEff-1,
-                montant:px, part:reste, avance:u.part});
+                base:base, baseFin:baseFin, deb:deb, fin:fin,
+                fige:(choisi!==null), montant:px, part:reste, avance:u.part});
     });
   });
   return out;
@@ -9866,15 +9975,16 @@ function uoDuMois(i, svc){
   out.sort(function(x,y){ return y.montant-x.montant; });
   return out;
 }
-// Déplacer une UO vers un autre mois de facturation.
+// Déplacer une UO vers un autre mois de facturation. On écrit une date
+// absolue, la même que celle saisie dans l'onglet Facturation.
 // suite : entraîner les UO qui la suivent sur la même affaire.
 function deplacerUo(l, moisCible, suite){
   var delta=moisCible-l.fin;
   if(!delta) return 0;
-  var liste=uoRestants(l.cp, l.a).map(function(u){ return u.k; });
-  var i=liste.indexOf(l.k);
-  var cibles = (suite && i>=0) ? liste.slice(i) : [l.k];
-  cibles.forEach(function(k){ setDecalUo(l.a, k, decalUo(l.a,k)+delta); });
+  var lignes=prevFactuLignes(l.cp).filter(function(x){ return x.a===l.a; });
+  var i=lignes.map(function(x){ return x.k; }).indexOf(l.k);
+  var cibles = (suite && i>=0) ? lignes.slice(i) : [l];
+  cibles.forEach(function(x){ setPrevUo(l.a, x.k, moisISO(Math.max(0, x.fin+delta))); });
   return cibles.length;
 }
 // Apport des affectations prévisionnelles, en euros
@@ -10052,18 +10162,19 @@ function moisUoModal(i, N, svc, attendu){
       var reste = (l.part<0.999)
         ? '<span style="color:var(--t3)"> ('+fmtEur(Math.round(l.px/Math.max(l.part,0.0001)))
           +', déjà facturé à '+Math.round((1-l.part)*100)+' %)</span>' : '';
-      var delai = l.durEff>l.dur
-        ? l.dur+' mois de production, '+l.durEff+' avec le rythme de '
-          +Math.round(l.tx*100)+' %'
-        : l.dur+' mois de production';
+      // On ne dit la durée que lorsqu'elle explique un report : sinon
+      // « 1 mois de production » n'apprend rien et brouille la lecture.
+      var delai = (l.durEff>l.dur)
+        ? ' · <span style="color:var(--t3)">'+l.dur+' mois de production, '+l.durEff
+          +' au rythme de '+Math.round(l.tx*100)+' %</span>' : '';
+      var fige = l.fige
+        ? ' · <b style="color:#1D4ED8">mois imposé</b>' : '';
       g.innerHTML='<div style="font-size:11px;font-weight:800;color:var(--t)">'
         +(l.a.no||l.a.code||'')+' <span style="font-size:9px;font-weight:700;color:'+sv.fg
         +';background:'+sv.bg+';padding:1px 6px;border-radius:6px">'+sv.court+'</span></div>'
         +'<div style="font-size:10px;color:var(--t3);margin-top:1px">'+libelleUo(l)
         +' · <b style="color:var(--green)">'+fmtEur(Math.round(l.montant))+'</b> en une fois'
-        +reste+' · '+delai
-        +(l.decal?' · <b style="color:var(--amber)">décalée de '
-          +(l.decal>0?'+':'')+l.decal+' mois</b>':'')+'</div>';
+        +reste+delai+fige+'</div>';
       r.appendChild(g);
       var sel=document.createElement('select');
       sel.style.cssText='border:1.5px solid var(--b2);border-radius:7px;padding:4px 7px;'
@@ -10084,16 +10195,16 @@ function moisUoModal(i, N, svc, attendu){
         dessiner();
       });
       r.appendChild(sel);
-      if(l.decal){
+      if(l.fige){
         var rz=document.createElement('button');
         rz.style.cssText='border:1px solid var(--b2);background:var(--s2);color:var(--t3);'
           +'border-radius:7px;padding:4px 8px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit';
         rz.textContent='↺';
         rz.title='Revenir au mois calculé automatiquement ('+moisLabel(l.baseFin)+')';
         rz.addEventListener('click',function(){
-          setDecalUo(l.a, l.k, 0); sbSave();
-          showToast('Décalage annulé');
-          try{ rPrevFactu(); }catch(e){}
+          setPrevUo(l.a, l.k, ''); setDecalUo(l.a, l.k, 0); sbSave();
+          showToast('Mois rendu au calcul automatique');
+          try{ rPrevFactu(); rFactu(); }catch(e){}
           dessiner();
         });
         r.appendChild(rz);
@@ -10161,6 +10272,11 @@ function rPrevFactu(){
     if(PREV_AVEC_AFFECT){
       var ad=factuAffectation(s.k,N);
       for(var m2=0;m2<N;m2++) arr[m2]+=ad[m2];
+    }
+    // Les tâches back-office attendues se facturent sur le périmètre IRVE
+    if(s.k==='IRVE'){
+      var tp=factuTachesPrev(N);
+      for(var m4=0;m4<N;m4++) arr[m4]+=tp[m4];
     }
     parSvc[s.k]=arr;
     for(var m3=0;m3<N;m3++) total[m3]+=arr[m3];
@@ -10760,6 +10876,20 @@ function rFactu(){
     });
   });
 
+  // Mois calculés une seule fois par portefeuille : les recalculer par
+  // ligne rendrait le tableau quadratique et l'onglet lent.
+  var moisCalcules={};
+  cpsOfSvc(FA_SVC).forEach(function(cp){
+    var m=new Map();
+    try{
+      prevFactuLignes(cp).forEach(function(l){
+        if(!m.has(l.a)) m.set(l.a,{});
+        m.get(l.a)[l.k]=l.fin;
+      });
+    }catch(e){}
+    moisCalcules[cp]=m;
+  });
+
   var sum=document.createElement('div'); sum.className='fa-sum';
   function chip(t){ var s=document.createElement('span'); s.className='fa-chip'; s.textContent=t; return s; }
   sum.appendChild(chip(rows.length+' affaire(s)'));
@@ -10772,24 +10902,45 @@ function rFactu(){
   var wrap=document.createElement('div');
   wrap.style.cssText='overflow-x:auto;max-height:430px;overflow-y:auto';
   var tbl=document.createElement('table'); tbl.className='fa-tbl';
-  var thead=document.createElement('thead'), trh=document.createElement('tr');
+  // En-t\u00eate \u00e0 deux niveaux : les dates pr\u00e9visionnelles d'abord, la
+  // facturation ensuite, chacune avec une colonne par UO.
+  var thead=document.createElement('thead');
+  var trg=document.createElement('tr'), trh=document.createElement('tr');
   var cols=[{l:'N\u00b0 affaire',cls:'l'},{l:'CP',cls:'l'}];
   if(FA_SVC==='IRVE') cols.push({l:'Type',cls:'l'},{l:'Cplx',cls:''});
+  var thVide=document.createElement('th');
+  thVide.colSpan=cols.length; thVide.className='l'; thVide.textContent='';
+  trg.appendChild(thVide);
+  function groupe(txt, n, fg, bg){
+    var th=document.createElement('th');
+    th.colSpan=n;
+    th.style.cssText='font-size:8px;font-weight:900;letter-spacing:.04em;color:'+fg
+      +';background:'+bg+';border-left:2px solid '+fg+'55';
+    th.textContent=txt;
+    return th;
+  }
+  trg.appendChild(groupe('Mois de facturation pr\u00e9vu', UOS.length, '#1D4ED8', '#DBEAFE'));
+  trg.appendChild(groupe('Factur\u00e9', UOS.length, '#047857', '#D1FAE5'));
+  thead.appendChild(trg);
+
   cols.forEach(function(c){ var th=document.createElement('th'); if(c.cls)th.className=c.cls;
     th.textContent=c.l; trh.appendChild(th); });
-  entetes.forEach(function(e,ei){
+  function enteteUo(e, ei, premier, coul){
     var th=document.createElement('th'); th.className='fa-uo';
     th.style.fontSize='8px';
+    if(premier) th.style.borderLeft='2px solid '+coul+'55';
     th.innerHTML=e.l+(e.sub?'<div style="font-weight:600;font-size:7.5px;color:var(--t3)">'+e.sub+'</div>':'');
     if(FA_SVC==='MECA' && MECA_UOS[ei]) th.title=MECA_UOS[ei].l;
     else if(FA_SVC==='ARMA') th.title=FA_LABEL[UOS[ei]]||'';
-    trh.appendChild(th);
-  });
+    return th;
+  }
+  entetes.forEach(function(e,ei){ trh.appendChild(enteteUo(e, ei, ei===0, '#1D4ED8')); });
+  entetes.forEach(function(e,ei){ trh.appendChild(enteteUo(e, ei, ei===0, '#047857')); });
   thead.appendChild(trh); tbl.appendChild(thead);
   var tb=document.createElement('tbody');
   if(!rows.length){
     var tr0=document.createElement('tr'); var td0=document.createElement('td');
-    td0.colSpan=cols.length+UOS.length;
+    td0.colSpan=cols.length+UOS.length*2;
     td0.style.cssText='padding:14px;text-align:center;font-style:italic;color:var(--t3)';
     td0.textContent='Aucune affaire';
     tr0.appendChild(td0); tb.appendChild(tr0);
@@ -10821,8 +10972,53 @@ function rFactu(){
       tdX.title=pr==='H'?'Historique : CRD moyen, TRX simple':('Complexit\u00e9 '+(pr==='M'?'moyenne':'simple'));
       tr.appendChild(tdX);
     }
-    UOS.forEach(function(u){
+    // \u2500\u2500 Mois de facturation pr\u00e9vu, un choix par UO \u2500\u2500
+    // Vide = le mois est d\u00e9duit de l'encha\u00eenement des UO ; le libell\u00e9
+    // montre alors ce mois calcul\u00e9, pour que la colonne reste lisible.
+    var calc=(moisCalcules[r.cp]||{}).get(a)||{};
+    UOS.forEach(function(u,ui){
       var td=document.createElement('td'); td.className='fa-uo';
+      if(ui===0) td.style.borderLeft='2px solid #1D4ED855';
+      var cleP = (FA_SVC==='IRVE') ? (irveProfil(a)+'_'+u) : u;
+      var sd=document.createElement('select');
+      sd.style.cssText='font-size:8.5px;font-weight:700;border:1px solid var(--b2);border-radius:5px;'
+        +'padding:2px 3px;background:var(--bg);color:var(--t);font-family:inherit;max-width:72px';
+      var cur=prevUo(a, cleP);
+      var auto=calc[cleP];
+      var o0=document.createElement('option');
+      o0.value='';
+      o0.textContent = (auto===undefined) ? '\u2014' : moisLabel(auto);
+      sd.appendChild(o0);
+      for(var mi=0; mi<PREV_MOIS; mi++){
+        var op=document.createElement('option');
+        op.value=moisISO(mi); op.textContent=moisLabel(mi);
+        sd.appendChild(op);
+      }
+      if(cur && !sd.querySelector('option[value="'+cur+'"]')){
+        var oc=document.createElement('option'); oc.value=cur; oc.textContent=cur; sd.appendChild(oc);
+      }
+      sd.value=cur||'';
+      if(!cur){ sd.style.color='var(--t3)'; sd.style.fontWeight='600'; sd.style.borderStyle='dashed'; }
+      else { sd.style.color='#1D4ED8'; sd.style.background='#DBEAFE'; }
+      // Rien \u00e0 facturer sur cet UO : le choix n'aurait aucun effet, on le ferme
+      if(auto===undefined){
+        sd.disabled=true;
+        sd.style.opacity='.45'; sd.style.cursor='not-allowed';
+      }
+      sd.title = (auto===undefined)
+        ? u+' \u2014 plus rien \u00e0 facturer sur cet UO'
+        : u+(cur?('\nMois impos\u00e9 : '+moisLabel(moisIndex(cur))):('\nMois calcul\u00e9 : '+moisLabel(auto)))
+          +'\nChoisir un mois fige la facturation de cet UO';
+      sd.addEventListener('change',function(){
+        setPrevUo(a, cleP, sd.value);
+        sbSave();
+        setTimeout(function(){ try{ rFactu(); rPrevFactu(); rPrevCharge(); }catch(e){} },10);
+      });
+      td.appendChild(sd); tr.appendChild(td);
+    });
+    UOS.forEach(function(u,ui){
+      var td=document.createElement('td'); td.className='fa-uo';
+      if(ui===0) td.style.borderLeft='2px solid #04785755';
       var box=document.createElement('div'); box.className='fa-cell';
       // Avancement r\u00e9el : sert de libell\u00e9 \u00e0 l'option \u00ab non factur\u00e9 \u00bb
       var avPct=null;
@@ -17576,7 +17772,7 @@ setInterval(sbPoll, 20000);
 // On ne recharge jamais de force, une saisie en cours serait perdue :
 // on propose, la personne choisit son moment.
 // ══════════════════════════════════════════════════════════════
-var APP_VERSION='2026-09-03-6';
+var APP_VERSION='2026-09-04-1';
 var MAJ_VUE=false;
 function bandeauMaj(v){
   if(MAJ_VUE || document.getElementById('maj-banner')) return;
