@@ -1168,7 +1168,7 @@ function sbHeaders(){
 // Serialize full app state to JSON
 function serializeState(){
   return JSON.stringify({
-    DATA:DATA,AVC:AVC,DXP:DXP,COMMENTS:COMMENTS,ENGAGE_HIST:ENGAGE_HIST,PERIM:PERIM,CHARGE_CAP:CHARGE_CAP,CAP_SVC:CAP_SVC,DUREE_SVC:DUREE_SVC,UO_PARAMS:UO_PARAMS,CAP_HEURES:CAP_HEURES,IRVE_TACHES:IRVE_TACHES,TACHES_PREV:TACHES_PREV,MARCHE_MONTANT:MARCHE_MONTANT,AFFECT_PREV:AFFECT_PREV,FACTU_HIST:FACTU_HIST,REF_MDP:REF_MDP,UO_PRIX:UO_PRIX,IRVE_PRIX:IRVE_PRIX,TACHE_MONTANT:TACHE_MONTANT,COUT_MENSUEL:COUT_MENSUEL,MECA_PRIX:MECA_UOS.map(function(u){return u.prix;}),AFFECT_FIN:AFFECT_FIN,TAUX_ACTIVITE:TAUX_ACTIVITE,SVC_CUR:SVC_CUR,TIME_LOG:TIME_LOG,TJM:TJM,HISTO_SEM:HISTO_SEM,SKILLS:SKILLS,ECARTS:ECARTS,
+    DATA:DATA,AVC:AVC,DXP:DXP,COMMENTS:COMMENTS,ENGAGE_HIST:ENGAGE_HIST,PERIM:PERIM,CHARGE_CAP:CHARGE_CAP,CAP_SVC:CAP_SVC,DUREE_SVC:DUREE_SVC,UO_PARAMS:UO_PARAMS,CAP_HEURES:CAP_HEURES,IRVE_TACHES:IRVE_TACHES,TACHES_PREV:TACHES_PREV,MARCHE_MONTANT:MARCHE_MONTANT,AFFECT_PREV:AFFECT_PREV,FACTU_HIST:FACTU_HIST,REF_MDP:REF_MDP,UO_PRIX:UO_PRIX,IRVE_PRIX:IRVE_PRIX,TACHE_MONTANT:TACHE_MONTANT,COUT_MENSUEL:COUT_MENSUEL,MECA_PRIX:MECA_UOS.map(function(u){return u.prix;}),AFFECT_FIN:AFFECT_FIN,TAUX_ACTIVITE:TAUX_ACTIVITE,SVC_CUR:SVC_CUR,TIME_LOG:TIME_LOG,TJM:TJM,HISTO_SEM:HISTO_SEM,SKILLS:SKILLS,ECARTS:ECARTS,COMP_REFS:COMP_REFS,FORMATIONS:FORMATIONS,
     LINKS_DATA:LINKS_DATA,
     MAIL_DATA:MAIL_DATA,
     HISTORY:HISTORY,
@@ -1233,6 +1233,15 @@ function applyState(json){
     if(s.SKILLS){ Object.keys(SKILLS).forEach(function(k){delete SKILLS[k];});
       Object.keys(s.SKILLS).forEach(function(k){SKILLS[k]=s.SKILLS[k];}); }
     if(Array.isArray(s.ECARTS)){ ECARTS.length=0; s.ECARTS.forEach(function(x){ECARTS.push(x);}); }
+    // Les référentiels de compétences sont modifiables : ils vivent avec l'état
+    if(s.COMP_REFS){
+      ['ARMA','IRVE','MECA'].forEach(function(k){
+        if(Array.isArray(s.COMP_REFS[k]) && s.COMP_REFS[k].length) COMP_REFS[k]=s.COMP_REFS[k];
+      });
+      oublierPortee();
+    }
+    if(s.FORMATIONS){ Object.keys(FORMATIONS).forEach(function(k){delete FORMATIONS[k];});
+      Object.keys(s.FORMATIONS).forEach(function(k){FORMATIONS[k]=s.FORMATIONS[k];}); }
     if(s.LINKS_DATA&&s.LINKS_DATA.length)LINKS_DATA.splice(0,LINKS_DATA.length,...s.LINKS_DATA);
     if(s.MAIL_DATA)Object.keys(s.MAIL_DATA).forEach(function(k){MAIL_DATA[k]=s.MAIL_DATA[k];});
     if(s.HISTORY)Object.keys(s.HISTORY).forEach(function(k){HISTORY[k]=s.HISTORY[k];});
@@ -8165,21 +8174,24 @@ var COMP_REFS = {ARMA:COMP_GROUPES, IRVE:COMP_GROUPES_IRVE, MECA:COMP_GROUPES_ME
 // Référentiel « Tous » : l'union des trois, une famille par entité pour
 // ce qui lui est propre, et une famille commune en tête pour ce qui est
 // partagé. Permet de tenir toute la matrice en une seule passe.
+// « Tous » garde les familles d'origine — Pré-requis projet, Compétences
+// clés, Sécurité, etc. — en réunissant celles des trois référentiels qui
+// disent la même chose. La portée de chaque compétence reste marquée
+// ligne par ligne, par l'étoile ou la double flèche.
 function compGroupesTous(){
-  var vus={}, communs=[], propres={ARMA:[], IRVE:[], MECA:[]};
+  var ordre=[], parCat={};
   ['ARMA','IRVE','MECA'].forEach(function(k){
-    COMP_REFS[k].forEach(function(g){ g.items.forEach(function(it){
-      if(vus[it.l]) return;
-      vus[it.l]=1;
-      if(estSpecifique(it.l)) propres[k].push(it); else communs.push(it);
-    }); });
+    (COMP_REFS[k]||[]).forEach(function(g){
+      var cle=catCle(g.cat);
+      if(!parCat[cle]){ parCat[cle]={cat:cle, items:[], vus:{}}; ordre.push(cle); }
+      g.items.forEach(function(it){
+        if(parCat[cle].vus[it.l]) return;
+        parCat[cle].vus[it.l]=1;
+        parCat[cle].items.push(it);
+      });
+    });
   });
-  var out=[];
-  if(communs.length) out.push({cat:'Communes aux trois entités', items:communs});
-  ['ARMA','IRVE','MECA'].forEach(function(k){
-    if(propres[k].length) out.push({cat:'Propres à '+svcInfo(k).court, items:propres[k]});
-  });
-  return out;
+  return ordre.map(function(c){ return {cat:parCat[c].cat, items:parCat[c].items}; });
 }
 function compGroupes(svc){
   var k=svc||COMP_SVC;
@@ -8193,18 +8205,108 @@ function competencesDe(svc){
 }
 // Une compétence est spécifique quand elle ne figure que dans un seul
 // référentiel. Le calcul évite d'avoir à tenir un marquage à la main.
-var COMP_PORTEE = (function(){
+// Recalculé à la demande : les référentiels sont modifiables.
+var COMP_PORTEE=null;
+function calcPortee(){
   var m={};
-  Object.keys(COMP_REFS).forEach(function(k){
-    COMP_REFS[k].forEach(function(g){ g.items.forEach(function(i){
+  ['ARMA','IRVE','MECA'].forEach(function(k){
+    (COMP_REFS[k]||[]).forEach(function(g){ g.items.forEach(function(i){
       if(!m[i.l]) m[i.l]=[];
       if(m[i.l].indexOf(k)<0) m[i.l].push(k);
     }); });
   });
+  COMP_PORTEE=m;
   return m;
-})();
-function portee(c){ return COMP_PORTEE[c]||[]; }
+}
+function oublierPortee(){ COMP_PORTEE=null; }
+function portee(c){ return (COMP_PORTEE||calcPortee())[c]||[]; }
 function estSpecifique(c){ return portee(c).length<=1; }
+
+// Familles regroupées par sens : les trois référentiels nomment les mêmes
+// familles un peu différemment, on les rapproche pour l'affichage « Tous ».
+function catCle(nom){
+  var s=String(nom||'').toLowerCase().replace(/[’']/g,"'")
+    .replace(/[àâä]/g,'a').replace(/[éèêë]/g,'e').replace(/[îï]/g,'i')
+    .replace(/[ôö]/g,'o').replace(/[ùûü]/g,'u').replace(/ç/g,'c');
+  if(s.indexOf('requis')>=0 && s.indexOf('projet')>=0) return 'Pré-requis projet';
+  if(s.indexOf('cles')>=0)          return 'Compétences clés';
+  if(s.indexOf('securite')>=0)      return 'Sécurité et habilitation';
+  if(s.indexOf('environnement')>=0) return 'Environnement client';
+  if(s.indexOf('methodolog')>=0)    return 'Méthodologie et chargé d’affaires';
+  if(s.indexOf('livrable')>=0)      return 'Livrables d’étude';
+  if(s.indexOf('technique')>=0)     return 'Compétences techniques';
+  if(s.indexOf('outil')>=0)         return 'Outils';
+  if(s.indexOf('savoir')>=0 || s.indexOf('projets /')>=0) return 'Savoir-être';
+  return nom;
+}
+
+// Formations prévues, par compétence : { 'libellé' : '2026-11-15T09:00' }
+var FORMATIONS = {};
+function formationDe(c){ return FORMATIONS[c]||''; }
+function setFormation(c, v){ if(v) FORMATIONS[c]=v; else delete FORMATIONS[c]; }
+
+// ── Modifier le référentiel ────────────────────────────────────
+// Le pré-requis se change sur place. En mode « Tous », il s'applique
+// partout où la compétence existe, sinon la matrice se contredirait.
+function setCompRequis(c, svc, v){
+  v=Math.max(0, Math.min(4, +v||0));
+  var cibles = (svc==='TOUS'||!svc) ? ['ARMA','IRVE','MECA'] : [svc];
+  cibles.forEach(function(k){
+    (COMP_REFS[k]||[]).forEach(function(g){
+      g.items.forEach(function(it){ if(it.l===c) it.req=v; });
+    });
+  });
+}
+function ajouterCompetence(svc, cat, libelle, req){
+  libelle=String(libelle||'').trim();
+  if(!libelle) return false;
+  var cibles = (svc==='TOUS'||!svc) ? ['ARMA'] : [svc];
+  var ok=false;
+  cibles.forEach(function(k){
+    var G=COMP_REFS[k]||[];
+    var g=G.filter(function(x){ return x.cat===cat; })[0];
+    if(!g){ g={cat:cat||'Autres', items:[]}; G.push(g); COMP_REFS[k]=G; }
+    if(g.items.some(function(it){ return it.l===libelle; })) return;
+    g.items.push({l:libelle, req:Math.max(0,Math.min(4,+req||3))});
+    ok=true;
+  });
+  oublierPortee();
+  return ok;
+}
+function renommerCompetence(ancien, nouveau){
+  nouveau=String(nouveau||'').trim();
+  if(!nouveau || nouveau===ancien) return false;
+  ['ARMA','IRVE','MECA'].forEach(function(k){
+    (COMP_REFS[k]||[]).forEach(function(g){
+      g.items.forEach(function(it){ if(it.l===ancien) it.l=nouveau; });
+    });
+  });
+  // Les notes suivent le libellé, sinon elles seraient perdues
+  Object.keys(SKILLS).forEach(function(ini){
+    if(SKILLS[ini] && SKILLS[ini][ancien]!==undefined){
+      SKILLS[ini][nouveau]=SKILLS[ini][ancien];
+      delete SKILLS[ini][ancien];
+    }
+  });
+  if(FORMATIONS[ancien]!==undefined){ FORMATIONS[nouveau]=FORMATIONS[ancien]; delete FORMATIONS[ancien]; }
+  oublierPortee();
+  return true;
+}
+function supprimerCompetence(c, svc){
+  var cibles = (svc==='TOUS'||!svc) ? ['ARMA','IRVE','MECA'] : [svc];
+  cibles.forEach(function(k){
+    (COMP_REFS[k]||[]).forEach(function(g){
+      for(var i=g.items.length-1;i>=0;i--) if(g.items[i].l===c) g.items.splice(i,1);
+    });
+    COMP_REFS[k]=(COMP_REFS[k]||[]).filter(function(g){ return g.items.length; });
+  });
+  // La note ne se supprime que si la compétence a disparu partout
+  oublierPortee();
+  if(!portee(c).length){
+    Object.keys(SKILLS).forEach(function(ini){ if(SKILLS[ini]) delete SKILLS[ini][c]; });
+    delete FORMATIONS[c];
+  }
+}
 
 var COMPETENCES = (function(){
   var l=[]; COMP_GROUPES.forEach(function(g){ g.items.forEach(function(i){ l.push(i.l); }); }); return l;
@@ -8488,13 +8590,20 @@ function rComp(){
   var tbl=document.createElement('table'); tbl.className='cmp-tbl';
   var th=document.createElement('thead'); var tr=document.createElement('tr');
   var h0=document.createElement('th'); h0.className='l'; h0.textContent='Comp\u00e9tence'; tr.appendChild(h0);
+  // Requis à gauche des notes : on lit d'abord l'attendu, puis l'atteint
+  var hm=document.createElement('th');
+  hm.textContent='Requis'; hm.title='Niveau attendu sur le projet, modifiable';
+  tr.appendChild(hm);
   // Le tableau détaillé suit le même filtre que le radar
   var gens=gensRadar();
   gens.forEach(function(p){
     var x=document.createElement('th');
     x.textContent=p.ini; x.title=p.nom; tr.appendChild(x);
   });
-  var hm=document.createElement('th'); hm.textContent='Requis'; hm.title='Niveau attendu sur le projet'; tr.appendChild(hm);
+  var hf=document.createElement('th');
+  hf.textContent='Formation'; hf.title='Date et heure d’une formation prévue sur cette compétence';
+  tr.appendChild(hf);
+  var hx=document.createElement('th'); hx.textContent=''; tr.appendChild(hx);
   th.appendChild(tr); tbl.appendChild(th);
   var tb=document.createElement('tbody');
   // Ligne de score global
@@ -8504,6 +8613,7 @@ function rComp(){
   s0.style.cssText='font-size:10px;font-weight:900';
   s0.textContent='Couverture du pr\u00e9-requis';
   trS.appendChild(s0);
+  trS.appendChild(document.createElement('td'));
   gens.forEach(function(p){
     var sc=scoreConseiller(p.ini);
     var td=document.createElement('td');
@@ -8513,15 +8623,31 @@ function rComp(){
     trS.appendChild(td);
   });
   trS.appendChild(document.createElement('td'));
+  trS.appendChild(document.createElement('td'));
   tb.appendChild(trS);
 
   compGroupes().filter(function(g,gi){ return COMP_ZOOM===null || gi===COMP_ZOOM; }).forEach(function(g){
   var trG=document.createElement('tr');
   var g0=document.createElement('td');
-  g0.colSpan=gens.length+2;
+  g0.colSpan=gens.length+4;
   g0.style.cssText='background:var(--b);font-size:9px;font-weight:900;text-transform:uppercase;'
     +'letter-spacing:.05em;color:var(--t2);padding:4px 6px;text-align:left';
-  g0.textContent=g.cat+' ('+g.items.length+')';
+  g0.style.cssText+=';cursor:pointer';
+  g0.textContent=g.cat+' ('+g.items.length+')  +';
+  g0.title='Cliquer pour ajouter une compétence dans « '+g.cat+' »';
+  g0.addEventListener('click',function(){
+    uiPrompt('Nouvelle compétence', '', function(nom){
+      nom=String(nom||'').trim();
+      if(!nom) return;
+      if(ajouterCompetence(COMP_SVC, g.cat, nom, 3)){
+        sbSave(); showToast('Compétence ajoutée');
+        sansBouger(function(){ rComp(); });
+      } else {
+        uiAlert('Déjà présente','Cette compétence existe déjà dans le référentiel.');
+      }
+    },{message:'Famille : '+g.cat+'\nPré-requis fixé à 3, modifiable ensuite dans la colonne Requis.',
+       placeholder:'Nom de la compétence'});
+  });
   trG.appendChild(g0); tb.appendChild(trG);
   g.items.map(function(x){return x.l;}).forEach(function(c){
     var row=document.createElement('tr');
@@ -8546,7 +8672,44 @@ function rComp(){
          : '\u21c4 Commune \u00e0 '+(tousRef?noms.join(', ')
                                   :('cette matrice et '+autres.join(', ')))
            +' \u2014 la note se reporte automatiquement');
+    c0.style.cursor='pointer';
+    c0.addEventListener('click',function(){
+      uiPrompt('Renommer la compétence', c, function(nv){
+        if(renommerCompetence(c, nv)){
+          sbSave(); showToast('Compétence renommée');
+          sansBouger(function(){ rComp(); });
+        }
+      },{message:'Les notes déjà saisies suivent le nouveau libellé.'});
+    });
     row.appendChild(c0);
+
+    // ── Requis, modifiable ──
+    var tdR=document.createElement('td');
+    tdR.style.padding='2px 3px';
+    var selR=document.createElement('select');
+    selR.style.cssText='border:1px solid var(--b2);border-radius:5px;padding:1px 3px;font-size:10px;'
+      +'font-weight:800;background:var(--bg);color:var(--t2);font-family:inherit';
+    [0,1,2,3,4].forEach(function(n){
+      var o=document.createElement('option'); o.value=String(n); o.textContent=String(n);
+      selR.appendChild(o);
+    });
+    function peindreReq(){
+      var req=compRequis(c);
+      selR.value=String(req);
+      var sous=gens.filter(function(p){ return skillOf(p.ini,c)<req; }).length;
+      selR.style.color = sous?'var(--red)':'var(--green)';
+      selR.title='Pré-requis '+req
+        +(sous?(' — '+sous+' personne(s) en écart'):' — atteint par tous')
+        +'\nModifiable'+(COMP_SVC==='TOUS'?' : la valeur s’applique aux trois référentiels':'');
+    }
+    peindreReq();
+    selR.addEventListener('change',function(){
+      setCompRequis(c, COMP_SVC, selR.value);
+      sbSave();
+      sansBouger(function(){ rComp(); });
+    });
+    tdR.appendChild(selR); row.appendChild(tdR);
+
     var somme=0, nb=0;
     gens.forEach(function(p){
       var td=document.createElement('td');
@@ -8568,13 +8731,48 @@ function rComp(){
       var v=skillOf(p.ini,c);
       if(v>0){ somme+=v; nb++; }
     });
-    var tdM=document.createElement('td');
-    var req=compRequis(c);
-    var sous=gens.filter(function(p){ return skillOf(p.ini,c)<req; }).length;
-    tdM.style.cssText='font-size:9.5px;font-weight:800;color:'+(sous?'var(--red)':'var(--green)');
-    tdM.textContent=req;
-    tdM.title='Pr\u00e9-requis '+req+(sous?' \u2014 '+sous+' personne(s) en \u00e9cart':' \u2014 atteint par tous');
-    row.appendChild(tdM);
+
+    // \u2500\u2500 Formation pr\u00e9vue : date et heure \u2500\u2500
+    var tdF=document.createElement('td');
+    tdF.style.padding='2px 3px';
+    var inF=document.createElement('input');
+    inF.type='datetime-local';
+    inF.value=formationDe(c)||'';
+    inF.style.cssText='border:1px solid '+(formationDe(c)?'#7C3AED':'var(--b2)')+';border-radius:5px;'
+      +'padding:1px 3px;font-size:9px;font-family:inherit;background:'
+      +(formationDe(c)?'#EDE9FE':'var(--bg)')+';color:'+(formationDe(c)?'#7C3AED':'var(--t3)');
+    inF.title=formationDe(c)
+      ? 'Formation pr\u00e9vue le '+String(formationDe(c)).replace('T',' \u00e0 ')
+      : 'Aucune formation pr\u00e9vue sur cette comp\u00e9tence';
+    inF.addEventListener('change',function(){
+      setFormation(c, inF.value);
+      sbSave();
+      sansBouger(function(){ rComp(); });
+    });
+    tdF.appendChild(inF); row.appendChild(tdF);
+
+    // \u2500\u2500 Retirer la comp\u00e9tence \u2500\u2500
+    var tdX=document.createElement('td');
+    tdX.style.cssText='padding:2px 3px;width:20px';
+    var bx=document.createElement('button');
+    bx.style.cssText='border:none;background:transparent;color:var(--b2);cursor:pointer;'
+      +'font-size:11px;padding:0 3px;font-family:inherit';
+    bx.textContent='\u2715';
+    bx.title='Retirer cette comp\u00e9tence du r\u00e9f\u00e9rentiel';
+    bx.addEventListener('mouseenter',function(){ bx.style.color='var(--red)'; });
+    bx.addEventListener('mouseleave',function(){ bx.style.color='var(--b2)'; });
+    bx.addEventListener('click',function(){
+      uiConfirm('Retirer la comp\u00e9tence',
+        c+'\n\nElle sera retir\u00e9e de '
+        +(COMP_SVC==='TOUS'?'tous les r\u00e9f\u00e9rentiels':'la matrice '+svcInfo(COMP_SVC).court)
+        +'. Les notes d\u00e9j\u00e0 saisies sont perdues si elle ne figure plus nulle part.',
+        function(){
+          supprimerCompetence(c, COMP_SVC);
+          sbSave(); showToast('Comp\u00e9tence retir\u00e9e');
+          sansBouger(function(){ rComp(); });
+        }, true);
+    });
+    tdX.appendChild(bx); row.appendChild(tdX);
     tb.appendChild(row);
   });
   });
@@ -8599,19 +8797,38 @@ function rComp(){
   var pt=document.createElement('span');
   pt.style.cssText='font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--t3);flex:1';
   pt.textContent='Plan de formation';
-  var add=document.createElement('button');
-  add.style.cssText='border:none;background:var(--brand);color:#fff;border-radius:7px;padding:5px 12px;'
-    +'font-size:10px;font-weight:700;cursor:pointer;font-family:inherit';
-  add.textContent='+ Ajouter un \u00e9cart';
-  add.addEventListener('click',function(){ ecartModal(null); });
-  ph.appendChild(pt); ph.appendChild(add);
+  // Bouton \u00ab Ajouter un \u00e9cart \u00bb retir\u00e9 le 04/09/2026 : les formations se
+  // posent maintenant dans la colonne Formation de la matrice.
+  ph.appendChild(pt);
   body.appendChild(ph);
 
+  // Formations pos\u00e9es dans la matrice
+  var fdates=Object.keys(FORMATIONS).filter(function(k){ return FORMATIONS[k]; })
+    .sort(function(a,b){ return String(FORMATIONS[a]).localeCompare(String(FORMATIONS[b])); });
+  if(fdates.length){
+    var fz=document.createElement('div');
+    fz.style.cssText='display:flex;gap:6px;flex-wrap:wrap;padding:2px 12px 8px';
+    fdates.forEach(function(k){
+      var s=document.createElement('span');
+      s.style.cssText='font-size:9.5px;font-weight:700;padding:3px 9px;border-radius:8px;'
+        +'background:#EDE9FE;color:#7C3AED;border:1px solid #7C3AED33';
+      var d=String(FORMATIONS[k]).split('T');
+      s.textContent=k.slice(0,40)+(k.length>40?'\u2026':'')+' \u00b7 '
+        +(d[0]?dFR(d[0]):'')+(d[1]?' '+d[1]:'');
+      s.title=k+'\nFormation pr\u00e9vue le '+String(FORMATIONS[k]).replace('T',' \u00e0 ');
+      fz.appendChild(s);
+    });
+    body.appendChild(fz);
+  }
+
   if(!ECARTS.length){
-    var e0=document.createElement('div');
-    e0.style.cssText='padding:10px 12px 14px;font-size:10.5px;color:var(--t3);font-style:italic';
-    e0.textContent='Aucun \u00e9cart enregistr\u00e9. Cliquez sur \u00ab Ajouter un \u00e9cart \u00bb pour pr\u00e9voir une remise \u00e0 niveau.';
-    body.appendChild(e0);
+    if(!fdates.length){
+      var e0=document.createElement('div');
+      e0.style.cssText='padding:4px 12px 14px;font-size:10.5px;color:var(--t3);font-style:italic';
+      e0.textContent='Aucune formation pr\u00e9vue. Renseigne une date dans la colonne Formation '
+        +'de la matrice ci-dessus.';
+      body.appendChild(e0);
+    }
   } else {
     var w2=document.createElement('div'); w2.style.cssText='overflow-x:auto;padding-bottom:8px';
     var t2=document.createElement('table'); t2.className='fa-tbl';
