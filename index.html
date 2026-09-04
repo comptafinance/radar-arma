@@ -10923,9 +10923,15 @@ function rFactu(){
   var sum=document.createElement('div'); sum.className='fa-sum';
   function chip(t){ var s=document.createElement('span'); s.className='fa-chip'; s.textContent=t; return s; }
   sum.appendChild(chip(rows.length+' affaire(s)'));
-  var n100=rows.filter(function(r){ return UOS.some(function(u){ return valUo(r.a,u)>=100; }); }).length;
-  var c1=chip(n100+' avec un UO acquis');
+  var c1=chip('');
   c1.style.cssText+=';border-color:var(--green);color:var(--green);background:var(--gl)';
+  // Recalculé sur place : le tableau ne se reconstruit plus à chaque
+  // saisie, ce compteur afficherait sinon une valeur périmée.
+  function majAcquis(){
+    var n=rows.filter(function(r){ return UOS.some(function(u){ return valUo(r.a,u)>=100; }); }).length;
+    c1.textContent=n+' avec un UO acquis';
+  }
+  majAcquis();
   sum.appendChild(c1);
   body.appendChild(sum);
 
@@ -11019,6 +11025,30 @@ function rFactu(){
     // Vide = le mois est d\u00e9duit de l'encha\u00eenement des UO ; le libell\u00e9
     // montre alors ce mois calcul\u00e9, pour que la colonne reste lisible.
     var calc=(moisCalcules[r.cp]||{}).get(a)||{};
+    // Les s\u00e9lecteurs de la ligne, pour les rafra\u00eechir sans reconstruire
+    // le tableau : le reconstruire renverrait en haut \u00e0 chaque saisie.
+    var selsDate=[];
+    function majDatesLigne(){
+      var neuf={};
+      try{
+        prevFactuLignes(r.cp).forEach(function(l){ if(l.a===a) neuf[l.k]=l.fin; });
+      }catch(e){}
+      selsDate.forEach(function(x){
+        var au=neuf[x.cle];
+        x.sel.options[0].textContent = (au===undefined) ? '\u2014' : moisLabel(au);
+        var fermer=(au===undefined);
+        x.sel.disabled=fermer;
+        x.sel.style.opacity = fermer?'.45':'';
+        x.sel.style.cursor  = fermer?'not-allowed':'';
+        var v=x.sel.value;
+        if(!v){ x.sel.style.color='var(--t3)'; x.sel.style.fontWeight='600';
+                x.sel.style.borderStyle='dashed'; x.sel.style.background='var(--bg)'; }
+        else if(v===PREV_NC){ x.sel.style.color='#B45309'; x.sel.style.background='#FEF3C7';
+                x.sel.style.fontWeight='700'; x.sel.style.borderStyle='solid'; }
+        else { x.sel.style.color='#1D4ED8'; x.sel.style.background='#DBEAFE';
+                x.sel.style.fontWeight='700'; x.sel.style.borderStyle='solid'; }
+      });
+    }
     UOS.forEach(function(u,ui){
       var td=document.createElement('td'); td.className='fa-uo';
       if(ui===0) td.style.borderLeft='2px solid #1D4ED855';
@@ -11063,8 +11093,12 @@ function rFactu(){
       sd.addEventListener('change',function(){
         setPrevUo(a, cleP, sd.value);
         sbSave();
-        setTimeout(function(){ try{ rFactu(); rPrevFactu(); rPrevCharge(); }catch(e){} },10);
+        // On rafraîchit la ligne sur place et les modules voisins, sans
+        // reconstruire le tableau : sinon la page remonte à chaque saisie.
+        majDatesLigne();
+        try{ rPrevFactu(); rPrevCharge(); }catch(e){}
       });
+      selsDate.push({cle:cleP, sel:sd});
       td.appendChild(sd); tr.appendChild(td);
     });
     UOS.forEach(function(u,ui){
@@ -11096,6 +11130,10 @@ function rFactu(){
           selM.style.color = selM.value?'':'var(--t3)';
           selM.style.fontWeight = selM.value?'':'600';
           sbSave();
+          // Facturer un UO le retire du prévisionnel : les mois calculés
+          // de la ligne changent, on les remet à jour sur place.
+          majDatesLigne(); majAcquis();
+          try{ rPrevFactu(); }catch(e){}
         });
         box.appendChild(selM);
       } else {
@@ -11126,6 +11164,9 @@ function rFactu(){
           sel.style.color = sel.value?'':'var(--t3)';
           sel.style.fontWeight = sel.value?'':'600';
           sbSave();
+          // Voir plus haut : la facturation d'un UO déplace les mois calculés
+          majDatesLigne(); majAcquis();
+          try{ rPrevFactu(); }catch(e){}
         });
         box.appendChild(sel);
       }
@@ -17823,7 +17864,7 @@ setInterval(sbPoll, 20000);
 // On ne recharge jamais de force, une saisie en cours serait perdue :
 // on propose, la personne choisit son moment.
 // ══════════════════════════════════════════════════════════════
-var APP_VERSION='2026-09-04-2';
+var APP_VERSION='2026-09-04-3';
 var MAJ_VUE=false;
 function bandeauMaj(v){
   if(MAJ_VUE || document.getElementById('maj-banner')) return;
