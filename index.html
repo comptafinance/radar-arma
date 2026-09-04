@@ -1134,10 +1134,30 @@ function refreshAllBadges(){
   var budDotEl=document.getElementById('buddot');
   if(budDotEl){budDotEl.textContent=budBad>0?budBad:'';budDotEl.style.display=budBad>0?'flex':'none';}
 
-  // --- TDB (scdot) : planning incomplet + budget incomplet ---
-  var scBad=ic+budBad;
+  // --- TDB (scdot) : affaires qui demandent une action ---
+  // Le compteur affichait planning + budget incomplets, soit des dizaines
+  // de lignes dont on ne fait rien. Il compte maintenant ce qui appelle un
+  // geste : météo rouge, ou plus de 15 jours sans la moindre action.
+  var scBad=0, dRouge=0, dFige=0;
+  try{
+    enc.forEach(function(a){
+      var rouge=(a.meteo===3);
+      var j=joursSansAction(a);
+      var fige=(j!==null && j>15);
+      if(rouge) dRouge++;
+      if(fige)  dFige++;
+      if(rouge||fige) scBad++;
+    });
+  }catch(e){ scBad=0; }
   var scDotEl=document.getElementById('scdot');
-  if(scDotEl){scDotEl.textContent=scBad>0?scBad:'';scDotEl.style.display=scBad>0?'flex':'none';}
+  if(scDotEl){
+    scDotEl.textContent=scBad>0?scBad:'';
+    scDotEl.style.display=scBad>0?'flex':'none';
+    scDotEl.title=scBad
+      ? scBad+' affaire(s) à reprendre : '+dRouge+' en météo rouge, '
+        +dFige+' sans action depuis plus de 15 jours'
+      : 'Rien à reprendre sur ce portefeuille';
+  }
 
   // resync sidebar desktop si présente
   try{ if(typeof dtSyncNav==='function') dtSyncNav(); }catch(e){}
@@ -2410,6 +2430,8 @@ function rDtCpSel(){
         CP_SEL=[cpIci]; CCP=cpIci;
         buildTabs(); rDtCpSel();
         try{ rSvcBar(); }catch(e){}
+        // Le TDB suit la même personne
+        try{ if(document.getElementById('v-sc').classList.contains('on')) rTDB(); }catch(e){}
         try{ agSetMode(AG_MODE); rWeek(); }catch(e){}
       } else {
         // La personne ne travaille pas sur ce p\u00e9rim\u00e8tre : on bascule sur le sien
@@ -2433,6 +2455,7 @@ function rDtCpSel(){
       CP_SEL=list.slice();
       buildTabs(); rDtCpSel();
       try{ rSvcBar(); }catch(e){}
+      try{ if(document.getElementById('v-sc').classList.contains('on')) rTDB(); }catch(e){}
       try{ agSetMode(AG_MODE); rWeek(); }catch(e){}
     });
     el.appendChild(bt);
@@ -11748,122 +11771,104 @@ function rMarche(){
   var body=document.createElement('div'); card.appendChild(body);
 
   var info=document.createElement('div');
-  info.style.cssText='font-size:10px;color:var(--t3);padding:8px 12px 2px;line-height:1.5';
-  info.textContent='Montant vendu de chaque marché, ce qui en est commandé, ce qui en est '
-    +'facturé, et ce qu’il reste des deux côtés. Le montant du marché se saisit ici. '
-    +'Le commandé vient des états CMD OK et FSS OK du tableau Facturation.';
+  info.style.cssText='font-size:9.5px;color:var(--t3);padding:7px 12px 2px;line-height:1.45';
+  info.textContent='Le montant du marché se saisit dans la colonne. Le commandé vient des '
+    +'états CMD OK et FSS OK du tableau Facturation, le facturé des UO facturés.';
   body.appendChild(info);
 
+  // Un tableau, une ligne par périmètre : le module tenait trop de place
+  // en cartes, alors qu'il se lit d'un coup d'œil en lignes.
+  var wrapM=document.createElement('div'); wrapM.style.cssText='overflow-x:auto;padding:0 10px 10px';
+  var tblM=document.createElement('table'); tblM.className='fa-tbl';
+  var thM=document.createElement('thead'), trM=document.createElement('tr');
+  [['Marché','l'],['Montant',''],['Commandé',''],['%',''],['Reste',''],
+   ['Facturé',''],['%',''],['Reste','']]
+  .forEach(function(c){
+    var x=document.createElement('th'); if(c[1])x.className=c[1];
+    x.textContent=c[0]; trM.appendChild(x);
+  });
+  thM.appendChild(trM); tblM.appendChild(thM);
+  var tbM=document.createElement('tbody');
+  function celM(txt, co, gras, aide){
+    var td=document.createElement('td');
+    td.style.cssText='font-size:9.5px;font-weight:'+(gras?'800':'600')
+      +';color:'+(co||'var(--t2)')+';white-space:nowrap';
+    td.textContent=txt; if(aide) td.title=aide;
+    return td;
+  }
+  function coulPctM(p){
+    if(p===null) return 'var(--b2)';
+    return p>=95 ? 'var(--red)' : p>=80 ? 'var(--amber)' : 'var(--green)';
+  }
+  var totM={marche:0, commande:0, facture:0};
   SERVICES.forEach(function(s){
     var c=consoMarche(s.k);
-    var bloc=document.createElement('div');
-    bloc.style.cssText='margin:8px 12px;border:1.5px solid '+s.fg+'33;border-radius:11px;overflow:hidden';
-    var h=document.createElement('div');
-    h.style.cssText='display:flex;align-items:center;gap:9px;padding:8px 11px;background:'+s.bg
-      +';color:'+s.fg+';flex-wrap:wrap';
-    var nom=document.createElement('span');
-    nom.style.cssText='font-size:11px;font-weight:900;flex:1';
-    nom.textContent=s.court;
-    h.appendChild(nom);
-    var lab=document.createElement('span');
-    lab.style.cssText='font-size:9.5px;font-weight:700;opacity:.85';
-    lab.textContent='Montant du marché';
-    h.appendChild(lab);
+    totM.marche+=c.marche; totM.commande+=c.commande; totM.facture+=c.facture;
+    var row=document.createElement('tr');
+    var td0=document.createElement('td'); td0.className='l';
+    td0.innerHTML='<span style="font-size:9px;font-weight:900;padding:1px 7px;border-radius:6px;'
+      +'background:'+s.bg+';color:'+s.fg+'">'+s.court+'</span>';
+    row.appendChild(td0);
+    // Montant du marché, saisi sur place
+    var tdIn=document.createElement('td');
+    tdIn.style.padding='2px 3px';
     var inp=document.createElement('input');
     inp.type='number'; inp.min='0'; inp.step='1000';
     inp.value=marcheDe(s.k)||'';
     inp.placeholder='0';
-    inp.style.cssText='width:110px;border:1.5px solid '+s.fg+'55;border-radius:7px;padding:4px 7px;'
-      +'font-size:12px;font-weight:800;text-align:right;background:var(--s);color:'+s.fg
-      +';font-family:inherit';
+    inp.style.cssText='width:82px;border:1px solid var(--b2);border-radius:5px;padding:2px 5px;'
+      +'font-size:9.5px;font-weight:800;text-align:right;background:var(--bg);color:var(--t);'
+      +'font-family:inherit';
     inp.title='Montant total vendu sur '+s.court+', en euros';
     inp.addEventListener('change',function(){
       MARCHE_MONTANT[s.k]=Math.max(0, +inp.value||0);
       sbSave();
       sansBouger(function(){ rMarche(); });
     });
-    h.appendChild(inp);
-    bloc.appendChild(h);
-
-    if(!c.marche){
-      var vide=document.createElement('div');
-      vide.style.cssText='padding:9px 11px;font-size:10.5px;color:var(--t3);font-style:italic';
-      vide.textContent='Renseigne le montant du marché pour suivre sa consommation. '
-        +'Déjà facturé sur ce périmètre : '+fmtEur(Math.round(c.facture))+'.';
-      bloc.appendChild(vide);
-      body.appendChild(bloc);
-      return;
-    }
-
-    function tuileM(lib, val, co, aide){
-      var d=document.createElement('div');
-      d.style.cssText='border:1px solid var(--b);border-radius:9px;padding:7px 9px;background:var(--s)';
-      d.title=aide||'';
-      d.innerHTML='<div style="font-size:8.5px;font-weight:800;color:var(--t3);text-transform:uppercase;'
-        +'letter-spacing:.04em">'+lib+'</div>'
-        +'<div style="font-size:15px;font-weight:900;color:'+co+';margin-top:2px">'+val+'</div>';
-      return d;
-    }
-    // Le montant du marché, seul, en tête
-    var g0=document.createElement('div');
-    g0.style.cssText='padding:9px 11px 2px';
-    g0.appendChild(tuileM('Montant du marché', fmtEur(c.marche), 'var(--t)',
-      'Montant total vendu sur '+s.court));
-    bloc.appendChild(g0);
-
-    // Deux étages : ce qui est commandé, puis ce qui est facturé
-    function etage(titre, libFait, libReste, fait, reste, pctv, coul, aideFait, aideReste){
-      var z=document.createElement('div');
-      z.style.cssText='padding:8px 11px 2px';
-      var t=document.createElement('div');
-      t.style.cssText='font-size:9px;font-weight:800;color:var(--t3);text-transform:uppercase;'
-        +'letter-spacing:.05em;margin-bottom:5px';
-      t.textContent=titre;
-      z.appendChild(t);
-      var pct=Math.max(0, Math.min(100, pctv||0));
-      var bar=document.createElement('div');
-      bar.style.cssText='height:18px;border-radius:6px;background:var(--s3);overflow:hidden;position:relative';
-      var fill=document.createElement('div');
-      var co = pct>=95 ? 'var(--red)' : pct>=80 ? 'var(--amber)' : coul;
-      fill.style.cssText='height:100%;width:'+pct+'%;background:'+co+';opacity:.9';
-      bar.appendChild(fill);
-      var txt=document.createElement('div');
-      txt.style.cssText='position:absolute;inset:0;display:flex;align-items:center;'
-        +'justify-content:center;font-size:10px;font-weight:900;color:var(--t)';
-      txt.textContent=(pctv===null?'—':String(pctv).replace('.',','))+' %';
-      bar.appendChild(txt);
-      z.appendChild(bar);
-      var g=document.createElement('div');
-      g.style.cssText='display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:7px;padding:7px 0 4px';
-      g.appendChild(tuileM(libFait, fmtEur(Math.round(fait)), 'var(--green)', aideFait));
-      g.appendChild(tuileM(libReste, fmtEur(Math.round(reste)),
-        reste<0?'var(--red)':'var(--blue)', reste<0?'Marché dépassé':aideReste));
-      z.appendChild(g);
-      return z;
-    }
-    bloc.appendChild(etage('Commandes', 'Déjà commandé', 'Reste à commander',
-      c.commande, c.resteCmd, c.pctCmd, '#7C3AED',
-      'Somme des UO dont la commande est passée, FSS reçue comprise',
-      'Ce qu’il reste à faire commander par ENEDIS'));
-    bloc.appendChild(etage('Facturation', 'Déjà facturé', 'Reste à facturer',
-      c.facture, c.reste, c.pct, s.fg,
-      'Somme des UO facturés, back-office compris pour IRVE',
-      'Ce qu’il reste à facturer sur le marché'));
-
-    if(c.reste<0 || c.resteCmd<0){
-      var al=document.createElement('div');
-      al.style.cssText='margin:4px 11px 10px;padding:7px 10px;border-radius:9px;background:var(--rl);'
-        +'border:1px solid var(--red);color:var(--red);font-size:10px;font-weight:700;line-height:1.5';
-      al.textContent = (c.reste<0)
-        ? 'Facturation au-delà du marché de '+fmtEur(Math.round(-c.reste))+'. À vérifier avec ENEDIS.'
-        : 'Commandes au-delà du marché de '+fmtEur(Math.round(-c.resteCmd))+'. À vérifier avec ENEDIS.';
-      bloc.appendChild(al);
-    } else {
-      var sp2=document.createElement('div'); sp2.style.height='7px'; bloc.appendChild(sp2);
-    }
-    body.appendChild(bloc);
+    tdIn.appendChild(inp); row.appendChild(tdIn);
+    row.appendChild(celM(c.marche?fmtEur(Math.round(c.commande)):'—','var(--t2)',false,
+      'UO dont la commande est passée, FSS comprise'));
+    row.appendChild(celM(c.pctCmd===null?'—':String(c.pctCmd).replace('.',',')+' %',
+      coulPctM(c.pctCmd), true, 'Part du marché commandée'));
+    row.appendChild(celM(c.marche?fmtEur(Math.round(c.resteCmd)):'—',
+      c.resteCmd<0?'var(--red)':'var(--blue)', false, 'Reste à faire commander'));
+    row.appendChild(celM(fmtEur(Math.round(c.facture)),'var(--t2)',false,
+      'UO facturés, back-office compris pour IRVE'));
+    row.appendChild(celM(c.pct===null?'—':String(c.pct).replace('.',',')+' %',
+      coulPctM(c.pct), true, 'Part du marché facturée'));
+    row.appendChild(celM(c.marche?fmtEur(Math.round(c.reste)):'—',
+      c.reste<0?'var(--red)':'var(--blue)', false,
+      c.reste<0?'Marché dépassé':'Reste à facturer'));
+    tbM.appendChild(row);
   });
+  // Totaux
+  var trT=document.createElement('tr'); trT.style.background='var(--s2)';
+  var t0=document.createElement('td'); t0.className='l';
+  t0.style.cssText='font-size:9.5px;font-weight:900;color:var(--t2)';
+  t0.textContent='TOTAL'; trT.appendChild(t0);
+  trT.appendChild(celM(totM.marche?fmtEur(totM.marche):'—','var(--t)',true));
+  trT.appendChild(celM(totM.marche?fmtEur(Math.round(totM.commande)):'—','var(--t2)',true));
+  var pcT = totM.marche ? Math.round(totM.commande/totM.marche*1000)/10 : null;
+  trT.appendChild(celM(pcT===null?'—':String(pcT).replace('.',',')+' %', coulPctM(pcT), true));
+  trT.appendChild(celM(totM.marche?fmtEur(Math.round(totM.marche-totM.commande)):'—','var(--blue)',true));
+  trT.appendChild(celM(fmtEur(Math.round(totM.facture)),'var(--t2)',true));
+  var pfT = totM.marche ? Math.round(totM.facture/totM.marche*1000)/10 : null;
+  trT.appendChild(celM(pfT===null?'—':String(pfT).replace('.',',')+' %', coulPctM(pfT), true));
+  trT.appendChild(celM(totM.marche?fmtEur(Math.round(totM.marche-totM.facture)):'—',
+    (totM.marche-totM.facture)<0?'var(--red)':'var(--blue)',true));
+  tbM.appendChild(trT);
+  tblM.appendChild(tbM); wrapM.appendChild(tblM); body.appendChild(wrapM);
 
+  var manque=SERVICES.filter(function(s){ return !marcheDe(s.k); })
+                     .map(function(s){ return s.court; });
+  if(manque.length){
+    var av=document.createElement('div');
+    av.style.cssText='margin:0 12px 10px;padding:6px 10px;border:1px solid #EAB308;border-radius:9px;'
+      +'background:#FEF3C7;color:#713F12;font-size:9.5px;line-height:1.5';
+    av.textContent='Montant du marché non renseigné sur '+manque.join(', ')
+      +' : la consommation ne peut pas être calculée.';
+    body.appendChild(av);
+  }
   host.appendChild(card);
   try{ makeCollapsibleRef(hdr, body, 'marche_referent'); }catch(e){}
 }
@@ -14149,53 +14154,29 @@ function carteKpi(nom, coul){
   return c;
 }
 
-// Chargé d'affaires sélectionné dans les KPI. null = tout le périmètre.
-var KPI_INI=null;
-// Personnes qui portent au moins une affaire, tous périmètres confondus
-function personnesKpi(){
-  var vus={}, out=[];
-  SERVICES.forEach(function(s){
-    cpsOfSvc(s.k).forEach(function(cp){
-      var i=(DATA[cp]||{}).ini; if(!i||vus[i]) return;
-      vus[i]=1; out.push({ini:i, nom:(DATA[cp]||{}).name||i});
-    });
-  });
-  return out.sort(function(a,b){ return a.ini<b.ini?-1:1; });
+// Le TDB suit le chargé de projet choisi dans la barre de gauche, comme
+// l'onglet Affaires. Plus de filtre propre au TDB : deux sélecteurs pour
+// la même chose se contredisaient.
+function kpiIniCourant(){
+  var vus=selCps(), liste=cpsOfSvc(SVC_CUR);
+  if(vus.length===1 && vus.length<liste.length) return (DATA[vus[0]]||{}).ini||null;
+  return null;
 }
-function barreChargeAffaires(){
-  var b=document.createElement('div');
-  b.style.cssText='display:flex;gap:6px;flex-wrap:wrap;padding:6px 12px 2px;align-items:center';
-  var lib=document.createElement('span');
-  lib.style.cssText='font-size:9px;font-weight:800;color:var(--t3);text-transform:uppercase;letter-spacing:.05em';
-  lib.textContent='Chargé d’affaires';
-  b.appendChild(lib);
-  var liste=[{ini:null, nom:'Tout le périmètre', l:'Tous'}]
-    .concat(personnesKpi().map(function(p){ return {ini:p.ini, nom:p.nom, l:p.ini}; }));
-  liste.forEach(function(p){
-    var actif = (KPI_INI||null)===(p.ini||null);
-    var bt=document.createElement('button');
-    bt.style.cssText='border:1.5px solid '+(actif?'var(--brand)':'var(--b2)')+';'
-      +'background:'+(actif?'var(--brand)':'var(--s2)')+';color:'+(actif?'#fff':'var(--t2)')+';'
-      +'border-radius:8px;padding:4px 11px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit';
-    bt.textContent=p.l;
-    bt.title=p.nom;
-    bt.addEventListener('click',function(){ KPI_INI=p.ini; rKpiOps(); });
-    b.appendChild(bt);
-  });
-  return b;
-}
-
 function rKpiOps(){
   var host=kpiHote(); if(!host) return;
   host.innerHTML='';
-  var ini=KPI_INI;
+  // La personne vient du sélecteur de gauche, celui de l'onglet Affaires
+  var ini=kpiIniCourant();
 
   var titre=document.createElement('div');
   titre.style.cssText='font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;'
-    +'color:var(--t3);padding:10px 12px 0';
-  titre.textContent='KPI opérationnels'+(ini?' — '+ini:'');
+    +'color:var(--t3);padding:10px 12px 4px';
+  titre.textContent='KPI opérationnels'
+    +(ini ? ' — '+ini : ' — tous les chargés de projet');
+  titre.title = ini
+    ? 'Filtré sur '+ini+'. Le choix se fait dans la barre de gauche.'
+    : 'Tous les chargés de projet. Choisis quelqu’un dans la barre de gauche pour filtrer.';
   host.appendChild(titre);
-  host.appendChild(barreChargeAffaires());
 
   // ── ARMA ──────────────────────────────────────────────────
   var manquants=[];
@@ -18747,7 +18728,7 @@ setInterval(sbPoll, 20000);
 // On ne recharge jamais de force, une saisie en cours serait perdue :
 // on propose, la personne choisit son moment.
 // ══════════════════════════════════════════════════════════════
-var APP_VERSION='2026-09-04-5';
+var APP_VERSION='2026-09-04-6';
 var MAJ_VUE=false;
 function bandeauMaj(v){
   if(MAJ_VUE || document.getElementById('maj-banner')) return;
