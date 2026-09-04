@@ -1909,17 +1909,20 @@ function rSvcBar(){
   var el=document.getElementById('svc-bar');
   if(!el) return;
   el.innerHTML='';
-  // Le compteur suit le chargé de projet choisi. Sur « Tous », il donne
-  // bien le total du périmètre. Sinon, un total qui ne bouge pas quand on
-  // change de personne laisse croire que le filtre n'a pas pris.
-  var vus=selCps();
+  // Le compteur suit le chargé de projet choisi, sur LES TROIS périmètres :
+  // on voit d'un coup ce qu'il porte partout, sans changer d'onglet.
+  var vus=selCps(), listeCur=cpsOfSvc(SVC_CUR);
+  var iniSel = (vus.length===1 && vus.length<listeCur.length)
+    ? ((DATA[vus[0]]||{}).ini||null) : null;
   SERVICES.forEach(function(s){
     var liste=cpsOfSvc(s.k);
-    var retenus = (s.k===SVC_CUR && vus.length && vus.length<liste.length)
-      ? liste.filter(function(cp){ return vus.indexOf(cp)>=0; })
+    var retenus = iniSel
+      ? liste.filter(function(cp){ return (DATA[cp]||{}).ini===iniSel; })
       : liste;
     var n=retenus.reduce(function(t,cp){ return t+nbActives(cp); },0);
-    var partiel=(retenus.length<liste.length);
+    var partiel=!!iniSel;
+    // Les tâches back-office attribuées et pas encore faites s'ajoutent à IRVE
+    var nBo = (s.k==='IRVE') ? tachesOuvertesDe(iniSel) : 0;
     var on=(SVC_CUR===s.k);
     var b=document.createElement('button');
     b.style.cssText='display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:800;'
@@ -1931,9 +1934,16 @@ function rSvcBar(){
       +(on?s.fg:'var(--b)')+';color:'+(on?'#fff':'var(--t3)');
     badge.textContent=n;
     b.appendChild(badge);
+    if(nBo){
+      var bo=document.createElement('span');
+      bo.style.cssText='font-size:8.5px;font-weight:900;padding:0 4px;border-radius:5px;'
+        +'background:#EDE9FE;color:#7C3AED';
+      bo.textContent='+'+nBo+' BO';
+      b.appendChild(bo);
+    }
     b.title=s.l+' \u2014 '+n+' affaire(s) en cours'
-      +(partiel ? ' pour '+retenus.map(function(cp){ return DATA[cp].ini||cp; }).join(', ')
-                : '');
+      +(partiel ? ' pour '+(iniSel||'') : '')
+      +(nBo ? '\n'+nBo+' t\u00e2che(s) back-office attribu\u00e9e(s) et pas encore r\u00e9alis\u00e9e(s)' : '');
     b.addEventListener('click',function(){ setService(s.k); AG_VUE_BO=false; });
     el.appendChild(b);
   });
@@ -2086,14 +2096,13 @@ function rBoGrid(){
   }
   IRVE_TACHES.forEach(function(t,i){
     var row=document.createElement('tr');
-    function cel(v,cls,st){ var td=document.createElement('td'); if(cls)td.className=cls;
-      td.style.cssText=(st||'')+';font-size:9.5px'; td.textContent=v||'\u2014';
-      if(!v) td.style.color='var(--b2)'; td.title=v||''; return td; }
-    row.appendChild(cel(t.date?dFR(t.date):''));
-    row.appendChild(cel(t.aff,'l','font-weight:700'));
-    row.appendChild(cel(t.tache,'l'));
-    row.appendChild(cel(t.pour,'l'));
-    row.appendChild(cel(t.cp));
+    // Tout se modifie sur place, sans passer par le stylet
+    function apres(){ sansBouger(function(){ rBoGrid(); }); }
+    row.appendChild(celluleDateTache(t, apres));
+    row.appendChild(celluleTache(t,'aff','RAC-\u2026','l',null,apres));
+    row.appendChild(celluleTache(t,'tache','Nom de la t\u00e2che','l','liste-taches'));
+    row.appendChild(celluleTache(t,'pour','Pour qui','l','liste-pour'));
+    row.appendChild(celluleTache(t,'cp','CP','','liste-cp',apres));
     // Hors portefeuille : rouge si l'affaire est en réalité chez nous
     var chezNous=nosAffaires[(t.aff||'').trim()];
     var tdH=document.createElement('td');
@@ -2118,11 +2127,6 @@ function rBoGrid(){
     tdN.title=nb+' t\u00e2che(s) sur cette affaire'+(nb>10?'\n\u26a0 Au-del\u00e0 de 10, \u00e0 v\u00e9rifier.':'');
     row.appendChild(tdN);
     var tdA=document.createElement('td');
-    var ed=document.createElement('button');
-    ed.style.cssText='border:1px solid var(--b2);background:var(--s2);border-radius:5px;padding:2px 7px;'
-      +'font-size:9px;cursor:pointer;margin-right:3px;font-family:inherit;color:var(--blue)';
-    ed.textContent='\u270e';
-    ed.addEventListener('click',function(){ tacheModal(i); });
     var del=document.createElement('button');
     del.style.cssText='border:1px solid var(--b2);background:var(--s2);color:var(--red);border-radius:5px;'
       +'padding:2px 7px;font-size:9px;cursor:pointer;font-family:inherit';
@@ -2132,11 +2136,12 @@ function rBoGrid(){
         IRVE_TACHES.splice(i,1); sbSave(); rBoGrid();
       },true);
     });
-    tdA.appendChild(ed); tdA.appendChild(del);
+    tdA.appendChild(del);
     row.appendChild(tdA);
     tb.appendChild(row);
   });
   tbl.appendChild(tb); box.appendChild(tbl);
+  listesTaches(box);
   wrap.appendChild(box);
   var lg=document.getElementById('ag-legend'); if(lg) lg.innerHTML='';
 }
@@ -4555,6 +4560,102 @@ var TACHES_PREV = {};
 var TACHE_HEURES = 1;
 
 function tacheMontant(){ return TACHE_MONTANT||0; }
+// Une tâche est traitée quand elle porte une vraie date de réalisation.
+// « À réaliser », « A FAIRE » ou rien : elle est encore ouverte.
+function tacheOuverte(t){
+  var d=String((t||{}).date||'').trim();
+  if(!d) return true;
+  return !( /^\d{4}-\d{2}-\d{2}/.test(d) || frToISO(d) );
+}
+// ── Édition d'une tâche directement dans un tableau ──
+// Partagé par les deux vues, onglet Affaires et onglet Référent, pour que
+// la saisie se comporte pareil des deux côtés.
+var TACHE_ST_IN='width:100%;border:1px solid transparent;border-radius:5px;padding:2px 4px;'
+  +'font-size:9.5px;background:transparent;color:var(--t2);font-family:inherit;box-sizing:border-box';
+function celluleTache(t, cle, ph, cls, liste, apres){
+  var td=document.createElement('td'); if(cls) td.className=cls;
+  td.style.padding='2px 3px';
+  var inp=document.createElement('input');
+  inp.type='text'; inp.value=t[cle]||''; inp.placeholder=ph||'—';
+  inp.style.cssText=TACHE_ST_IN;
+  if(cle==='aff') inp.style.fontWeight='700';
+  if(liste) inp.setAttribute('list', liste);
+  inp.title=(t[cle]||ph||'')+'\nModifiable directement';
+  inp.addEventListener('focus',function(){
+    inp.style.borderColor='var(--b2)'; inp.style.background='var(--bg)'; });
+  inp.addEventListener('mouseenter',function(){
+    if(document.activeElement!==inp) inp.style.borderColor='var(--b)'; });
+  inp.addEventListener('mouseleave',function(){
+    if(document.activeElement!==inp) inp.style.borderColor='transparent'; });
+  inp.addEventListener('blur',function(){
+    inp.style.borderColor='transparent'; inp.style.background='transparent';
+    var v=inp.value.trim();
+    if(v) t[cle]=v; else delete t[cle];
+    sbSave();
+    if(apres) apres();
+  });
+  td.appendChild(inp);
+  return td;
+}
+function celluleDateTache(t, apres){
+  var td=document.createElement('td');
+  td.style.cssText='padding:2px 3px;white-space:nowrap';
+  var inp=document.createElement('input');
+  inp.type='text';
+  inp.value = t.date ? (frToISO(t.date)?dFR(t.date):(dFR(t.date)||t.date)) : '';
+  inp.placeholder='JJ/MM/AAAA';
+  inp.style.cssText=TACHE_ST_IN+';width:calc(100% - 20px);display:inline-block';
+  inp.title='Date de réalisation, ou un texte libre comme « À réaliser »';
+  inp.addEventListener('focus',function(){ inp.style.borderColor='var(--b2)'; inp.style.background='var(--bg)'; });
+  inp.addEventListener('mouseenter',function(){
+    if(document.activeElement!==inp) inp.style.borderColor='var(--b)'; });
+  inp.addEventListener('mouseleave',function(){
+    if(document.activeElement!==inp) inp.style.borderColor='transparent'; });
+  inp.addEventListener('blur',function(){
+    inp.style.borderColor='transparent'; inp.style.background='transparent';
+    var v=inp.value.trim(), iso=frToISO(v);
+    if(iso) t.date=iso; else if(v) t.date=v; else delete t.date;
+    sbSave();
+    if(apres) apres();
+  });
+  td.appendChild(inp);
+  var b=document.createElement('button');
+  b.style.cssText='border:none;background:transparent;cursor:pointer;font-size:10px;padding:0 2px';
+  b.textContent='⏳';
+  b.title='Marquer « À réaliser »';
+  b.addEventListener('click',function(){
+    t.date='À réaliser'; inp.value='À réaliser'; sbSave();
+    if(apres) apres();
+  });
+  td.appendChild(b);
+  return td;
+}
+// Listes de suggestions, posées une fois par tableau
+function listesTaches(hote){
+  if(!hote || hote.querySelector('#liste-taches')) return;
+  function dl(id, valeurs){
+    var d=document.createElement('datalist'); d.id=id;
+    var vus={};
+    valeurs.forEach(function(x){
+      x=String(x||'').trim();
+      if(!x || vus[x]) return; vus[x]=1;
+      var o=document.createElement('option'); o.value=x; d.appendChild(o);
+    });
+    hote.appendChild(d);
+  }
+  dl('liste-taches', TACHE_TYPES.concat(IRVE_TACHES.map(function(x){ return x.tache; })));
+  dl('liste-cp', personnes().map(function(p){ return p.ini; })
+      .concat(IRVE_TACHES.map(function(x){ return x.cp; })));
+  dl('liste-pour', IRVE_TACHES.map(function(x){ return x.pour; }));
+}
+// Tâches ouvertes attribuées à une personne. ini vide : toutes.
+function tachesOuvertesDe(ini){
+  return IRVE_TACHES.filter(function(t){
+    if(!tacheOuverte(t)) return false;
+    if(!ini) return true;
+    return iniDeTache(t.cp).indexOf(ini)>=0;
+  }).length;
+}
 function tachesPrevMois(iso){ return +(TACHES_PREV[iso]||0)||0; }
 function setTachesPrev(iso, n){
   n=+n||0;
@@ -4692,68 +4793,13 @@ function rIrveTaches(){
     cb.addEventListener('change',function(){ TACHE_SEL[i]=cb.checked; rIrveTaches(); });
     tdC.appendChild(cb); row.appendChild(tdC);
 
-    // \u2500\u2500 \u00c9dition directe dans le tableau \u2500\u2500
-    // Plus besoin du stylet : chaque champ se modifie sur place. La bordure
-    // n'appara\u00eet qu'au survol pour ne pas charger la grille.
-    var ST_IN='width:100%;border:1px solid transparent;border-radius:5px;padding:2px 4px;'
-      +'font-size:9.5px;background:transparent;color:var(--t2);font-family:inherit;box-sizing:border-box';
-    function champ(val, ph, onSet, cls, liste){
-      var td=document.createElement('td'); if(cls) td.className=cls;
-      td.style.padding='2px 3px';
-      var inp=document.createElement('input');
-      inp.type='text'; inp.value=val||''; inp.placeholder=ph||'\u2014';
-      inp.style.cssText=ST_IN;
-      if(liste) inp.setAttribute('list', liste);
-      inp.title=(val||ph||'')+'\nModifiable directement';
-      inp.addEventListener('focus',function(){
-        inp.style.borderColor='var(--b2)'; inp.style.background='var(--bg)'; });
-      inp.addEventListener('mouseenter',function(){
-        if(document.activeElement!==inp) inp.style.borderColor='var(--b)'; });
-      inp.addEventListener('mouseleave',function(){
-        if(document.activeElement!==inp) inp.style.borderColor='transparent'; });
-      inp.addEventListener('blur',function(){
-        inp.style.borderColor='transparent'; inp.style.background='transparent';
-        onSet(inp.value.trim());
-        sbSave();
-      });
-      td.appendChild(inp);
-      return td;
-    }
-
-    // Date : une date fran\u00e7aise devient une date, tout autre texte reste
-    // tel quel. \u00ab \u00c0 r\u00e9aliser \u00bb se pose d'un clic sur le sablier.
-    var tdD=document.createElement('td');
-    tdD.style.cssText='padding:2px 3px;white-space:nowrap';
-    var inD=document.createElement('input');
-    inD.type='text';
-    inD.value = t.date ? (frToISO(t.date)?dFR(t.date):(dFR(t.date)||t.date)) : '';
-    inD.placeholder='JJ/MM/AAAA';
-    inD.style.cssText=ST_IN+';width:calc(100% - 20px);display:inline-block';
-    inD.title='Date de r\u00e9alisation, ou un texte libre comme \u00ab \u00c0 r\u00e9aliser \u00bb';
-    inD.addEventListener('focus',function(){ inD.style.borderColor='var(--b2)'; inD.style.background='var(--bg)'; });
-    inD.addEventListener('blur',function(){
-      inD.style.borderColor='transparent'; inD.style.background='transparent';
-      var v=inD.value.trim();
-      var iso=frToISO(v);
-      if(iso) t.date=iso; else if(v) t.date=v; else delete t.date;
-      sbSave();
-    });
-    tdD.appendChild(inD);
-    var bAf=document.createElement('button');
-    bAf.style.cssText='border:none;background:transparent;cursor:pointer;font-size:10px;padding:0 2px';
-    bAf.textContent='\u23f3';
-    bAf.title='Marquer \u00ab \u00c0 r\u00e9aliser \u00bb';
-    bAf.addEventListener('click',function(){
-      t.date='\u00c0 r\u00e9aliser'; inD.value='\u00c0 r\u00e9aliser'; sbSave();
-    });
-    tdD.appendChild(bAf);
-    row.appendChild(tdD);
-
-    row.appendChild(champ(t.aff, 'RAC-\u2026', function(v){ if(v) t.aff=v; else delete t.aff; }, 'l'));
-    row.appendChild(champ(t.tache, 'Nom de la t\u00e2che',
-      function(v){ if(v) t.tache=v; else delete t.tache; }, 'l', 'liste-taches'));
-    row.appendChild(champ(t.pour, 'Pour qui', function(v){ if(v) t.pour=v; else delete t.pour; }, 'l'));
-    row.appendChild(champ(t.cp, 'CP', function(v){ if(v) t.cp=v; else delete t.cp; }, '', 'liste-cp'));
+    // \u00c9dition directe, m\u00eames champs que dans l'onglet Affaires
+    function apresT(){ sansBouger(function(){ rIrveTaches(); }); }
+    row.appendChild(celluleDateTache(t, apresT));
+    row.appendChild(celluleTache(t,'aff','RAC-\u2026','l'));
+    row.appendChild(celluleTache(t,'tache','Nom de la t\u00e2che','l','liste-taches'));
+    row.appendChild(celluleTache(t,'pour','Pour qui','l','liste-pour'));
+    row.appendChild(celluleTache(t,'cp','CP','','liste-cp'));
     // UO coordination : 0,1 par tâche, à basculer quand facturé
     var tdC=document.createElement('td');
     var sel=document.createElement('select');
@@ -4824,26 +4870,7 @@ function rIrveTaches(){
   });
   tbl.appendChild(tb); wrap.appendChild(tbl); body.appendChild(wrap);
 
-  // Listes de suggestions, partagées par toutes les lignes
-  var dlT=document.createElement('datalist'); dlT.id='liste-taches';
-  var vusT={};
-  TACHE_TYPES.concat(IRVE_TACHES.map(function(x){ return x.tache; }))
-    .forEach(function(x){
-      x=String(x||'').trim();
-      if(!x || vusT[x]) return; vusT[x]=1;
-      var o=document.createElement('option'); o.value=x; dlT.appendChild(o);
-    });
-  body.appendChild(dlT);
-  var dlC=document.createElement('datalist'); dlC.id='liste-cp';
-  var vusC={};
-  personnes().map(function(p){ return p.ini; })
-    .concat(IRVE_TACHES.map(function(x){ return x.cp; }))
-    .forEach(function(x){
-      x=String(x||'').trim();
-      if(!x || vusC[x]) return; vusC[x]=1;
-      var o=document.createElement('option'); o.value=x; dlC.appendChild(o);
-    });
-  body.appendChild(dlC);
+  listesTaches(body);
 
   host.appendChild(card);
   try{ makeCollapsibleRef(hdr, body, 'taches_referent'); }catch(e){}
@@ -10064,6 +10091,36 @@ function valoSynth(){
 // ══════════════════════════════════════════════════════════════
 var MARCHE_MONTANT = {ARMA:0, IRVE:0, MECA:0};
 function marcheDe(svc){ return +(MARCHE_MONTANT[svc]||0)||0; }
+// Prix d'un UO, quel que soit le périmètre
+function prixUo(cp, a, k){
+  var svc=svcOf(cp);
+  if(svc==='ARMA') return UO_PRIX[FA_KEY[k]]||0;
+  if(svc==='IRVE') return irvePrixUoAff(a, k.slice(-3))||0;
+  var m=MECA_UOS.filter(function(x){ return x.k===k; })[0];
+  return m?m.prix:0;
+}
+// Montant commandé : les UO dont la commande est passée, FSS reçue comprise.
+// Les tâches back-office IRVE suivent le même drapeau.
+function commandeDe(svc){
+  var t=0;
+  cpsOfSvc(svc).forEach(function(cp){
+    (gAff(cp)||[]).forEach(function(a){
+      if(svc==='IRVE' && irvePhaseNum(a)===0) return;
+      var liste=(UO_CAT[svc]||[]).map(function(u){ return u.k; });
+      liste.forEach(function(k){
+        if(svc==='IRVE' && k.indexOf(irveProfil(a)+'_')!==0) return;
+        var e=cmdDe(a,k);
+        if(e==='cmd'||e==='fss') t+=prixUo(cp,a,k);
+      });
+    });
+  });
+  if(svc==='IRVE'){
+    IRVE_TACHES.forEach(function(x){
+      if(x.fss==='cmd'||x.fss==='fss') t+=tacheMontant();
+    });
+  }
+  return t;
+}
 // Facturé par périmètre, back-office IRVE compris
 function factureDe(svc){
   var s=valoSynth(), t=0;
@@ -10075,9 +10132,10 @@ function factureDe(svc){
   return t;
 }
 function consoMarche(svc){
-  var m=marcheDe(svc), f=factureDe(svc);
-  return {marche:m, facture:f, reste:m-f,
-          pct: m>0 ? Math.round(f/m*1000)/10 : null};
+  var m=marcheDe(svc), c=commandeDe(svc), f=factureDe(svc);
+  return {marche:m,
+          commande:c, resteCmd:m-c, pctCmd: m>0 ? Math.round(c/m*1000)/10 : null,
+          facture:f,  reste:m-f,    pct:    m>0 ? Math.round(f/m*1000)/10 : null};
 }
 
 // Dernier instantane portant une valorisation, qui sert de point de depart
@@ -11691,9 +11749,9 @@ function rMarche(){
 
   var info=document.createElement('div');
   info.style.cssText='font-size:10px;color:var(--t3);padding:8px 12px 2px;line-height:1.5';
-  info.textContent='Montant vendu de chaque marché, ce qui en a déjà été facturé, '
-    +'et ce qu’il reste à consommer. Le montant du marché se saisit ici, '
-    +'il ne se déduit pas des affaires.';
+  info.textContent='Montant vendu de chaque marché, ce qui en est commandé, ce qui en est '
+    +'facturé, et ce qu’il reste des deux côtés. Le montant du marché se saisit ici. '
+    +'Le commandé vient des états CMD OK et FSS OK du tableau Facturation.';
   body.appendChild(info);
 
   SERVICES.forEach(function(s){
@@ -11737,26 +11795,6 @@ function rMarche(){
       return;
     }
 
-    // Jauge de consommation
-    var pct=Math.max(0, Math.min(100, c.pct||0));
-    var jz=document.createElement('div');
-    jz.style.cssText='padding:10px 11px 4px';
-    var bar=document.createElement('div');
-    bar.style.cssText='height:18px;border-radius:6px;background:var(--s3);overflow:hidden;position:relative';
-    var fill=document.createElement('div');
-    var coul = pct>=95 ? 'var(--red)' : pct>=80 ? 'var(--amber)' : s.fg;
-    fill.style.cssText='height:100%;width:'+pct+'%;background:'+coul+';opacity:.9';
-    bar.appendChild(fill);
-    var txt=document.createElement('div');
-    txt.style.cssText='position:absolute;inset:0;display:flex;align-items:center;'
-      +'justify-content:center;font-size:10px;font-weight:900;color:var(--t)';
-    txt.textContent=(c.pct===null?'—':String(c.pct).replace('.',','))+' %';
-    bar.appendChild(txt);
-    jz.appendChild(bar);
-    bloc.appendChild(jz);
-
-    var g=document.createElement('div');
-    g.style.cssText='display:grid;grid-template-columns:repeat(auto-fit,minmax(108px,1fr));gap:7px;padding:6px 11px 11px';
     function tuileM(lib, val, co, aide){
       var d=document.createElement('div');
       d.style.cssText='border:1px solid var(--b);border-radius:9px;padding:7px 9px;background:var(--s)';
@@ -11766,20 +11804,62 @@ function rMarche(){
         +'<div style="font-size:15px;font-weight:900;color:'+co+';margin-top:2px">'+val+'</div>';
       return d;
     }
-    g.appendChild(tuileM('Marché', fmtEur(c.marche), 'var(--t)', 'Montant total vendu'));
-    g.appendChild(tuileM('Déjà facturé', fmtEur(Math.round(c.facture)), 'var(--green)',
-      'Somme des UO facturés, back-office compris pour IRVE'));
-    g.appendChild(tuileM('Reste', fmtEur(Math.round(c.reste)),
-      c.reste<0 ? 'var(--red)' : 'var(--blue)',
-      c.reste<0 ? 'Marché dépassé' : 'Ce qu’il reste à consommer'));
-    bloc.appendChild(g);
+    // Le montant du marché, seul, en tête
+    var g0=document.createElement('div');
+    g0.style.cssText='padding:9px 11px 2px';
+    g0.appendChild(tuileM('Montant du marché', fmtEur(c.marche), 'var(--t)',
+      'Montant total vendu sur '+s.court));
+    bloc.appendChild(g0);
 
-    if(c.reste<0){
+    // Deux étages : ce qui est commandé, puis ce qui est facturé
+    function etage(titre, libFait, libReste, fait, reste, pctv, coul, aideFait, aideReste){
+      var z=document.createElement('div');
+      z.style.cssText='padding:8px 11px 2px';
+      var t=document.createElement('div');
+      t.style.cssText='font-size:9px;font-weight:800;color:var(--t3);text-transform:uppercase;'
+        +'letter-spacing:.05em;margin-bottom:5px';
+      t.textContent=titre;
+      z.appendChild(t);
+      var pct=Math.max(0, Math.min(100, pctv||0));
+      var bar=document.createElement('div');
+      bar.style.cssText='height:18px;border-radius:6px;background:var(--s3);overflow:hidden;position:relative';
+      var fill=document.createElement('div');
+      var co = pct>=95 ? 'var(--red)' : pct>=80 ? 'var(--amber)' : coul;
+      fill.style.cssText='height:100%;width:'+pct+'%;background:'+co+';opacity:.9';
+      bar.appendChild(fill);
+      var txt=document.createElement('div');
+      txt.style.cssText='position:absolute;inset:0;display:flex;align-items:center;'
+        +'justify-content:center;font-size:10px;font-weight:900;color:var(--t)';
+      txt.textContent=(pctv===null?'—':String(pctv).replace('.',','))+' %';
+      bar.appendChild(txt);
+      z.appendChild(bar);
+      var g=document.createElement('div');
+      g.style.cssText='display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:7px;padding:7px 0 4px';
+      g.appendChild(tuileM(libFait, fmtEur(Math.round(fait)), 'var(--green)', aideFait));
+      g.appendChild(tuileM(libReste, fmtEur(Math.round(reste)),
+        reste<0?'var(--red)':'var(--blue)', reste<0?'Marché dépassé':aideReste));
+      z.appendChild(g);
+      return z;
+    }
+    bloc.appendChild(etage('Commandes', 'Déjà commandé', 'Reste à commander',
+      c.commande, c.resteCmd, c.pctCmd, '#7C3AED',
+      'Somme des UO dont la commande est passée, FSS reçue comprise',
+      'Ce qu’il reste à faire commander par ENEDIS'));
+    bloc.appendChild(etage('Facturation', 'Déjà facturé', 'Reste à facturer',
+      c.facture, c.reste, c.pct, s.fg,
+      'Somme des UO facturés, back-office compris pour IRVE',
+      'Ce qu’il reste à facturer sur le marché'));
+
+    if(c.reste<0 || c.resteCmd<0){
       var al=document.createElement('div');
-      al.style.cssText='margin:0 11px 10px;padding:7px 10px;border-radius:9px;background:var(--rl);'
+      al.style.cssText='margin:4px 11px 10px;padding:7px 10px;border-radius:9px;background:var(--rl);'
         +'border:1px solid var(--red);color:var(--red);font-size:10px;font-weight:700;line-height:1.5';
-      al.textContent='Marché dépassé de '+fmtEur(Math.round(-c.reste))+'. À vérifier avec ENEDIS.';
+      al.textContent = (c.reste<0)
+        ? 'Facturation au-delà du marché de '+fmtEur(Math.round(-c.reste))+'. À vérifier avec ENEDIS.'
+        : 'Commandes au-delà du marché de '+fmtEur(Math.round(-c.resteCmd))+'. À vérifier avec ENEDIS.';
       bloc.appendChild(al);
+    } else {
+      var sp2=document.createElement('div'); sp2.style.height='7px'; bloc.appendChild(sp2);
     }
     body.appendChild(bloc);
   });
@@ -15062,14 +15142,25 @@ function boutonIdees(){
   var app=document.querySelector('.app'); if(!app) return null;
   b=document.createElement('button');
   b.id='btn-idees';
-  b.style.cssText='position:absolute;left:9px;bottom:62px;z-index:60;border:1.5px solid var(--brand);'
-    +'background:var(--s);color:var(--brand);border-radius:999px;padding:7px 13px;font-size:10.5px;'
-    +'font-weight:800;cursor:pointer;font-family:inherit;box-shadow:0 3px 12px rgba(0,0,0,.15);'
-    +'display:inline-flex;align-items:center;gap:6px';
-  b.innerHTML='<span style="font-size:12px">💡</span><span>Proposer une amélioration</span>'
-    +'<span id="idees-pastille" style="display:none;background:var(--red);color:#fff;font-size:9px;'
-    +'font-weight:900;border-radius:999px;padding:1px 6px"></span>';
+  // Discret : une pastille d'ampoule, le libellé n'apparaît qu'au survol
+  b.style.cssText='position:absolute;left:8px;bottom:60px;z-index:60;border:1px solid var(--b2);'
+    +'background:var(--s);color:var(--t3);border-radius:999px;padding:4px 8px;font-size:9.5px;'
+    +'font-weight:700;cursor:pointer;font-family:inherit;opacity:.6;'
+    +'display:inline-flex;align-items:center;gap:4px;transition:opacity .15s ease';
+  b.innerHTML='<span style="font-size:11px">💡</span>'
+    +'<span id="idees-txt" style="display:none">Proposer une amélioration</span>'
+    +'<span id="idees-pastille" style="display:none;background:var(--red);color:#fff;font-size:8.5px;'
+    +'font-weight:900;border-radius:999px;padding:0 5px"></span>';
   b.title='Déposer une idée d’amélioration pour RADAR';
+  function ouvrir(on){
+    b.style.opacity = on?'1':'.6';
+    b.style.borderColor = on?'var(--brand)':'var(--b2)';
+    b.style.color = on?'var(--brand)':'var(--t3)';
+    var t=document.getElementById('idees-txt');
+    if(t) t.style.display = on?'inline':'none';
+  }
+  b.addEventListener('mouseenter',function(){ ouvrir(true); });
+  b.addEventListener('mouseleave',function(){ ouvrir(false); });
   b.addEventListener('click',function(){ showV('idees'); });
   app.appendChild(b);
   majPastilleIdees();
@@ -18656,7 +18747,7 @@ setInterval(sbPoll, 20000);
 // On ne recharge jamais de force, une saisie en cours serait perdue :
 // on propose, la personne choisit son moment.
 // ══════════════════════════════════════════════════════════════
-var APP_VERSION='2026-09-04-4';
+var APP_VERSION='2026-09-04-5';
 var MAJ_VUE=false;
 function bandeauMaj(v){
   if(MAJ_VUE || document.getElementById('maj-banner')) return;
