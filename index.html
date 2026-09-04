@@ -7538,6 +7538,21 @@ function alignerGraphTableau(chart, tbl, labs){
   caler(chart); caler(labs);
   return true;
 }
+// Redessiner un module placé PLUS HAUT dans la page en change la hauteur
+// et fait glisser tout ce qui suit : l'utilisateur croit que la page a
+// sauté. On rend la main au même endroit.
+function sansBouger(fn){
+  var y=window.scrollY, sc=document.getElementById('scroll');
+  var ys=sc?sc.scrollTop:0;
+  try{ fn(); }catch(e){ console.warn('sansBouger',e); }
+  window.scrollTo(0,y);
+  if(sc) sc.scrollTop=ys;
+  // Le module redessiné peut finir sa mise en page au cycle suivant
+  requestAnimationFrame(function(){
+    window.scrollTo(0,y);
+    if(sc) sc.scrollTop=ys;
+  });
+}
 // Réaligne dès que la largeur bouge, et une première fois au rendu
 function suivreAlignement(chart, tbl, labs){
   function faire(){ try{ alignerGraphTableau(chart, tbl, labs); }catch(e){} }
@@ -9874,6 +9889,8 @@ function moisIndex(iso){
 // Valeur spéciale : la date n'est pas connue, l'UO n'entre pas dans le
 // prévisionnel. Elle reste visible et modifiable dans le tableau.
 var PREV_NC='NC';
+// Mois passés proposés dans la liste, pour dater un UO déjà facturé
+var PREV_RETRO=-6;
 function prevUo(a,k){ return ((a.prev||{})[k])||''; }
 function prevEstNC(a,k){ return prevUo(a,k)===PREV_NC; }
 function setPrevUo(a,k,iso){
@@ -11036,10 +11053,6 @@ function rFactu(){
       selsDate.forEach(function(x){
         var au=neuf[x.cle];
         x.sel.options[0].textContent = (au===undefined) ? '\u2014' : moisLabel(au);
-        var fermer=(au===undefined);
-        x.sel.disabled=fermer;
-        x.sel.style.opacity = fermer?'.45':'';
-        x.sel.style.cursor  = fermer?'not-allowed':'';
         var v=x.sel.value;
         if(!v){ x.sel.style.color='var(--t3)'; x.sel.style.fontWeight='600';
                 x.sel.style.borderStyle='dashed'; x.sel.style.background='var(--bg)'; }
@@ -11066,6 +11079,12 @@ function rFactu(){
       var onc=document.createElement('option');
       onc.value=PREV_NC; onc.textContent='Date ind\u00e9termin\u00e9e';
       sd.appendChild(onc);
+      // Les mois pass\u00e9s servent \u00e0 dater un UO d\u00e9j\u00e0 factur\u00e9
+      for(var mp=PREV_RETRO; mp<0; mp++){
+        var opp=document.createElement('option');
+        opp.value=moisISO(mp); opp.textContent=moisLabel(mp);
+        sd.appendChild(opp);
+      }
       for(var mi=0; mi<PREV_MOIS; mi++){
         var op=document.createElement('option');
         op.value=moisISO(mi); op.textContent=moisLabel(mi);
@@ -11079,13 +11098,10 @@ function rFactu(){
       if(!cur){ sd.style.color='var(--t3)'; sd.style.fontWeight='600'; sd.style.borderStyle='dashed'; }
       else if(estNC){ sd.style.color='#B45309'; sd.style.background='#FEF3C7'; }
       else { sd.style.color='#1D4ED8'; sd.style.background='#DBEAFE'; }
-      // Rien \u00e0 facturer sur cet UO : le choix n'aurait aucun effet, on le ferme
-      if(auto===undefined){
-        sd.disabled=true;
-        sd.style.opacity='.45'; sd.style.cursor='not-allowed';
-      }
+      // Un UO d\u00e9j\u00e0 factur\u00e9 garde sa date de facturation : le menu reste
+      // ouvert, il sert alors d'historique et non de pr\u00e9vision.
       sd.title = (auto===undefined)
-        ? u+' \u2014 plus rien \u00e0 facturer sur cet UO'
+        ? u+' \u2014 d\u00e9j\u00e0 factur\u00e9 ou sans objet.\nLe mois saisi ici note quand il l\u2019a \u00e9t\u00e9.'
         : u+(estNC ? '\nDate ind\u00e9termin\u00e9e : cet UO n\u2019est pas compt\u00e9 dans la facturation pr\u00e9visionnelle'
                    : (cur?('\nMois impos\u00e9 : '+moisLabel(moisIndex(cur)))
                         :('\nMois calcul\u00e9 : '+moisLabel(auto))))
@@ -11096,7 +11112,7 @@ function rFactu(){
         // On rafraîchit la ligne sur place et les modules voisins, sans
         // reconstruire le tableau : sinon la page remonte à chaque saisie.
         majDatesLigne();
-        try{ rPrevFactu(); rPrevCharge(); }catch(e){}
+        sansBouger(function(){ rPrevFactu(); rPrevCharge(); });
       });
       selsDate.push({cle:cleP, sel:sd});
       td.appendChild(sd); tr.appendChild(td);
@@ -11133,7 +11149,7 @@ function rFactu(){
           // Facturer un UO le retire du prévisionnel : les mois calculés
           // de la ligne changent, on les remet à jour sur place.
           majDatesLigne(); majAcquis();
-          try{ rPrevFactu(); }catch(e){}
+          sansBouger(function(){ rPrevFactu(); });
         });
         box.appendChild(selM);
       } else {
@@ -11166,7 +11182,7 @@ function rFactu(){
           sbSave();
           // Voir plus haut : la facturation d'un UO déplace les mois calculés
           majDatesLigne(); majAcquis();
-          try{ rPrevFactu(); }catch(e){}
+          sansBouger(function(){ rPrevFactu(); });
         });
         box.appendChild(sel);
       }
