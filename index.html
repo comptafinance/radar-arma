@@ -1168,7 +1168,7 @@ function sbHeaders(){
 // Serialize full app state to JSON
 function serializeState(){
   return JSON.stringify({
-    DATA:DATA,AVC:AVC,DXP:DXP,COMMENTS:COMMENTS,ENGAGE_HIST:ENGAGE_HIST,PERIM:PERIM,CHARGE_CAP:CHARGE_CAP,CAP_SVC:CAP_SVC,DUREE_SVC:DUREE_SVC,UO_PARAMS:UO_PARAMS,CAP_HEURES:CAP_HEURES,IRVE_TACHES:IRVE_TACHES,TACHES_PREV:TACHES_PREV,MARCHE_MONTANT:MARCHE_MONTANT,AFFECT_PREV:AFFECT_PREV,FACTU_HIST:FACTU_HIST,REF_MDP:REF_MDP,UO_PRIX:UO_PRIX,IRVE_PRIX:IRVE_PRIX,TACHE_MONTANT:TACHE_MONTANT,COUT_MENSUEL:COUT_MENSUEL,MECA_PRIX:MECA_UOS.map(function(u){return u.prix;}),AFFECT_FIN:AFFECT_FIN,TAUX_ACTIVITE:TAUX_ACTIVITE,SVC_CUR:SVC_CUR,TIME_LOG:TIME_LOG,TJM:TJM,HISTO_SEM:HISTO_SEM,SKILLS:SKILLS,ECARTS:ECARTS,COMP_REFS:COMP_REFS,FORMATIONS:FORMATIONS,
+    DATA:DATA,AVC:AVC,DXP:DXP,COMMENTS:COMMENTS,ENGAGE_HIST:ENGAGE_HIST,PERIM:PERIM,CHARGE_CAP:CHARGE_CAP,CAP_SVC:CAP_SVC,DUREE_SVC:DUREE_SVC,UO_PARAMS:UO_PARAMS,CAP_HEURES:CAP_HEURES,IRVE_TACHES:IRVE_TACHES,TACHES_PREV:TACHES_PREV,MARCHE_MONTANT:MARCHE_MONTANT,AFFECT_PREV:AFFECT_PREV,FACTU_HIST:FACTU_HIST,REF_MDP:REF_MDP,UO_PRIX:UO_PRIX,IRVE_PRIX:IRVE_PRIX,TACHE_MONTANT:TACHE_MONTANT,COUT_MENSUEL:COUT_MENSUEL,MECA_PRIX:MECA_UOS.map(function(u){return u.prix;}),AFFECT_FIN:AFFECT_FIN,TAUX_ACTIVITE:TAUX_ACTIVITE,SVC_CUR:SVC_CUR,TIME_LOG:TIME_LOG,TJM:TJM,HISTO_SEM:HISTO_SEM,SKILLS:SKILLS,ECARTS:ECARTS,COMP_REFS:COMP_REFS,FORMATIONS:FORMATIONS,IDEES:IDEES,
     LINKS_DATA:LINKS_DATA,
     MAIL_DATA:MAIL_DATA,
     HISTORY:HISTORY,
@@ -1242,6 +1242,7 @@ function applyState(json){
     }
     if(s.FORMATIONS){ Object.keys(FORMATIONS).forEach(function(k){delete FORMATIONS[k];});
       Object.keys(s.FORMATIONS).forEach(function(k){FORMATIONS[k]=s.FORMATIONS[k];}); }
+    if(Array.isArray(s.IDEES)){ IDEES.length=0; s.IDEES.forEach(function(x){IDEES.push(x);}); }
     if(s.LINKS_DATA&&s.LINKS_DATA.length)LINKS_DATA.splice(0,LINKS_DATA.length,...s.LINKS_DATA);
     if(s.MAIL_DATA)Object.keys(s.MAIL_DATA).forEach(function(k){MAIL_DATA[k]=s.MAIL_DATA[k];});
     if(s.HISTORY)Object.keys(s.HISTORY).forEach(function(k){HISTORY[k]=s.HISTORY[k];});
@@ -14920,6 +14921,184 @@ function showLU(lv){
 }
 function closeLU(){document.getElementById('lu').classList.remove('show');}
 
+// ══════════════════════════════════════════════════════════════
+// PROPOSER DES AMÉLIORATIONS
+// Chaque chargé de projet dépose une idée, datée, avec un statut.
+// La vue et le bouton sont créés en JavaScript : le balisage du
+// fichier n'est pas touché.
+// ══════════════════════════════════════════════════════════════
+var IDEES = [];
+var IDEE_STATUTS = [
+  {k:'a-traiter', l:'À traiter',     fg:'#B45309', bg:'#FEF3C7'},
+  {k:'traite',    l:'Traité',        fg:'#047857', bg:'#D1FAE5'},
+  {k:'inutile',   l:'Pas nécessaire',fg:'#6B7280', bg:'#E5E7EB'}
+];
+function ideeStatut(k){
+  return IDEE_STATUTS.filter(function(s){ return s.k===k; })[0] || IDEE_STATUTS[0];
+}
+function nbIdeesATraiter(){
+  return IDEES.filter(function(x){ return (x.statut||'a-traiter')==='a-traiter'; }).length;
+}
+// La vue vit dans le conteneur défilant, comme les autres
+function vueIdees(){
+  var v=document.getElementById('v-idees');
+  if(v) return v;
+  var sc=document.getElementById('scroll'); if(!sc) return null;
+  v=document.createElement('div');
+  v.className='view'; v.id='v-idees';
+  sc.appendChild(v);
+  return v;
+}
+// Bouton flottant en bas à gauche, présent sur toutes les vues
+function boutonIdees(){
+  var b=document.getElementById('btn-idees');
+  if(b) { majPastilleIdees(); return b; }
+  var app=document.querySelector('.app'); if(!app) return null;
+  b=document.createElement('button');
+  b.id='btn-idees';
+  b.style.cssText='position:absolute;left:9px;bottom:62px;z-index:60;border:1.5px solid var(--brand);'
+    +'background:var(--s);color:var(--brand);border-radius:999px;padding:7px 13px;font-size:10.5px;'
+    +'font-weight:800;cursor:pointer;font-family:inherit;box-shadow:0 3px 12px rgba(0,0,0,.15);'
+    +'display:inline-flex;align-items:center;gap:6px';
+  b.innerHTML='<span style="font-size:12px">💡</span><span>Proposer une amélioration</span>'
+    +'<span id="idees-pastille" style="display:none;background:var(--red);color:#fff;font-size:9px;'
+    +'font-weight:900;border-radius:999px;padding:1px 6px"></span>';
+  b.title='Déposer une idée d’amélioration pour RADAR';
+  b.addEventListener('click',function(){ showV('idees'); });
+  app.appendChild(b);
+  majPastilleIdees();
+  return b;
+}
+function majPastilleIdees(){
+  var p=document.getElementById('idees-pastille'); if(!p) return;
+  var n=nbIdeesATraiter();
+  p.textContent=n;
+  p.style.display = n?'inline-block':'none';
+}
+function rIdees(){
+  var v=vueIdees(); if(!v) return;
+  v.innerHTML='';
+  var card=document.createElement('div');
+  card.style.cssText='background:var(--s);border:1.5px solid var(--b);border-radius:12px;overflow:hidden;margin:10px';
+  var hdr=document.createElement('div');
+  hdr.style.cssText='padding:10px 12px;background:var(--s2);border-bottom:1px solid var(--b);'
+    +'display:flex;align-items:center;gap:8px;flex-wrap:wrap';
+  var tit=document.createElement('span');
+  tit.style.cssText='font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--t2);flex:1';
+  tit.textContent='💡 Améliorations proposées';
+  hdr.appendChild(tit);
+  var nA=nbIdeesATraiter();
+  var cpt=document.createElement('span');
+  cpt.style.cssText='font-size:10px;font-weight:800;padding:3px 9px;border-radius:8px;background:'
+    +(nA?'#FEF3C7':'var(--gl)')+';color:'+(nA?'#B45309':'var(--green)');
+  cpt.textContent = nA ? (nA+' à traiter') : 'Rien en attente';
+  hdr.appendChild(cpt);
+  card.appendChild(hdr);
+  var body=document.createElement('div'); card.appendChild(body);
+
+  // Saisie
+  var zs=document.createElement('div');
+  zs.style.cssText='padding:10px 12px;border-bottom:1px solid var(--b);display:flex;'
+    +'flex-direction:column;gap:7px';
+  var ta=document.createElement('textarea');
+  ta.placeholder='Décris l’amélioration que tu voudrais dans RADAR…';
+  ta.style.cssText='width:100%;min-height:64px;border:1.5px solid var(--b2);border-radius:9px;'
+    +'padding:8px 10px;font-size:12px;background:var(--bg);color:var(--t);font-family:inherit;'
+    +'box-sizing:border-box;resize:vertical';
+  zs.appendChild(ta);
+  var lg=document.createElement('div');
+  lg.style.cssText='display:flex;align-items:center;gap:8px;flex-wrap:wrap';
+  var qui=document.createElement('input');
+  qui.type='text'; qui.value=USER_INI||''; qui.placeholder='Tes initiales';
+  qui.style.cssText='width:96px;border:1.5px solid var(--b2);border-radius:8px;padding:5px 8px;'
+    +'font-size:11px;font-weight:700;background:var(--bg);color:var(--t);font-family:inherit';
+  qui.title='Qui propose cette amélioration';
+  lg.appendChild(qui);
+  var sp=document.createElement('span'); sp.style.flex='1'; lg.appendChild(sp);
+  var env=document.createElement('button');
+  env.style.cssText='border:none;background:var(--brand);color:#fff;border-radius:8px;padding:7px 15px;'
+    +'font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit';
+  env.textContent='Ajouter';
+  env.addEventListener('click',function(){
+    var txt=ta.value.trim();
+    if(!txt){ ta.focus(); return; }
+    IDEES.push({id:'I'+Date.now(), date:dISO(), auteur:(qui.value||'').trim().toUpperCase(),
+                texte:txt, statut:'a-traiter'});
+    sbSave();
+    showToast('Amélioration ajoutée');
+    rIdees(); majPastilleIdees();
+  });
+  lg.appendChild(env);
+  zs.appendChild(lg);
+  body.appendChild(zs);
+
+  if(!IDEES.length){
+    var e0=document.createElement('div');
+    e0.style.cssText='padding:18px 12px;text-align:center;font-size:11px;color:var(--t3);font-style:italic';
+    e0.textContent='Aucune amélioration proposée pour l’instant.';
+    body.appendChild(e0);
+    v.appendChild(card);
+    return;
+  }
+
+  var wrap=document.createElement('div'); wrap.style.cssText='overflow-x:auto';
+  var tbl=document.createElement('table'); tbl.className='fa-tbl';
+  var th=document.createElement('thead'), tr=document.createElement('tr');
+  [['Date',''],['Par',''],['Amélioration','l'],['Statut',''],['','']]
+  .forEach(function(c){ var x=document.createElement('th'); if(c[1])x.className=c[1];
+    x.textContent=c[0]; tr.appendChild(x); });
+  th.appendChild(tr); tbl.appendChild(th);
+  var tb=document.createElement('tbody');
+  // Les dernières idées d'abord
+  IDEES.slice().reverse().forEach(function(it){
+    var i=IDEES.indexOf(it);
+    var row=document.createElement('tr');
+    var tdD=document.createElement('td');
+    tdD.style.cssText='font-size:9.5px;color:var(--t3);white-space:nowrap';
+    tdD.textContent=it.date?dFR(it.date):'—';
+    row.appendChild(tdD);
+    var tdA=document.createElement('td');
+    tdA.style.cssText='font-size:10px;font-weight:800;color:var(--t2)';
+    tdA.textContent=it.auteur||'—';
+    row.appendChild(tdA);
+    var tdT=document.createElement('td'); tdT.className='l';
+    tdT.style.cssText='font-size:10.5px;color:var(--t);white-space:pre-wrap;line-height:1.45;padding:6px';
+    tdT.textContent=it.texte||'';
+    row.appendChild(tdT);
+    var tdS=document.createElement('td');
+    tdS.style.padding='3px';
+    var sel=document.createElement('select');
+    var st=ideeStatut(it.statut);
+    sel.style.cssText='border:1px solid '+st.fg+'66;border-radius:7px;padding:3px 6px;font-size:10px;'
+      +'font-weight:800;background:'+st.bg+';color:'+st.fg+';font-family:inherit';
+    IDEE_STATUTS.forEach(function(s){
+      var o=document.createElement('option'); o.value=s.k; o.textContent=s.l;
+      if(s.k===(it.statut||'a-traiter')) o.selected=true;
+      sel.appendChild(o);
+    });
+    sel.addEventListener('change',function(){
+      it.statut=sel.value; sbSave();
+      rIdees(); majPastilleIdees();
+    });
+    tdS.appendChild(sel); row.appendChild(tdS);
+    var tdX=document.createElement('td');
+    tdX.style.cssText='padding:3px;width:22px';
+    var bx=document.createElement('button');
+    bx.style.cssText='border:none;background:transparent;color:var(--b2);cursor:pointer;'
+      +'font-size:11px;padding:0 3px;font-family:inherit';
+    bx.textContent='✕';
+    bx.title='Supprimer cette proposition';
+    bx.addEventListener('click',function(){
+      uiConfirm('Supprimer la proposition', (it.texte||'').slice(0,120),
+        function(){ IDEES.splice(i,1); sbSave(); rIdees(); majPastilleIdees(); }, true);
+    });
+    tdX.appendChild(bx); row.appendChild(tdX);
+    tb.appendChild(row);
+  });
+  tbl.appendChild(tb); wrap.appendChild(tbl); body.appendChild(wrap);
+  v.appendChild(card);
+}
+
 // ── NAVIGATION ────────────────────────────────────────────────
 // L'onglet ouvert est retenu d'une session à l'autre : au rechargement,
 // on revient là où on était et non sur Ma semaine.
@@ -14934,16 +15113,19 @@ function ongletMemo(){
   return v;
 }
 function showV(v){
+  if(v==='idees') vueIdees();          // la vue est créée à la demande
   document.querySelectorAll('.view').forEach(function(el){el.classList.remove('on');});
   document.querySelectorAll('.nb').forEach(function(b){b.classList.remove('on');});
-  document.getElementById('v-'+v).classList.add('on');
+  var vue=document.getElementById('v-'+v);
+  if(!vue) return;
+  vue.classList.add('on');
   memoOnglet(v);
   var nb=document.getElementById('nb-'+v);if(nb)nb.classList.add('on');
   document.getElementById('scroll').scrollTop=0;
   // Masquer profil+stats dans Référent, restaurer ailleurs
   var appEl=document.querySelector('.app');
   if(appEl) appEl.classList.toggle('hide-profile', v==='ref');
-  if(v==='week')rWeek();else if(v==='ref'){ if(!refVerrouOk()){ demanderMdp(function(){ showV('ref'); }); return; } rRef(); }else if(v==='sc')rTDB();else if(v==='config')rConfig();else if(v==='links')rLinks();else if(v==='bo')rBO();else renderAll();
+  if(v==='week')rWeek();else if(v==='ref'){ if(!refVerrouOk()){ demanderMdp(function(){ showV('ref'); }); return; } rRef(); }else if(v==='sc')rTDB();else if(v==='config')rConfig();else if(v==='links')rLinks();else if(v==='bo')rBO();else if(v==='idees')rIdees();else renderAll();
 }
 
 // Sauvegarde synchrone à la fermeture de l'onglet
@@ -18237,6 +18419,7 @@ function bootApp(){
     // n'est pas redemandé tant que l'onglet du navigateur vit.
     var vue=ongletMemo()||'week';
     showV(vue);
+    try{ boutonIdees(); }catch(e){}
     try{ if(vue==='week') rWeek(); dtSyncNav(); appliquerRole(); }catch(e){}
     if(!USER_INI) setTimeout(function(){ choisirUtilisateur(false); },500);
   }catch(e){}
