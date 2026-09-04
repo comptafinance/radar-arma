@@ -9871,7 +9871,11 @@ function moisIndex(iso){
   var n=new Date();
   return (+m[1]-n.getFullYear())*12 + (+m[2]-1-n.getMonth());
 }
+// Valeur spéciale : la date n'est pas connue, l'UO n'entre pas dans le
+// prévisionnel. Elle reste visible et modifiable dans le tableau.
+var PREV_NC='NC';
 function prevUo(a,k){ return ((a.prev||{})[k])||''; }
+function prevEstNC(a,k){ return prevUo(a,k)===PREV_NC; }
 function setPrevUo(a,k,iso){
   if(!a.prev) a.prev={};
   if(iso) a.prev[k]=iso; else delete a.prev[k];
@@ -9947,13 +9951,17 @@ function prevFactuLignes(cp){
       var base=Math.max(0, debutEff+dec);
       var baseFin=base+durEff-1;
       // Un mois saisi dans l'onglet Facturation prime sur le calcul.
-      var choisi=moisIndex(prevUo(a,u.k));
+      // « Date indéterminée » garde la ligne, marquée exclue : le tableau
+      // continue de l'afficher, le prévisionnel ne la compte pas.
+      var nc=prevEstNC(a,u.k);
+      var choisi=nc?null:moisIndex(prevUo(a,u.k));
       var fin, deb;
       if(choisi!==null){ fin=Math.max(0,choisi); deb=Math.max(0, fin-durEff+1); }
       else { deb=Math.max(0, base+man); fin=deb+durEff-1; }
       out.push({cp:cp, a:a, k:u.k, px:px, dur:dur, durEff:durEff, decal:man, tx:tx,
                 base:base, baseFin:baseFin, deb:deb, fin:fin,
-                fige:(choisi!==null), montant:px, part:reste, avance:u.part});
+                fige:(choisi!==null), exclu:nc,
+                montant:px, part:reste, avance:u.part});
     });
   });
   return out;
@@ -9961,6 +9969,7 @@ function prevFactuLignes(cp){
 function prevFactu(cp, nMois){
   var out=new Array(nMois).fill(0);
   prevFactuLignes(cp).forEach(function(l){
+    if(l.exclu) return;                       // date indéterminée
     if(l.fin<nMois) out[l.fin]+=l.montant;
   });
   return out;
@@ -9970,10 +9979,19 @@ function uoDuMois(i, svc){
   var out=[];
   Object.keys(DATA).forEach(function(cp){
     if(svc && svcOf(cp)!==svc) return;
-    prevFactuLignes(cp).forEach(function(l){ if(l.fin===i) out.push(l); });
+    prevFactuLignes(cp).forEach(function(l){ if(!l.exclu && l.fin===i) out.push(l); });
   });
   out.sort(function(x,y){ return y.montant-x.montant; });
   return out;
+}
+// Montant mis de côté faute de date, pour le signaler à l'écran
+function uoSansDate(svc){
+  var n=0, eur=0;
+  Object.keys(DATA).forEach(function(cp){
+    if(svc && svcOf(cp)!==svc) return;
+    prevFactuLignes(cp).forEach(function(l){ if(l.exclu){ n++; eur+=l.montant; } });
+  });
+  return {n:n, eur:eur};
 }
 // Déplacer une UO vers un autre mois de facturation. On écrit une date
 // absolue, la même que celle saisie dans l'onglet Facturation.
@@ -10293,6 +10311,18 @@ function rPrevFactu(){
     +'Cliquer sur une barre ou sur un montant ouvre le d\u00e9tail, '
     +'o\u00f9 l\u2019on peut d\u00e9placer une UO d\u2019un mois \u00e0 l\u2019autre.';
   body.appendChild(info);
+
+  // Ce qui est volontairement mis de c\u00f4t\u00e9 doit se voir, sinon le total
+  // para\u00eet faux sans qu'on sache pourquoi.
+  var hors=uoSansDate();
+  if(hors.n){
+    var hz=document.createElement('div');
+    hz.style.cssText='margin:0 12px 6px;padding:7px 10px;border:1px solid #EAB308;border-radius:9px;'
+      +'background:#FEF3C7;color:#713F12;font-size:10px;line-height:1.5';
+    hz.textContent=hors.n+' UO en date ind\u00e9termin\u00e9e, soit '+fmtEur(Math.round(hors.eur))
+      +', ne sont pas compt\u00e9s ci-dessous. Leur mois se fixe dans l\u2019onglet Facturation.';
+    body.appendChild(hz);
+  }
 
   // Histogramme empilé, seuil de rentabilité en pointillés
   var chart=document.createElement('div');
@@ -10907,6 +10937,9 @@ function rFactu(){
   var thead=document.createElement('thead');
   var trg=document.createElement('tr'), trh=document.createElement('tr');
   var cols=[{l:'N\u00b0 affaire',cls:'l'},{l:'CP',cls:'l'}];
+  // L'adresse situe le projet ; elle n'existe pas sur RATP, qui a des stations
+  var avecAdr=(FA_SVC==='ARMA'||FA_SVC==='IRVE');
+  if(avecAdr) cols.push({l:'Adresse',cls:'l'});
   if(FA_SVC==='IRVE') cols.push({l:'Type',cls:'l'},{l:'Cplx',cls:''});
   var thVide=document.createElement('th');
   thVide.colSpan=cols.length; thVide.className='l'; thVide.textContent='';
@@ -10959,6 +10992,16 @@ function rFactu(){
       +'font-weight:800;background:'+av[1]+';color:'+av[0]+'">'+(DATA[r.cp].ini||r.cp)+'</span>';
     tdC.title=DATA[r.cp].name||r.cp;
     tr.appendChild(tdC);
+    if(avecAdr){
+      var adr=String(a.addr||((a.irve||{}).commune)||'').trim();
+      var tdA=document.createElement('td'); tdA.className='l';
+      tdA.style.cssText='font-size:9px;color:var(--t2);max-width:190px;overflow:hidden;'
+        +'text-overflow:ellipsis;white-space:nowrap';
+      tdA.textContent=adr||'—';
+      if(!adr) tdA.style.color='var(--b2)';
+      tdA.title=adr||'Adresse non renseignée';
+      tr.appendChild(tdA);
+    }
     if(FA_SVC==='IRVE'){
       var nv=irveEstNouveau(a);
       var tdT=document.createElement('td'); tdT.className='l';
@@ -10989,6 +11032,10 @@ function rFactu(){
       o0.value='';
       o0.textContent = (auto===undefined) ? '\u2014' : moisLabel(auto);
       sd.appendChild(o0);
+      // Date inconnue : l'UO sort du pr\u00e9visionnel sans dispara\u00eetre du tableau
+      var onc=document.createElement('option');
+      onc.value=PREV_NC; onc.textContent='Date ind\u00e9termin\u00e9e';
+      sd.appendChild(onc);
       for(var mi=0; mi<PREV_MOIS; mi++){
         var op=document.createElement('option');
         op.value=moisISO(mi); op.textContent=moisLabel(mi);
@@ -10998,7 +11045,9 @@ function rFactu(){
         var oc=document.createElement('option'); oc.value=cur; oc.textContent=cur; sd.appendChild(oc);
       }
       sd.value=cur||'';
+      var estNC=(cur===PREV_NC);
       if(!cur){ sd.style.color='var(--t3)'; sd.style.fontWeight='600'; sd.style.borderStyle='dashed'; }
+      else if(estNC){ sd.style.color='#B45309'; sd.style.background='#FEF3C7'; }
       else { sd.style.color='#1D4ED8'; sd.style.background='#DBEAFE'; }
       // Rien \u00e0 facturer sur cet UO : le choix n'aurait aucun effet, on le ferme
       if(auto===undefined){
@@ -11007,7 +11056,9 @@ function rFactu(){
       }
       sd.title = (auto===undefined)
         ? u+' \u2014 plus rien \u00e0 facturer sur cet UO'
-        : u+(cur?('\nMois impos\u00e9 : '+moisLabel(moisIndex(cur))):('\nMois calcul\u00e9 : '+moisLabel(auto)))
+        : u+(estNC ? '\nDate ind\u00e9termin\u00e9e : cet UO n\u2019est pas compt\u00e9 dans la facturation pr\u00e9visionnelle'
+                   : (cur?('\nMois impos\u00e9 : '+moisLabel(moisIndex(cur)))
+                        :('\nMois calcul\u00e9 : '+moisLabel(auto))))
           +'\nChoisir un mois fige la facturation de cet UO';
       sd.addEventListener('change',function(){
         setPrevUo(a, cleP, sd.value);
@@ -17772,7 +17823,7 @@ setInterval(sbPoll, 20000);
 // On ne recharge jamais de force, une saisie en cours serait perdue :
 // on propose, la personne choisit son moment.
 // ══════════════════════════════════════════════════════════════
-var APP_VERSION='2026-09-04-1';
+var APP_VERSION='2026-09-04-2';
 var MAJ_VUE=false;
 function bandeauMaj(v){
   if(MAJ_VUE || document.getElementById('maj-banner')) return;
