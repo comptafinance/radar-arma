@@ -1134,30 +1134,9 @@ function refreshAllBadges(){
   var budDotEl=document.getElementById('buddot');
   if(budDotEl){budDotEl.textContent=budBad>0?budBad:'';budDotEl.style.display=budBad>0?'flex':'none';}
 
-  // --- TDB (scdot) : affaires qui demandent une action ---
-  // Le compteur affichait planning + budget incomplets, soit des dizaines
-  // de lignes dont on ne fait rien. Il compte maintenant ce qui appelle un
-  // geste : météo rouge, ou plus de 15 jours sans la moindre action.
-  var scBad=0, dRouge=0, dFige=0;
-  try{
-    enc.forEach(function(a){
-      var rouge=(a.meteo===3);
-      var j=joursSansAction(a);
-      var fige=(j!==null && j>15);
-      if(rouge) dRouge++;
-      if(fige)  dFige++;
-      if(rouge||fige) scBad++;
-    });
-  }catch(e){ scBad=0; }
+  // --- TDB : plus de compteur, retiré le 04/09/2026 ---
   var scDotEl=document.getElementById('scdot');
-  if(scDotEl){
-    scDotEl.textContent=scBad>0?scBad:'';
-    scDotEl.style.display=scBad>0?'flex':'none';
-    scDotEl.title=scBad
-      ? scBad+' affaire(s) à reprendre : '+dRouge+' en météo rouge, '
-        +dFige+' sans action depuis plus de 15 jours'
-      : 'Rien à reprendre sur ce portefeuille';
-  }
+  if(scDotEl){ scDotEl.textContent=''; scDotEl.style.display='none'; }
 
   // resync sidebar desktop si présente
   try{ if(typeof dtSyncNav==='function') dtSyncNav(); }catch(e){}
@@ -3671,6 +3650,13 @@ function rRefNav(){
     });
     el.appendChild(b);
   });
+  // Bouton unique de réglages, à la suite de la navigation
+  try{
+    var sep=document.createElement('span');
+    sep.style.cssText='width:1px;height:20px;background:var(--b2);margin:0 3px';
+    el.appendChild(sep);
+    el.appendChild(boutonReglages());
+  }catch(e){}
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -7467,12 +7453,9 @@ function rPrevCharge(){
   ba.textContent='\ud83d\udcc8 Affectations pr\u00e9vues';
   ba.addEventListener('click',affectModal);
   bar2.appendChild(ba);
-  var bp2=document.createElement('button');
-  bp2.style.cssText='border:1px solid var(--brand);background:var(--bl);color:var(--brand);border-radius:7px;'
-    +'padding:5px 11px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit';
-  bp2.textContent='\u2699 Ajuster les dur\u00e9es';
-  bp2.addEventListener('click',paramModal);
-  bar2.appendChild(bp2); body.appendChild(bar2);
+  // \u00ab Ajuster les dur\u00e9es \u00bb faisait doublon avec \u00ab Param\u00e8tres par p\u00e9rim\u00e8tre \u00bb :
+  // les deux ouvraient paramModal. Regroup\u00e9s dans le bouton R\u00e9glages.
+  body.appendChild(bar2);
   var info=document.createElement('div');
   info.style.cssText='font-size:10px;color:var(--t3);padding:8px 12px 4px;line-height:1.5';
   info.innerHTML= (uoParamsRenseignes()>0
@@ -8112,139 +8095,10 @@ function rPerf(){
 // SKILLS : { "AD": { "Étude": 3, ... } }  niveau 0 à 4
 // ECARTS : [{ini, comp, constat, formation, echeance, statut}]
 // ══════════════════════════════════════════════════════════════
-// Référentiel repris de la matrice de compétences ENEDIS (CP RSX)
-var COMP_GROUPES = [{"cat":"Pré-requis projet","items":[{"l":"Pré-requis Projet","req":3},{"l":"Habilitation électrique (H0, B0, B1V …)","req":1},{"l":"Habilitation AIPR Concepteur","req":1},{"l":"Permis de conduire (sauf Paris)","req":1}]},{"cat":"Compétences clés","items":[{"l":"Réseaux de distribution : Réseaux BT                                (extension / DO / suppression / restructuration / renouvellement)","req":3},{"l":"Connaissance sur l'architecture IRVE","req":3},{"l":"Autonomie, Pro-Activité, Rigueur","req":3}]},{"cat":"Sécurité et habilitation","items":[{"l":"Respect des règles de sécurité (Port des EPI + habilitations)","req":2},{"l":"Sécurisation des chantiers (balisage, travaux réalisés par le prestataire/client, etc…)","req":2},{"l":"Prévention risques routier","req":2},{"l":"Etablissement des documents de sécurité (PDP, ICP, analyse de risques)","req":3},{"l":"Evaluation des risques électriques","req":3}]},{"cat":"Environnement ENEDIS","items":[{"l":"8 fondamenteaux ENEDIS","req":3},{"l":"Règles de confidentialité ENEDIS","req":3},{"l":"Connaissance de l'organisation du pôle de l'exploitation et des autres Services","req":3}]},{"cat":"Compétences méthodologie et chargé d'affaires","items":[{"l":"Suivi et respect des délais","req":3},{"l":"Suivi et respect du budget d'une affaire (MAJ point de sortie)","req":3},{"l":"Suivi de chantier","req":3},{"l":"Faire une analyse de risques et établir un plan de prévention","req":3},{"l":"Synthèse / Reporting (auto-revue, RDP, reporting …)","req":3},{"l":"Relation client d'ENEDIS","req":3},{"l":"Relation prestataires études et travaux","req":3},{"l":"Connaissance du déroulement de l'UO Etude","req":3},{"l":"Connaissance du déroulement de l'UO Coordination ARMA/IRVE","req":3},{"l":"Connaissance du déroulement de l'UO Travaux ARMA/IRVE","req":3},{"l":"Connaissance du déroulement de l'UO Réception","req":3},{"l":"Connaissance du déroulement de l'UO Coordination AIGP","req":0},{"l":"Connaissance du déroulement de l'UO Travaux AIGP","req":0},{"l":"Planification (jalonnement) sans phasage","req":0},{"l":"Planification (jalonnement) avec phasage","req":3}]},{"cat":"Compétences techniques","items":[{"l":"Connaissance sur l'architecture d'une colonne neuve","req":3},{"l":"Connaissance sur l'architecture IRVE","req":3},{"l":"Connaissance en création de poste (génie civil et électricité)","req":3},{"l":"Réseaux de distribution : Réseaux HTA                              (extension / DO / suppression / restructuration / renouvellement)","req":0},{"l":"Réseaux de distribution : Réseaux BT                                (extension / DO / suppression / restructuration / renouvellement)","req":3},{"l":"Réseaux de distribution : Postes HTA/BT                          (extension / DO / suppression / restructuration / renouvellement)","req":3},{"l":"Réseaux de distribution : Aérien BT","req":2},{"l":"Réseaux de distribution : Aérien HTA","req":0},{"l":"Génie civil : terrassement domaine public/privé","req":3},{"l":"Travaux sur aérien BT","req":2},{"l":"Travaux sur aérien HTA","req":0},{"l":"Cartographie (moyenne et grande échelle - lecture, compréhension, lecture de plans)","req":3},{"l":"Maitrise des séries de prix ENEDIS et des DA","req":3},{"l":"PRDE (prescription du réseau de distribution d'électricité)","req":3}]},{"cat":"Outils","items":[{"l":"Rosanat","req":2},{"l":"E-Plans","req":3},{"l":"Racing","req":3},{"l":"IEP","req":3},{"l":"Emaps","req":3},{"l":"e-transfo","req":3},{"l":"OMT Appli","req":0},{"l":"MOA-Pilot (MOAD)","req":0},{"l":"Plateforme de suivi des demandes d'arrêtés","req":0},{"l":"DataPoste / Photothèque","req":2},{"l":"Géoportail (cadastre)","req":0},{"l":"Protys (résultat d'amiante, demande de DT-DICT)","req":0},{"l":"Diamantys","req":0},{"l":"ACDMR (demande matériel)","req":3},{"l":"SAP PGI 3 - iachat","req":2},{"l":"e-Travaux","req":3},{"l":"Elium (validation de projets de colonnes)","req":0},{"l":"Benthley (relecture de plan de référencement / PGOC)","req":0},{"l":"eCampus","req":0},{"l":"[Pays de la Loire] S7PT","req":0},{"l":"[Paris] Regard","req":0},{"l":"[Paris] Danyweb","req":0},{"l":"[Paris] CITE pour faire les IT (demande d'arrêté)","req":0},{"l":"[IDFO] Partage","req":3}]},{"cat":"Compétences projets / Savoir-être","items":[{"l":"Autonomie, Pro-Activité, Rigueur","req":3},{"l":"Adaptabilité, gestions des aléas, savoir rebondir","req":3},{"l":"Savoir communiquer","req":3},{"l":"Dynamisme","req":3},{"l":"Etre synthétique","req":3},{"l":"Gestion du temps et des priorités","req":3},{"l":"Gestion des conflits","req":3},{"l":"Gestion du stress","req":3}]}];
-// ── Référentiels IRVE et RATP ──────────────────────────────────
-// Les niveaux sont stockés par LIBELLÉ de compétence, dans SKILLS.
-// Une compétence qui porte le même libellé dans deux référentiels est
-// donc automatiquement la même : la noter dans une matrice met à jour
-// les autres. C'est ce que demande Alexis. Pour garantir des libellés
-// rigoureusement identiques, on va les chercher dans le référentiel
-// ARMA plutôt que de les recopier.
-function cArma(cle, req){
-  for(var i=0;i<COMP_GROUPES.length;i++){
-    var it=COMP_GROUPES[i].items.filter(function(x){ return x.l.indexOf(cle)>=0; })[0];
-    if(it) return {l:it.l, req:(req===undefined?it.req:req)};
-  }
-  return {l:cle, req:(req===undefined?3:req)};   // libellé neuf
-}
-// Proposition Astridsen du 02/09/2026, à faire corriger par Alexis.
-var COMP_GROUPES_IRVE = [
-  {cat:'Pré-requis projet', items:[
-    cArma('Pré-requis Projet'),
-    cArma('Habilitation électrique'),
-    cArma('Habilitation AIPR'),
-    cArma('Permis de conduire')
-  ]},
-  {cat:'Compétences clés', items:[
-    cArma("Connaissance sur l'architecture IRVE", 4),
-    {l:'Typologie des points de charge (AC / DC, puissances)', req:3},
-    cArma('Autonomie, Pro-Activité, Rigueur')
-  ]},
-  {cat:'Sécurité et habilitation', items:[
-    cArma('Respect des règles de sécurité'),
-    cArma('Sécurisation des chantiers'),
-    cArma('Prévention risques routier'),
-    cArma('Etablissement des documents de sécurité'),
-    cArma('Evaluation des risques électriques')
-  ]},
-  {cat:'Environnement ENEDIS', items:[
-    cArma('8 fondamenteaux ENEDIS'),
-    cArma('Règles de confidentialité ENEDIS'),
-    cArma("Connaissance de l'organisation du pôle")
-  ]},
-  {cat:'Méthodologie et chargé d’affaires', items:[
-    cArma('Suivi et respect des délais'),
-    cArma("Suivi et respect du budget d'une affaire"),
-    cArma('Suivi de chantier'),
-    cArma('Synthèse / Reporting'),
-    cArma("Relation client d'ENEDIS"),
-    cArma('Relation prestataires études et travaux'),
-    cArma("Connaissance du déroulement de l'UO Etude"),
-    cArma("Connaissance du déroulement de l'UO Coordination ARMA/IRVE"),
-    cArma("Connaissance du déroulement de l'UO Travaux ARMA/IRVE"),
-    cArma("Connaissance du déroulement de l'UO Réception"),
-    cArma('Planification (jalonnement) avec phasage')
-  ]},
-  {cat:'Compétences techniques IRVE', items:[
-    {l:'Dimensionnement de la puissance de raccordement IRVE', req:3},
-    {l:'Infrastructure collective d’immeuble (IRVE en copropriété)', req:3},
-    {l:'Barème IRVE : ancien, nouveau ≤ 50 bornes, nouveau > 50 bornes', req:3},
-    {l:'Convention de raccordement et convention d’exploitation IRVE', req:3},
-    {l:'Dispositif ADVENIR : conditions et pièces du dossier', req:2},
-    {l:'ODR (offre de raccordement) : constitution et suivi', req:3},
-    cArma("Connaissance sur l'architecture d'une colonne neuve", 2),
-    cArma('Réseaux de distribution : Postes HTA/BT', 2),
-    cArma('Cartographie (moyenne et grande échelle'),
-    cArma('Maitrise des séries de prix ENEDIS et des DA')
-  ]},
-  {cat:'Outils', items:[
-    cArma('E-Plans'), cArma('Racing'), cArma('IEP'), cArma('Emaps'),
-    cArma('e-Travaux'), cArma('ACDMR'),
-    {l:'Suivi du portefeuille IRVE (fichier d’avancement DR)', req:3}
-  ]},
-  {cat:'Savoir-être', items:[
-    cArma('Adaptabilité, gestions des aléas'),
-    cArma('Savoir communiquer'), cArma('Dynamisme'), cArma('Etre synthétique'),
-    cArma('Gestion du temps et des priorités'),
-    cArma('Gestion des conflits'), cArma('Gestion du stress')
-  ]}
-];
-var COMP_GROUPES_MECA = [
-  {cat:'Pré-requis projet', items:[
-    cArma('Pré-requis Projet'),
-    cArma('Habilitation AIPR'),
-    cArma('Permis de conduire')
-  ]},
-  {cat:'Compétences clés', items:[
-    {l:'Dévoiement de réseaux : principe et méthodologie', req:3},
-    {l:'Lecture et interprétation de plans de concessionnaires', req:3},
-    cArma('Autonomie, Pro-Activité, Rigueur')
-  ]},
-  {cat:'Sécurité', items:[
-    cArma('Respect des règles de sécurité'),
-    cArma('Prévention risques routier'),
-    cArma('Etablissement des documents de sécurité', 2),
-    {l:'Risques liés à la proximité des réseaux (DT-DICT)', req:3}
-  ]},
-  {cat:'Environnement RATP', items:[
-    {l:'Organisation et interlocuteurs RATP (MOA, MOE, exploitation)', req:3},
-    {l:'Contraintes d’exploitation du réseau ferré', req:2},
-    {l:'Règles de confidentialité du client', req:3}
-  ]},
-  {cat:'Méthodologie et chargé d’affaires', items:[
-    cArma('Suivi et respect des délais'),
-    cArma("Suivi et respect du budget d'une affaire"),
-    cArma('Synthèse / Reporting'),
-    {l:'Animation des échanges avec les concessionnaires', req:3},
-    {l:'Suivi du taux de contact concessionnaires', req:3},
-    cArma('Planification (jalonnement) avec phasage')
-  ]},
-  {cat:'Livrables d’étude', items:[
-    {l:'Identification des concessionnaires', req:3},
-    {l:'Notice explicative', req:3},
-    {l:'Plan de synthèse des existants au 1/200e', req:3},
-    {l:'Plan de synthèse des projetés au 1/200e', req:3},
-    {l:'Coupes transversales au 1/100e', req:3},
-    {l:'Planning des études et des travaux', req:3},
-    {l:'Dossier des risques concessionnaires', req:3},
-    {l:'Avis d’expertise de compatibilité', req:2},
-    {l:'Estimation du coût de dévoiement', req:3}
-  ]},
-  {cat:'Outils', items:[
-    {l:'AutoCAD ou équivalent (plans de synthèse)', req:3},
-    cArma('Protys'),
-    cArma('Géoportail (cadastre)', 2),
-    cArma('Cartographie (moyenne et grande échelle')
-  ]},
-  {cat:'Savoir-être', items:[
-    cArma('Adaptabilité, gestions des aléas'),
-    cArma('Savoir communiquer'), cArma('Dynamisme'), cArma('Etre synthétique'),
-    cArma('Gestion du temps et des priorités'),
-    cArma('Gestion des conflits'), cArma('Gestion du stress')
-  ]}
-];
-var COMP_REFS = {ARMA:COMP_GROUPES, IRVE:COMP_GROUPES_IRVE, MECA:COMP_GROUPES_MECA};
+// Referentiel de competences repris du fichier d'Alexis, Matrice_competences_Astridsen.xlsx
+// du 04/09/2026. Les niveaux des consultants repartent a zero, ils se saisissent dans l'app.
+var COMP_REFS = {"ARMA":[{"cat":"Pré-requis & habilitations","items":[{"l":"Pré-requis projet","req":3},{"l":"Habilitation électrique (H0, B0, B1V…)","req":1},{"l":"Habilitation AIPR Concepteur","req":1},{"l":"Permis de conduire (sauf Paris)","req":0},{"l":"Respect des règles de sécurité (EPI + habilitations)","req":2},{"l":"Sécurisation des chantiers (balisage, travaux prestataire/client)","req":3},{"l":"Établissement des documents de sécurité (PDP, ICP, analyse de risques)","req":3},{"l":"Évaluation des risques électriques","req":3},{"l":"Risques liés à la proximité des réseaux (DT-DICT)","req":3}]},{"cat":"Environnement client","items":[{"l":"8 fondamentaux ENEDIS","req":3},{"l":"Règles de confidentialité ENEDIS","req":3},{"l":"Organisation du pôle exploitation et des autres services","req":3},{"l":"Règles de confidentialité du client","req":3},{"l":"Concessionnaires : GRDF, Orange, Eau de Paris, chauffage urbain","req":1}]},{"cat":"UO Primo","items":[{"l":"Conduite du RDV Primo et retour client","req":3},{"l":"Chiffrage et envoi du devis","req":3},{"l":"Qualification de la demande de raccordement","req":3}]},{"cat":"UO Étude","items":[{"l":"Connaissance du déroulement de l'UO Étude","req":3},{"l":"Plan au 200e et plan synoptique","req":3},{"l":"EOTP de niveau 2 et DIE","req":3},{"l":"Demande CITE et dépôt Alfresco","req":3},{"l":"Colonnes montantes et création de poste","req":3},{"l":"Relation prestataires études","req":3}]},{"cat":"UO Coordination","items":[{"l":"Connaissance du déroulement de l'UO Coordination","req":3},{"l":"Commande travaux, DMR, ICP/PPS et FAR","req":3},{"l":"DMEO et programmation Regard","req":3},{"l":"Création OCB et gestion GE-CO","req":2},{"l":"Article R323-25 et DT-DICT","req":3},{"l":"Obtention des arrêtés de voirie","req":3},{"l":"Animation des échanges avec les concessionnaires","req":1},{"l":"Planification (jalonnement) avec et sans phasage","req":3}]},{"cat":"UO Travaux","items":[{"l":"Connaissance du déroulement de l'UO Travaux","req":3},{"l":"Suivi de chantier","req":3},{"l":"Contrôle N1","req":3},{"l":"PGOC, AAT et PVT","req":3},{"l":"PMEO et AMEO","req":3},{"l":"ECOME et mise en service","req":3},{"l":"Relation prestataires travaux","req":3},{"l":"Facturation client","req":3}]},{"cat":"UO Réception","items":[{"l":"Connaissance du déroulement de l'UO Réception","req":3},{"l":"Cartographie validée","req":3},{"l":"Paiement des prestataires (CDAT)","req":3},{"l":"FIEC et mise en service","req":3},{"l":"CREI : constitution et justification","req":3}]},{"cat":"Compétences techniques réseaux","items":[{"l":"Réseaux BT : extension, DO, suppression, restructuration, renouvellement","req":3},{"l":"Réseaux HTA : extension, DO, suppression, restructuration, renouvellement","req":3},{"l":"Postes HTA/BT","req":3},{"l":"Aérien BT et travaux sur aérien BT","req":1},{"l":"Architecture d'une colonne neuve","req":3},{"l":"Architecture IRVE et typologie des points de charge (AC/DC, puissances)","req":1},{"l":"Génie civil : terrassement domaine public et privé","req":3},{"l":"Dévoiement de réseaux : principe et méthodologie","req":1},{"l":"Lecture et interprétation de plans de concessionnaires","req":2},{"l":"Cartographie : lecture et compréhension de plans","req":3},{"l":"Maîtrise des séries de prix ENEDIS et des DA","req":3},{"l":"PRDE : prescriptions du réseau de distribution","req":3}]},{"cat":"Méthodologie et pilotage","items":[{"l":"Suivi et respect des délais","req":3},{"l":"Suivi et respect du budget d'une affaire (MAJ point de sortie)","req":3},{"l":"Analyse de risques et plan de prévention","req":3},{"l":"Synthèse et reporting (auto-revue, RDP)","req":3},{"l":"Suivi du portefeuille et priorisation","req":3}]},{"cat":"Outils","items":[{"l":"Racing","req":3},{"l":"E-Plans","req":3},{"l":"e-Travaux","req":3},{"l":"Partage","req":3},{"l":"Rosanat","req":3},{"l":"Emaps","req":3},{"l":"ACDMR","req":3},{"l":"GE-CO","req":2},{"l":"IEP","req":3},{"l":"e-transfo","req":0},{"l":"DataPoste / Photothèque","req":2},{"l":"Géoportail (cadastre)","req":2},{"l":"Protys (amiante, DT-DICT)","req":2},{"l":"SAP PGI 3 - achat","req":2},{"l":"[Paris] Regard","req":3},{"l":"[Paris] Danyweb","req":2},{"l":"[Paris] CITE (demande d'arrêté)","req":3},{"l":"Elium (validation de projets de colonnes)","req":2},{"l":"Bentley (relecture de plan de référencement / PGOC)","req":2}]},{"cat":"Savoir-être","items":[{"l":"Autonomie, pro-activité, rigueur","req":3},{"l":"Adaptabilité, gestion des aléas, savoir rebondir","req":3},{"l":"Savoir communiquer","req":3},{"l":"Dynamisme","req":3},{"l":"Être synthétique","req":3},{"l":"Gestion du temps et des priorités","req":3},{"l":"Gestion des conflits","req":3},{"l":"Gestion du stress","req":3}]}],"IRVE":[{"cat":"Pré-requis & habilitations","items":[{"l":"Pré-requis projet","req":3},{"l":"Habilitation électrique (H0, B0, B1V…)","req":1},{"l":"Habilitation AIPR Concepteur","req":1},{"l":"Permis de conduire (sauf Paris)","req":1},{"l":"Respect des règles de sécurité (EPI + habilitations)","req":2},{"l":"Sécurisation des chantiers (balisage, travaux prestataire/client)","req":3},{"l":"Établissement des documents de sécurité (PDP, ICP, analyse de risques)","req":3},{"l":"Évaluation des risques électriques","req":3},{"l":"Risques liés à la proximité des réseaux (DT-DICT)","req":3}]},{"cat":"Environnement client","items":[{"l":"8 fondamentaux ENEDIS","req":3},{"l":"Règles de confidentialité ENEDIS","req":3},{"l":"Organisation du pôle exploitation et des autres services","req":3},{"l":"Règles de confidentialité du client","req":3},{"l":"Concessionnaires : GRDF, Orange, Eau de Paris, chauffage urbain","req":1},{"l":"Relation opérateurs de mobilité, syndics et bailleurs","req":3}]},{"cat":"UO Primo","items":[{"l":"Qualification de la demande de raccordement","req":3},{"l":"Phase APS et cadrage IRVE","req":3}]},{"cat":"UO Étude","items":[{"l":"Connaissance du déroulement de l'UO Étude","req":3},{"l":"Plan au 200e et plan synoptique","req":3},{"l":"EOTP de niveau 2 et DIE","req":3},{"l":"Dimensionnement de la puissance de raccordement IRVE","req":3},{"l":"Infrastructure collective d'immeuble (IRVE en copropriété)","req":3},{"l":"Barème IRVE : ancien, nouveau ≤ 50 bornes, nouveau > 50 bornes","req":3},{"l":"Convention de raccordement et convention d'exploitation IRVE","req":3},{"l":"Dispositif ADVENIR : conditions, pièces et suivi de la prime","req":3},{"l":"ODR : constitution, envoi et suivi de signature","req":3},{"l":"Colonnes montantes et création de poste","req":3},{"l":"Relation prestataires études","req":3}]},{"cat":"UO Coordination","items":[{"l":"Connaissance du déroulement de l'UO Coordination","req":3},{"l":"Commande travaux, DMR, ICP/PPS et FAR","req":3},{"l":"Création OCB et gestion GE-CO","req":3},{"l":"Article R323-25 et DT-DICT","req":3},{"l":"Obtention des arrêtés de voirie","req":3},{"l":"Animation des échanges avec les concessionnaires","req":1},{"l":"Planification (jalonnement) avec et sans phasage","req":3}]},{"cat":"UO Travaux","items":[{"l":"Connaissance du déroulement de l'UO Travaux","req":3},{"l":"Suivi de chantier","req":3},{"l":"Contrôle N1","req":3},{"l":"PGOC, AAT et PVT","req":3},{"l":"PMEO et AMEO","req":3},{"l":"ECOME et mise en service","req":3},{"l":"Relation prestataires travaux","req":3},{"l":"Facturation client","req":3}]},{"cat":"UO Réception","items":[{"l":"Connaissance du déroulement de l'UO Réception","req":3},{"l":"Cartographie validée","req":3},{"l":"Paiement des prestataires (CDAT)","req":3},{"l":"FIEC et mise en service","req":3},{"l":"CREI : constitution et justification","req":3}]},{"cat":"Compétences techniques réseaux","items":[{"l":"Réseaux BT : extension, DO, suppression, restructuration, renouvellement","req":3},{"l":"Réseaux HTA : extension, DO, suppression, restructuration, renouvellement","req":2},{"l":"Postes HTA/BT","req":2},{"l":"Aérien BT et travaux sur aérien BT","req":3},{"l":"Architecture d'une colonne neuve","req":3},{"l":"Architecture IRVE et typologie des points de charge (AC/DC, puissances)","req":3},{"l":"Génie civil : terrassement domaine public et privé","req":3},{"l":"Dévoiement de réseaux : principe et méthodologie","req":1},{"l":"Lecture et interprétation de plans de concessionnaires","req":2},{"l":"Cartographie : lecture et compréhension de plans","req":3},{"l":"Maîtrise des séries de prix ENEDIS et des DA","req":3},{"l":"PRDE : prescriptions du réseau de distribution","req":3}]},{"cat":"Méthodologie et pilotage","items":[{"l":"Suivi et respect des délais","req":3},{"l":"Suivi et respect du budget d'une affaire (MAJ point de sortie)","req":3},{"l":"Analyse de risques et plan de prévention","req":3},{"l":"Synthèse et reporting (auto-revue, RDP)","req":3},{"l":"Suivi du portefeuille et priorisation","req":3}]},{"cat":"Outils","items":[{"l":"Racing","req":3},{"l":"E-Plans","req":3},{"l":"e-Travaux","req":3},{"l":"Partage","req":3},{"l":"Rosanat","req":2},{"l":"Emaps","req":3},{"l":"ACDMR","req":3},{"l":"GE-CO","req":3},{"l":"IEP","req":1},{"l":"e-transfo","req":3},{"l":"DataPoste / Photothèque","req":2},{"l":"Géoportail (cadastre)","req":2},{"l":"Protys (amiante, DT-DICT)","req":2},{"l":"SAP PGI 3 - achat","req":2},{"l":"[Hors Paris] Partage","req":3},{"l":"Suivi du portefeuille IRVE (fichier d'avancement DR)","req":3},{"l":"Elium (validation de projets de colonnes)","req":2},{"l":"Bentley (relecture de plan de référencement / PGOC)","req":1}]},{"cat":"Savoir-être","items":[{"l":"Autonomie, pro-activité, rigueur","req":3},{"l":"Adaptabilité, gestion des aléas, savoir rebondir","req":3},{"l":"Savoir communiquer","req":3},{"l":"Dynamisme","req":3},{"l":"Être synthétique","req":3},{"l":"Gestion du temps et des priorités","req":3},{"l":"Gestion des conflits","req":3},{"l":"Gestion du stress","req":3}]}],"MECA":[{"cat":"Pré-requis & habilitations","items":[{"l":"Pré-requis projet","req":3},{"l":"Habilitation électrique (H0, B0, B1V…)","req":1},{"l":"Habilitation AIPR Concepteur","req":1},{"l":"Permis de conduire (sauf Paris)","req":0},{"l":"Respect des règles de sécurité (EPI + habilitations)","req":2},{"l":"Sécurisation des chantiers (balisage, travaux prestataire/client)","req":3},{"l":"Établissement des documents de sécurité (PDP, ICP, analyse de risques)","req":2},{"l":"Évaluation des risques électriques","req":2},{"l":"Risques liés à la proximité des réseaux (DT-DICT)","req":3}]},{"cat":"Environnement client","items":[{"l":"Organisation et interlocuteurs RATP (MOA, MOE, exploitation)","req":3},{"l":"Contraintes d'exploitation du réseau ferré","req":3},{"l":"Règles de confidentialité du client","req":3},{"l":"Concessionnaires : GRDF, Orange, Eau de Paris, chauffage urbain","req":3}]},{"cat":"UO Étude","items":[{"l":"Relation prestataires études","req":2}]},{"cat":"UO Coordination","items":[{"l":"Article R323-25 et DT-DICT","req":2},{"l":"Obtention des arrêtés de voirie","req":3},{"l":"Animation des échanges avec les concessionnaires","req":3},{"l":"Suivi du taux de contact concessionnaires","req":3},{"l":"Phasage inter-concessionnaires en voirie","req":3},{"l":"Planification (jalonnement) avec et sans phasage","req":3}]},{"cat":"UO Travaux","items":[{"l":"Suivi de chantier","req":2},{"l":"Relation prestataires travaux","req":2},{"l":"Facturation client","req":2}]},{"cat":"Compétences techniques réseaux","items":[{"l":"Réseaux BT : extension, DO, suppression, restructuration, renouvellement","req":1},{"l":"Réseaux HTA : extension, DO, suppression, restructuration, renouvellement","req":1},{"l":"Postes HTA/BT","req":0},{"l":"Génie civil : terrassement domaine public et privé","req":3},{"l":"Dévoiement de réseaux : principe et méthodologie","req":3},{"l":"Lecture et interprétation de plans de concessionnaires","req":3},{"l":"Cartographie : lecture et compréhension de plans","req":3}]},{"cat":"Livrables d'étude RATP","items":[{"l":"Tableau d'identification des concessionnaires","req":3},{"l":"Notice explicative","req":3},{"l":"Plan de synthèse des existants au 1/200e","req":3},{"l":"Plan de synthèse des projetés au 1/200e","req":3},{"l":"Coupes transversales au 1/100e","req":3},{"l":"Planning des études et travaux (MS Project)","req":3},{"l":"Dossier des risques concessionnaires","req":3},{"l":"Avis d'expertise de compatibilité","req":3},{"l":"Estimation du coût de dévoiement","req":3}]},{"cat":"Méthodologie et pilotage","items":[{"l":"Suivi et respect des délais","req":3},{"l":"Suivi et respect du budget d'une affaire (MAJ point de sortie)","req":3},{"l":"Analyse de risques et plan de prévention","req":3},{"l":"Synthèse et reporting (auto-revue, RDP)","req":3},{"l":"Suivi du portefeuille et priorisation","req":3}]},{"cat":"Outils","items":[{"l":"Géoportail (cadastre)","req":2},{"l":"Protys (amiante, DT-DICT)","req":2},{"l":"AutoCAD ou équivalent (plans de synthèse)","req":3},{"l":"MS Project","req":3}]},{"cat":"Savoir-être","items":[{"l":"Autonomie, pro-activité, rigueur","req":3},{"l":"Adaptabilité, gestion des aléas, savoir rebondir","req":3},{"l":"Savoir communiquer","req":3},{"l":"Dynamisme","req":3},{"l":"Être synthétique","req":3},{"l":"Gestion du temps et des priorités","req":3},{"l":"Gestion des conflits","req":3},{"l":"Gestion du stress","req":3}]}]};
+var COMP_GROUPES = COMP_REFS.ARMA;
 // Référentiel « Tous » : l'union des trois, une famille par entité pour
 // ce qui lui est propre, et une famille commune en tête pour ce qui est
 // partagé. Permet de tenir toute la matrice en une seule passe.
@@ -8296,23 +8150,9 @@ function oublierPortee(){ COMP_PORTEE=null; }
 function portee(c){ return (COMP_PORTEE||calcPortee())[c]||[]; }
 function estSpecifique(c){ return portee(c).length<=1; }
 
-// Familles regroupées par sens : les trois référentiels nomment les mêmes
-// familles un peu différemment, on les rapproche pour l'affichage « Tous ».
-function catCle(nom){
-  var s=String(nom||'').toLowerCase().replace(/[’']/g,"'")
-    .replace(/[àâä]/g,'a').replace(/[éèêë]/g,'e').replace(/[îï]/g,'i')
-    .replace(/[ôö]/g,'o').replace(/[ùûü]/g,'u').replace(/ç/g,'c');
-  if(s.indexOf('requis')>=0 && s.indexOf('projet')>=0) return 'Pré-requis projet';
-  if(s.indexOf('cles')>=0)          return 'Compétences clés';
-  if(s.indexOf('securite')>=0)      return 'Sécurité et habilitation';
-  if(s.indexOf('environnement')>=0) return 'Environnement client';
-  if(s.indexOf('methodolog')>=0)    return 'Méthodologie et chargé d’affaires';
-  if(s.indexOf('livrable')>=0)      return 'Livrables d’étude';
-  if(s.indexOf('technique')>=0)     return 'Compétences techniques';
-  if(s.indexOf('outil')>=0)         return 'Outils';
-  if(s.indexOf('savoir')>=0 || s.indexOf('projets /')>=0) return 'Savoir-être';
-  return nom;
-}
+// Les trois référentiels viennent du même fichier et nomment leurs familles
+// à l'identique : le nom suffit à les rapprocher, sans table de traduction.
+function catCle(nom){ return String(nom||'').trim(); }
 
 // Formations prévues, par compétence : { 'libellé' : '2026-11-15T09:00' }
 var FORMATIONS = {};
@@ -8393,7 +8233,7 @@ function compRequis(c, svc){
   }
   return 3;
 }
-var SKILLS = {"AD":{"Pré-requis Projet":3,"Habilitation électrique (H0, B0, B1V …)":1,"Habilitation AIPR Concepteur":1,"Permis de conduire (sauf Paris)":1,"Réseaux de distribution : Réseaux BT                                (extension / DO / suppression / restructuration / renouvellement)":4,"Connaissance sur l'architecture IRVE":4,"Autonomie, Pro-Activité, Rigueur":4,"Respect des règles de sécurité (Port des EPI + habilitations)":3,"Sécurisation des chantiers (balisage, travaux réalisés par le prestataire/client, etc…)":3,"Prévention risques routier":3,"Etablissement des documents de sécurité (PDP, ICP, analyse de risques)":4,"Evaluation des risques électriques":4,"8 fondamenteaux ENEDIS":3,"Règles de confidentialité ENEDIS":3,"Connaissance de l'organisation du pôle de l'exploitation et des autres Services":4,"Suivi et respect des délais":4,"Suivi et respect du budget d'une affaire (MAJ point de sortie)":4,"Suivi de chantier":4,"Faire une analyse de risques et établir un plan de prévention":4,"Synthèse / Reporting (auto-revue, RDP, reporting …)":4,"Relation client d'ENEDIS":4,"Relation prestataires études et travaux":4,"Connaissance du déroulement de l'UO Etude":4,"Connaissance du déroulement de l'UO Coordination ARMA/IRVE":3,"Connaissance du déroulement de l'UO Travaux ARMA/IRVE":3,"Connaissance du déroulement de l'UO Réception":4,"Connaissance du déroulement de l'UO Coordination AIGP":4,"Connaissance du déroulement de l'UO Travaux AIGP":4,"Planification (jalonnement) sans phasage":4,"Planification (jalonnement) avec phasage":4,"Connaissance sur l'architecture d'une colonne neuve":3,"Connaissance en création de poste (génie civil et électricité)":3,"Réseaux de distribution : Réseaux HTA                              (extension / DO / suppression / restructuration / renouvellement)":4,"Réseaux de distribution : Postes HTA/BT                          (extension / DO / suppression / restructuration / renouvellement)":4,"Réseaux de distribution : Aérien BT":3,"Réseaux de distribution : Aérien HTA":2,"Génie civil : terrassement domaine public/privé":4,"Travaux sur aérien BT":3,"Travaux sur aérien HTA":2,"Cartographie (moyenne et grande échelle - lecture, compréhension, lecture de plans)":4,"Maitrise des séries de prix ENEDIS et des DA":3,"PRDE (prescription du réseau de distribution d'électricité)":3,"Rosanat":3,"E-Plans":3,"Racing":3,"IEP":3,"Emaps":3,"e-transfo":3,"OMT Appli":3,"MOA-Pilot (MOAD)":0,"Plateforme de suivi des demandes d'arrêtés":3,"DataPoste / Photothèque":3,"Géoportail (cadastre)":3,"Protys (résultat d'amiante, demande de DT-DICT)":3,"Diamantys":0,"ACDMR (demande matériel)":3,"SAP PGI 3 - iachat":3,"e-Travaux":3,"Elium (validation de projets de colonnes)":3,"Benthley (relecture de plan de référencement / PGOC)":3,"eCampus":3,"[Pays de la Loire] S7PT":0,"[Paris] Regard":3,"[Paris] Danyweb":0,"[Paris] CITE pour faire les IT (demande d'arrêté)":0,"[IDFO] Partage":3,"Adaptabilité, gestions des aléas, savoir rebondir":4,"Savoir communiquer":4,"Dynamisme":4,"Etre synthétique":4,"Gestion du temps et des priorités":4,"Gestion des conflits":3,"Gestion du stress":3},"PG":{"Pré-requis Projet":3,"Habilitation électrique (H0, B0, B1V …)":1,"Habilitation AIPR Concepteur":1,"Permis de conduire (sauf Paris)":1,"Réseaux de distribution : Réseaux BT                                (extension / DO / suppression / restructuration / renouvellement)":3,"Connaissance sur l'architecture IRVE":4,"Autonomie, Pro-Activité, Rigueur":3,"Respect des règles de sécurité (Port des EPI + habilitations)":3,"Sécurisation des chantiers (balisage, travaux réalisés par le prestataire/client, etc…)":2,"Prévention risques routier":3,"Etablissement des documents de sécurité (PDP, ICP, analyse de risques)":3,"Evaluation des risques électriques":3,"8 fondamenteaux ENEDIS":3,"Règles de confidentialité ENEDIS":3,"Connaissance de l'organisation du pôle de l'exploitation et des autres Services":3,"Suivi et respect des délais":3,"Suivi et respect du budget d'une affaire (MAJ point de sortie)":2,"Suivi de chantier":2,"Faire une analyse de risques et établir un plan de prévention":3,"Synthèse / Reporting (auto-revue, RDP, reporting …)":3,"Relation client d'ENEDIS":3,"Relation prestataires études et travaux":3,"Connaissance du déroulement de l'UO Etude":4,"Connaissance du déroulement de l'UO Coordination ARMA/IRVE":3,"Connaissance du déroulement de l'UO Travaux ARMA/IRVE":2,"Connaissance du déroulement de l'UO Réception":2,"Connaissance du déroulement de l'UO Coordination AIGP":0,"Connaissance du déroulement de l'UO Travaux AIGP":0,"Planification (jalonnement) sans phasage":0,"Planification (jalonnement) avec phasage":3,"Connaissance sur l'architecture d'une colonne neuve":3,"Connaissance en création de poste (génie civil et électricité)":2,"Réseaux de distribution : Réseaux HTA                              (extension / DO / suppression / restructuration / renouvellement)":2,"Réseaux de distribution : Postes HTA/BT                          (extension / DO / suppression / restructuration / renouvellement)":3,"Réseaux de distribution : Aérien BT":2,"Réseaux de distribution : Aérien HTA":0,"Génie civil : terrassement domaine public/privé":3,"Travaux sur aérien BT":2,"Travaux sur aérien HTA":0,"Cartographie (moyenne et grande échelle - lecture, compréhension, lecture de plans)":4,"Maitrise des séries de prix ENEDIS et des DA":3,"PRDE (prescription du réseau de distribution d'électricité)":2,"Rosanat":2,"E-Plans":3,"Racing":3,"IEP":3,"Emaps":3,"e-transfo":3,"OMT Appli":0,"MOA-Pilot (MOAD)":0,"Plateforme de suivi des demandes d'arrêtés":0,"DataPoste / Photothèque":2,"Géoportail (cadastre)":0,"Protys (résultat d'amiante, demande de DT-DICT)":0,"Diamantys":0,"ACDMR (demande matériel)":3,"SAP PGI 3 - iachat":2,"e-Travaux":3,"Elium (validation de projets de colonnes)":0,"Benthley (relecture de plan de référencement / PGOC)":0,"eCampus":0,"[Pays de la Loire] S7PT":0,"[Paris] Regard":0,"[Paris] Danyweb":0,"[Paris] CITE pour faire les IT (demande d'arrêté)":0,"[IDFO] Partage":3,"Adaptabilité, gestions des aléas, savoir rebondir":3,"Savoir communiquer":3,"Dynamisme":3,"Etre synthétique":3,"Gestion du temps et des priorités":3,"Gestion des conflits":3,"Gestion du stress":2},"SD":{"Pré-requis Projet":3,"Habilitation électrique (H0, B0, B1V …)":1,"Habilitation AIPR Concepteur":1,"Permis de conduire (sauf Paris)":1,"Réseaux de distribution : Réseaux BT                                (extension / DO / suppression / restructuration / renouvellement)":2,"Connaissance sur l'architecture IRVE":3,"Autonomie, Pro-Activité, Rigueur":4,"Respect des règles de sécurité (Port des EPI + habilitations)":3,"Sécurisation des chantiers (balisage, travaux réalisés par le prestataire/client, etc…)":3,"Prévention risques routier":3,"Etablissement des documents de sécurité (PDP, ICP, analyse de risques)":4,"Evaluation des risques électriques":3,"8 fondamenteaux ENEDIS":3,"Règles de confidentialité ENEDIS":3,"Connaissance de l'organisation du pôle de l'exploitation et des autres Services":3,"Suivi et respect des délais":3,"Suivi et respect du budget d'une affaire (MAJ point de sortie)":2,"Suivi de chantier":3,"Faire une analyse de risques et établir un plan de prévention":4,"Synthèse / Reporting (auto-revue, RDP, reporting …)":3,"Relation client d'ENEDIS":3,"Relation prestataires études et travaux":4,"Connaissance du déroulement de l'UO Etude":4,"Connaissance du déroulement de l'UO Coordination ARMA/IRVE":3,"Connaissance du déroulement de l'UO Travaux ARMA/IRVE":3,"Connaissance du déroulement de l'UO Réception":2,"Connaissance du déroulement de l'UO Coordination AIGP":0,"Connaissance du déroulement de l'UO Travaux AIGP":0,"Planification (jalonnement) sans phasage":4,"Planification (jalonnement) avec phasage":1,"Connaissance sur l'architecture d'une colonne neuve":2,"Connaissance en création de poste (génie civil et électricité)":0,"Réseaux de distribution : Réseaux HTA                              (extension / DO / suppression / restructuration / renouvellement)":0,"Réseaux de distribution : Postes HTA/BT                          (extension / DO / suppression / restructuration / renouvellement)":2,"Réseaux de distribution : Aérien BT":0,"Réseaux de distribution : Aérien HTA":0,"Génie civil : terrassement domaine public/privé":3,"Travaux sur aérien BT":0,"Travaux sur aérien HTA":0,"Cartographie (moyenne et grande échelle - lecture, compréhension, lecture de plans)":3,"Maitrise des séries de prix ENEDIS et des DA":2,"PRDE (prescription du réseau de distribution d'électricité)":2,"Rosanat":3,"E-Plans":3,"Racing":3,"IEP":2,"Emaps":3,"e-transfo":0,"OMT Appli":0,"MOA-Pilot (MOAD)":0,"Plateforme de suivi des demandes d'arrêtés":3,"DataPoste / Photothèque":0,"Géoportail (cadastre)":0,"Protys (résultat d'amiante, demande de DT-DICT)":3,"Diamantys":0,"ACDMR (demande matériel)":3,"SAP PGI 3 - iachat":0,"e-Travaux":3,"Elium (validation de projets de colonnes)":0,"Benthley (relecture de plan de référencement / PGOC)":0,"eCampus":0,"[Pays de la Loire] S7PT":0,"[Paris] Regard":3,"[Paris] Danyweb":0,"[Paris] CITE pour faire les IT (demande d'arrêté)":0,"[IDFO] Partage":0,"Adaptabilité, gestions des aléas, savoir rebondir":4,"Savoir communiquer":3,"Dynamisme":3,"Etre synthétique":4,"Gestion du temps et des priorités":3,"Gestion des conflits":2,"Gestion du stress":3},"MT":{"Pré-requis Projet":3,"Habilitation électrique (H0, B0, B1V …)":1,"Habilitation AIPR Concepteur":1,"Permis de conduire (sauf Paris)":1,"Réseaux de distribution : Réseaux BT                                (extension / DO / suppression / restructuration / renouvellement)":2,"Connaissance sur l'architecture IRVE":2,"Autonomie, Pro-Activité, Rigueur":3,"Respect des règles de sécurité (Port des EPI + habilitations)":3,"Sécurisation des chantiers (balisage, travaux réalisés par le prestataire/client, etc…)":3,"Prévention risques routier":3,"Etablissement des documents de sécurité (PDP, ICP, analyse de risques)":4,"Evaluation des risques électriques":3,"8 fondamenteaux ENEDIS":3,"Règles de confidentialité ENEDIS":3,"Connaissance de l'organisation du pôle de l'exploitation et des autres Services":3,"Suivi et respect des délais":3,"Suivi et respect du budget d'une affaire (MAJ point de sortie)":2,"Suivi de chantier":4,"Faire une analyse de risques et établir un plan de prévention":4,"Synthèse / Reporting (auto-revue, RDP, reporting …)":3,"Relation client d'ENEDIS":3,"Relation prestataires études et travaux":4,"Connaissance du déroulement de l'UO Etude":4,"Connaissance du déroulement de l'UO Coordination ARMA/IRVE":3,"Connaissance du déroulement de l'UO Travaux ARMA/IRVE":3,"Connaissance du déroulement de l'UO Réception":2,"Connaissance du déroulement de l'UO Coordination AIGP":0,"Connaissance du déroulement de l'UO Travaux AIGP":0,"Planification (jalonnement) sans phasage":4,"Planification (jalonnement) avec phasage":1,"Connaissance sur l'architecture d'une colonne neuve":4,"Connaissance en création de poste (génie civil et électricité)":0,"Réseaux de distribution : Réseaux HTA                              (extension / DO / suppression / restructuration / renouvellement)":0,"Réseaux de distribution : Postes HTA/BT                          (extension / DO / suppression / restructuration / renouvellement)":2,"Réseaux de distribution : Aérien BT":2,"Réseaux de distribution : Aérien HTA":0,"Génie civil : terrassement domaine public/privé":3,"Travaux sur aérien BT":2,"Travaux sur aérien HTA":0,"Cartographie (moyenne et grande échelle - lecture, compréhension, lecture de plans)":3,"Maitrise des séries de prix ENEDIS et des DA":2,"PRDE (prescription du réseau de distribution d'électricité)":3,"Rosanat":3,"E-Plans":3,"Racing":3,"IEP":3,"Emaps":3,"e-transfo":0,"OMT Appli":0,"MOA-Pilot (MOAD)":3,"Plateforme de suivi des demandes d'arrêtés":3,"DataPoste / Photothèque":3,"Géoportail (cadastre)":2,"Protys (résultat d'amiante, demande de DT-DICT)":2,"Diamantys":0,"ACDMR (demande matériel)":3,"SAP PGI 3 - iachat":3,"e-Travaux":3,"Elium (validation de projets de colonnes)":3,"Benthley (relecture de plan de référencement / PGOC)":2,"eCampus":0,"[Pays de la Loire] S7PT":0,"[Paris] Regard":3,"[Paris] Danyweb":2,"[Paris] CITE pour faire les IT (demande d'arrêté)":0,"[IDFO] Partage":3,"Adaptabilité, gestions des aléas, savoir rebondir":3,"Savoir communiquer":3,"Dynamisme":3,"Etre synthétique":4,"Gestion du temps et des priorités":3,"Gestion des conflits":3,"Gestion du stress":3},"BV":{"Pré-requis Projet":3,"Habilitation électrique (H0, B0, B1V …)":1,"Habilitation AIPR Concepteur":1,"Permis de conduire (sauf Paris)":1,"Réseaux de distribution : Réseaux BT                                (extension / DO / suppression / restructuration / renouvellement)":0,"Connaissance sur l'architecture IRVE":1,"Autonomie, Pro-Activité, Rigueur":3,"Respect des règles de sécurité (Port des EPI + habilitations)":3,"Sécurisation des chantiers (balisage, travaux réalisés par le prestataire/client, etc…)":1,"Prévention risques routier":3,"Etablissement des documents de sécurité (PDP, ICP, analyse de risques)":0,"Evaluation des risques électriques":2,"8 fondamenteaux ENEDIS":3,"Règles de confidentialité ENEDIS":3,"Connaissance de l'organisation du pôle de l'exploitation et des autres Services":1,"Suivi et respect des délais":2,"Suivi et respect du budget d'une affaire (MAJ point de sortie)":1,"Suivi de chantier":1,"Relation client d'ENEDIS":3,"Connaissance du déroulement de l'UO Etude":0,"Connaissance du déroulement de l'UO Coordination ARMA/IRVE":0,"Connaissance du déroulement de l'UO Travaux ARMA/IRVE":0,"Connaissance du déroulement de l'UO Réception":0,"Réseaux de distribution : Postes HTA/BT                          (extension / DO / suppression / restructuration / renouvellement)":0,"E-Plans":0,"Racing":0,"Emaps":0,"Protys (résultat d'amiante, demande de DT-DICT)":0,"e-Travaux":0,"[Paris] Regard":0,"[Paris] CITE pour faire les IT (demande d'arrêté)":0}};
+var SKILLS = {};   // niveaux remis a zero le 04/09/2026, a saisir dans l application
 var ECARTS = [];
 var NIV = [
   {v:0,l:'0', fg:'#6B7280', bg:'#F3F4F6', t:'N\u00e9ophyte'},
@@ -9124,6 +8964,92 @@ function capPersonne(cps){
   return Math.round(k.reduce(function(t,x){ return t+capDe(x); },0)/k.length);
 }
 
+// ══════════════════════════════════════════════════════════════
+// RÉGLAGES DE L'ONGLET RÉFÉRENT
+// Un seul bouton regroupe ce qui était dispersé : durées et capacités
+// par périmètre, tarifs des UO, coût des consultants. Le coût est replié
+// par défaut, on l'ouvre exprès.
+// ══════════════════════════════════════════════════════════════
+function reglagesModal(){
+  var ov=document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9250;display:flex;'
+    +'align-items:center;justify-content:center;padding:16px';
+  var box=document.createElement('div');
+  box.style.cssText='background:var(--s);border-radius:14px;width:100%;max-width:420px;'
+    +'max-height:86vh;display:flex;flex-direction:column;overflow:hidden';
+  var hd=document.createElement('div');
+  hd.style.cssText='padding:13px 16px 6px;font-size:13px;font-weight:800;color:var(--t)';
+  hd.textContent='⚙ Réglages';
+  box.appendChild(hd);
+  var ms=document.createElement('div');
+  ms.style.cssText='padding:0 16px 10px;font-size:11px;color:var(--t3);line-height:1.5';
+  ms.textContent='Tout ce qui pilote les calculs de charge et de facturation.';
+  box.appendChild(ms);
+  var lst=document.createElement('div');
+  lst.style.cssText='overflow-y:auto;flex:1;padding:0 16px 8px;display:flex;'
+    +'flex-direction:column;gap:7px';
+  function entree(titre, aide, fn, discret){
+    var b=document.createElement('button');
+    b.style.cssText='border:1.5px solid '+(discret?'var(--b2)':'var(--brand)')+';'
+      +'background:'+(discret?'var(--s2)':'var(--bl)')+';color:'+(discret?'var(--t3)':'var(--brand)')+';'
+      +'border-radius:9px;padding:9px 12px;font-size:12px;font-weight:800;cursor:pointer;'
+      +'font-family:inherit;text-align:left';
+    b.innerHTML=titre+'<div style="font-size:9.5px;font-weight:600;color:var(--t3);margin-top:2px">'
+      +aide+'</div>';
+    b.addEventListener('click',function(){
+      if(ov.parentNode) document.body.removeChild(ov);
+      setTimeout(fn, 60);
+    });
+    return b;
+  }
+  lst.appendChild(entree('Durées et capacités par périmètre',
+    'Heures par UO, durée d’une UO, capacité mensuelle', paramModal));
+  lst.appendChild(entree('Tarifs des UO',
+    'Prix facturé de chaque unité d’œuvre, par périmètre', tarifsModal));
+  // Le coût des consultants est une donnée sensible : on le range derrière
+  // un dépliant, il ne s'ouvre pas par inadvertance.
+  var pli=document.createElement('div');
+  pli.style.cssText='border:1px dashed var(--b2);border-radius:9px;padding:8px 11px';
+  var lien=document.createElement('button');
+  lien.style.cssText='border:none;background:transparent;color:var(--t3);font-size:11px;'
+    +'font-weight:700;cursor:pointer;font-family:inherit;padding:0';
+  lien.textContent='▾ Données sensibles';
+  var zone=document.createElement('div');
+  zone.style.cssText='display:none;margin-top:8px';
+  zone.appendChild(entree('Coût des consultants',
+    'Coût complet mensuel, sert au calcul de la marge', coutModal, true));
+  lien.addEventListener('click',function(){
+    var on=(zone.style.display==='none');
+    zone.style.display = on?'block':'none';
+    lien.textContent = (on?'▴':'▾')+' Données sensibles';
+  });
+  pli.appendChild(lien); pli.appendChild(zone);
+  lst.appendChild(pli);
+  box.appendChild(lst);
+  var ft=document.createElement('div');
+  ft.style.cssText='display:flex;justify-content:flex-end;padding:8px 16px 14px';
+  var fer=document.createElement('button');
+  fer.style.cssText='border:1px solid var(--b2);background:var(--s2);color:var(--t2);border-radius:8px;'
+    +'padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit';
+  fer.textContent='Fermer';
+  fer.addEventListener('click',function(){ if(ov.parentNode) document.body.removeChild(ov); });
+  ft.appendChild(fer); box.appendChild(ft);
+  ov.appendChild(box); document.body.appendChild(ov);
+  ov.addEventListener('click',function(e){ if(e.target===ov) document.body.removeChild(ov); });
+}
+// Bouton unique, posé en tête de l'onglet Référent
+function boutonReglages(){
+  var b=document.createElement('button');
+  b.id='btn-reglages';
+  b.style.cssText='border:1px solid var(--brand);background:var(--bl);color:var(--brand);'
+    +'border-radius:7px;padding:5px 11px;font-size:10px;font-weight:700;cursor:pointer;'
+    +'font-family:inherit';
+  b.textContent='⚙ Réglages';
+  b.title='Durées et capacités, tarifs des UO, coût des consultants';
+  b.addEventListener('click',function(e){ e.stopPropagation(); reglagesModal(); });
+  return b;
+}
+
 function paramModal(){
   var ov=document.createElement('div');
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9300;display:flex;'
@@ -9289,12 +9215,7 @@ function rCharge(){
   // ── Paramètre de capacité ──
   var par=document.createElement('div');
   par.style.cssText='display:flex;align-items:center;gap:7px;padding:9px 12px 6px;flex-wrap:wrap;justify-content:flex-end';
-  var bp=document.createElement('button');
-  bp.style.cssText='border:1px solid var(--brand);background:var(--bl);color:var(--brand);border-radius:7px;'
-    +'padding:5px 11px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit';
-  bp.textContent='\u2699 Param\u00e8tres par p\u00e9rim\u00e8tre';
-  bp.addEventListener('click',paramModal);
-  par.appendChild(bp);
+  // Bouton retir\u00e9 : les r\u00e9glages sont regroup\u00e9s en t\u00eate de l'onglet R\u00e9f\u00e9rent
   body.appendChild(par);
 
   // ── Collecte ──
@@ -10781,12 +10702,7 @@ function rPrevFactu(){
   tit.textContent='\ud83d\udcc8 Facturation pr\u00e9visionnelle';
   hdr.appendChild(tit);
   var sp=document.createElement('span'); sp.style.flex='1'; hdr.appendChild(sp);
-  var bc=document.createElement('button');
-  bc.style.cssText='border:1px solid var(--brand);background:var(--bl);color:var(--brand);border-radius:7px;'
-    +'padding:4px 11px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit';
-  bc.textContent='\u2699 Co\u00fbt des consultants';
-  bc.addEventListener('click',function(e){ e.stopPropagation(); coutModal(); });
-  hdr.appendChild(bc);
+  // Bouton retir\u00e9 : le co\u00fbt des consultants est dans R\u00e9glages, repli\u00e9
   card.appendChild(hdr);
   var body=document.createElement('div'); card.appendChild(body);
 
@@ -11075,13 +10991,7 @@ function rSynthFactu(){
   tit.textContent='\ud83d\udcca Synth\u00e8se facturation';
   hdr.appendChild(tit);
   var sp0=document.createElement('span'); sp0.style.flex='1'; hdr.appendChild(sp0);
-  var bt=document.createElement('button');
-  bt.style.cssText='border:1px solid var(--brand);background:var(--bl);color:var(--brand);border-radius:7px;'
-    +'padding:4px 11px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit';
-  bt.textContent='\u2699 Tarifs des UO';
-  bt.title='Montant factur\u00e9 pour chaque unit\u00e9 d\u2019\u0153uvre, par p\u00e9rim\u00e8tre';
-  bt.addEventListener('click',function(e){ e.stopPropagation(); tarifsModal(); });
-  hdr.appendChild(bt);
+  // Bouton retir\u00e9 : les tarifs des UO sont dans R\u00e9glages
   hdr.style.flexWrap='wrap';
   card.appendChild(hdr);
   var body=document.createElement('div'); card.appendChild(body);
@@ -15123,8 +15033,8 @@ function boutonIdees(){
   var app=document.querySelector('.app'); if(!app) return null;
   b=document.createElement('button');
   b.id='btn-idees';
-  // Discret : une pastille d'ampoule, le libellé n'apparaît qu'au survol
-  b.style.cssText='position:absolute;left:8px;bottom:60px;z-index:60;border:1px solid var(--b2);'
+  // Discret et figé : il ne suit pas le défilement de la page
+  b.style.cssText='position:fixed;left:8px;bottom:60px;z-index:60;border:1px solid var(--b2);'
     +'background:var(--s);color:var(--t3);border-radius:999px;padding:4px 8px;font-size:9.5px;'
     +'font-weight:700;cursor:pointer;font-family:inherit;opacity:.6;'
     +'display:inline-flex;align-items:center;gap:4px;transition:opacity .15s ease';
@@ -15144,6 +15054,15 @@ function boutonIdees(){
   b.addEventListener('mouseleave',function(){ ouvrir(false); });
   b.addEventListener('click',function(){ showV('idees'); });
   app.appendChild(b);
+  // Fixé par rapport à l'écran, il faut donc le caler sur le bord gauche
+  // de l'application, qui est centrée quand la fenêtre est large.
+  function caler(){
+    var r=app.getBoundingClientRect();
+    b.style.left=Math.round(r.left+8)+'px';
+  }
+  caler();
+  window.addEventListener('resize', caler);
+  try{ if(window.ResizeObserver) new ResizeObserver(caler).observe(app); }catch(e){}
   majPastilleIdees();
   return b;
 }
@@ -18728,7 +18647,7 @@ setInterval(sbPoll, 20000);
 // On ne recharge jamais de force, une saisie en cours serait perdue :
 // on propose, la personne choisit son moment.
 // ══════════════════════════════════════════════════════════════
-var APP_VERSION='2026-09-04-6';
+var APP_VERSION='2026-09-04-7';
 var MAJ_VUE=false;
 function bandeauMaj(v){
   if(MAJ_VUE || document.getElementById('maj-banner')) return;
