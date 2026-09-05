@@ -1273,11 +1273,25 @@ function lsIndicator(txt,color,title){
   i.textContent=txt; i.style.color=color; i.title=title;
 }
 
+// Vrai des que le contenu enregistre sur le poste a ete relu.
+// Tant qu'il est faux, on n'ecrit PAS : au demarrage l'application monte avec
+// les donnees livrees dans le fichier, et un enregistrement automatique parti
+// trop tot les ecrivait par-dessus le travail reellement enregistre ici.
+var LS_LU=false;
 function lsSaveNow(){
+  if(!LS_LU) return;                     // jamais ecrire avant d'avoir lu
   try{
     localStorage.setItem(LS_KEY, serializeState());
     lsIndicator('\u2713','var(--green)','Enregistr\u00e9 localement \u2014 '+new Date().toLocaleTimeString('fr'));
   }catch(e){
+    // Plus de place sur le poste. L'etat courant passe avant tout : la copie
+    // de secours est le premier poste sacrifie, puis on reessaie.
+    try{
+      localStorage.removeItem(LS_SECOURS);
+      localStorage.setItem(LS_KEY, serializeState());
+      lsIndicator('\u2713','var(--green)','Enregistr\u00e9 localement \u2014 '+new Date().toLocaleTimeString('fr'));
+      return;
+    }catch(e2){}
     console.error('lsSave',e);
     lsIndicator('\u2717','var(--red)','\u00c9chec d\u2019enregistrement local (espace insuffisant ?)');
   }
@@ -1292,6 +1306,7 @@ function lsSave(){
 function lsLoad(){
   var raw=null;
   try{ raw=localStorage.getItem(LS_KEY); }catch(e){}
+  LS_LU=true;                            // lecture faite : l'ecriture est ouverte
   if(!raw){
     // Première ouverture : on garde les données intégrées et on les fige.
     lsSaveNow();
@@ -3210,6 +3225,123 @@ function memeAff(a,b){
   try{ return JSON.stringify(a)===JSON.stringify(b); }catch(e){ return false; }
 }
 
+// ══════════════════════════════════════════════════════════════
+// FILET ANTI-PERTE
+// Trois pannes se cumulaient et faisaient disparaître des saisies.
+//
+//  1. sbLoad partait 400 ms après l'ouverture, donc AVANT la connexion.
+//     Le serveur répond alors 200 avec ZÉRO ligne : la règle RLS masque la
+//     ligne à un visiteur anonyme. L'application en concluait que la base
+//     était vide et tentait une « première initialisation », c'est-à-dire
+//     d'écrire par-dessus les données réelles. SYNC_BASE restait vide.
+//  2. Sans référence commune, fusionner() reprenait le serveur tel quel :
+//     tout ce qui venait d'être tapé partait à la poubelle, sans un mot.
+//  3. Une écriture refusée ne laissait qu'une trace en console.
+//
+// SYNC_REV compte les modifications faites ici, SYNC_REV_OK la dernière
+// que le serveur a acceptée. Tant que les deux diffèrent, du travail
+// attend et rien n'a le droit de l'écraser.
+// ══════════════════════════════════════════════════════════════
+var SYNC_REV=0, SYNC_REV_OK=0;
+var SYNC_PRET=false;      // vrai après une lecture serveur réussie
+var SYNC_ECHEC=false;     // vrai si la dernière écriture a été refusée
+var SYNC_ALERTE=null;
+var SYNC_EN_COURS=null;
+var LS_SECOURS='radar_secours';
+// Marqueur d'attente : pose des qu'une saisie n'est pas encore chez le serveur,
+// retire des qu'elle y est. Il survit a la fermeture de l'onglet, donc au
+// demarrage suivant on sait que le poste detient du travail que le serveur
+// ignore, et la lecture fusionne au lieu de reprendre.
+var LS_ATT='radar_attente';
+function poserAttente(){ try{ localStorage.setItem(LS_ATT, new Date().toISOString()); }catch(e){} }
+function leverAttente(){ try{ localStorage.removeItem(LS_ATT); }catch(e){} }
+
+function syncModifie(){ return SYNC_REV!==SYNC_REV_OK; }
+
+// Copie de secours : l'état complet avant une opération risquée.
+// Récupération par la console : radarSecours()
+function sauvegardeSecours(motif){
+  try{
+    localStorage.setItem(LS_SECOURS, JSON.stringify({
+      motif:motif, quand:new Date().toISOString(), etat:serializeState()
+    }));
+  }catch(e){ console.warn('sauvegardeSecours', e); }
+}
+function radarSecours(){
+  var raw=null;
+  try{ raw=localStorage.getItem(LS_SECOURS); }catch(e){}
+  if(!raw){ uiAlert('Aucune copie de secours','Rien n’a été mis de côté.'); return; }
+  var o; try{ o=JSON.parse(raw); }catch(e){ uiAlert('Copie illisible','La copie de secours est corrompue.'); return; }
+  uiConfirm('Restaurer la copie de secours',
+    'Copie du '+new Date(o.quand).toLocaleString('fr')+'\nMotif : '+(o.motif||'?')+
+    '\n\nElle remplacera l’état affiché puis sera partagée.',
+    function(){
+      if(applyState(o.etat)){ buildTabs(); renderAll(); SYNC_REV++; sbSaveNow();
+        showToast('Copie de secours restaurée'); }
+      else uiAlert('Restauration impossible','Contenu non reconnu.');
+    }, true);
+}
+try{ window.radarSecours=radarSecours; }catch(e){}
+
+// Bandeau rouge tant que des saisies ne sont pas sur le serveur.
+// Créé en JavaScript : le balisage du fichier n'est pas touché.
+function alerteNonEnregistre(actif, texte){
+  if(!actif){
+    if(SYNC_ALERTE && SYNC_ALERTE.parentNode) SYNC_ALERTE.parentNode.removeChild(SYNC_ALERTE);
+    SYNC_ALERTE=null; return;
+  }
+  if(!SYNC_ALERTE){
+    var b=document.createElement('div');
+    b.id='sync-alerte';
+    b.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:99999;background:#B91C1C;'
+      +'color:#fff;padding:9px 14px;display:flex;align-items:center;gap:12px;'
+      +'font-size:11.5px;font-weight:700;font-family:inherit;box-shadow:0 -2px 12px rgba(0,0,0,.25)';
+    var t=document.createElement('span'); t.style.cssText='flex:1';
+    var r=document.createElement('button');
+    r.style.cssText='border:none;background:#fff;color:#B91C1C;border-radius:8px;padding:5px 12px;'
+      +'font-size:11px;font-weight:800;cursor:pointer;font-family:inherit';
+    r.textContent='Réessayer';
+    r.addEventListener('click',function(){ SYNC_REV++; sbSaveNow(); });
+    var x=document.createElement('button');
+    x.style.cssText='border:1px solid rgba(255,255,255,.55);background:transparent;color:#fff;'
+      +'border-radius:8px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit';
+    x.textContent='Exporter';
+    x.title='Enregistrer vos données dans un fichier avant toute manipulation';
+    x.addEventListener('click',function(){ try{ lsExport(); }catch(e){} });
+    b.appendChild(t); b.appendChild(r); b.appendChild(x);
+    document.body.appendChild(b);
+    SYNC_ALERTE=b;
+  }
+  SYNC_ALERTE.firstChild.textContent=texte;
+}
+
+// Union prudente de deux états sans ancêtre commun.
+// Règle unique : le local fait foi, le serveur ne comble que ce qu'il ignore.
+// On ajoute, on ne retire jamais.
+function unionEtats(local, remote){
+  Object.keys(remote.DATA||{}).forEach(function(cp){
+    if(!local.DATA[cp]){ local.DATA[cp]=remote.DATA[cp]; return; }
+    var vus={};
+    (local.DATA[cp].affaires||[]).forEach(function(a){ vus[(a.code||'')+'|'+(a.no||'')]=1; });
+    (remote.DATA[cp].affaires||[]).forEach(function(a){
+      if(!vus[(a.code||'')+'|'+(a.no||'')]) local.DATA[cp].affaires.push(a);
+    });
+  });
+  Object.keys(remote).forEach(function(key){
+    if(key==='DATA'||key==='ts') return;
+    var rv=remote[key];
+    if(rv===null || typeof rv!=='object' || Array.isArray(rv)){
+      if(local[key]===undefined) local[key]=rv;
+      return;
+    }
+    if(!local[key] || typeof local[key]!=='object'){ local[key]=rv; return; }
+    Object.keys(rv).forEach(function(kk){
+      if(local[key][kk]===undefined) local[key][kk]=rv[kk];
+    });
+  });
+  return local;
+}
+
 // Fusionne REMOTE dans l'état courant, en préservant les modifications locales
 function fusionner(remoteStr){
   var remote, base;
@@ -3218,9 +3350,19 @@ function fusionner(remoteStr){
   var local=JSON.parse(serializeState());
 
   if(!base){
-    // Pas de référence commune : on prend le serveur tel quel
-    applyState(remoteStr);
-    SYNC_BASE=remoteStr;
+    // Pas de référence commune : première lecture, ou lecture d'avant la
+    // connexion que le serveur avait masquée.
+    // Règle absolue : on ne jette JAMAIS ce qui a été saisi ici.
+    if(!syncModifie()){
+      applyState(remoteStr);        // rien n'attend d'être écrit : le serveur fait foi
+      SYNC_BASE=remoteStr;
+      return true;
+    }
+    sauvegardeSecours('fusion sans référence commune');
+    var uni=JSON.stringify(unionEtats(local, remote));
+    applyState(uni);
+    SYNC_BASE=uni;
+    showToast('Reprise de la liaison — vos saisies ont été conservées');
     return true;
   }
 
@@ -3282,29 +3424,64 @@ function fusionner(remoteStr){
 // Lecture serveur
 function sbLoad(){
   if(!SYNC_ENABLED){ lsLoad(); return; }
+  // Sans jeton de session, le serveur renvoie 200 avec ZERO ligne : la regle
+  // RLS masque la ligne a un visiteur anonyme. Appeler sbLoad avant la
+  // connexion faisait donc croire a une base vide. On ne le fait plus.
+  if(!SB_TOKEN){
+    syncIndic('\u2026','var(--amber)','En attente de connexion');
+    try{ lsLoad(); }catch(e){}
+    return;
+  }
   syncIndic('\u27f3','var(--amber)','Chargement\u2026');
+  // Des saisies attendaient encore le serveur a la derniere fermeture. On les
+  // remonte d'abord depuis le poste et on les declare en attente, pour que la
+  // lecture qui suit les protege au lieu de passer dessus.
+  var enAttente=false;
+  try{ enAttente=!!localStorage.getItem(LS_ATT); }catch(e){}
+  if(enAttente){
+    try{ lsLoad(); SYNC_REV++; }catch(e){ console.warn('reprise attente',e); }
+    showToast('Saisies non partag\u00e9es retrouv\u00e9es sur ce poste : elles sont conserv\u00e9es');
+  }
   fetch(SB_URL+'/rest/v1/arma_state?id=eq.'+SB_ROW_ID+'&select=data,updated_at',{headers:sbHeaders()})
-    .then(function(r){ return r.json(); })
+    .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
     .then(function(rows){
       if(rows && rows.length && rows[0].data){
-        applyState(rows[0].data);
-        SYNC_BASE=rows[0].data;
+        // Des saisies attendent d'etre ecrites : on fusionne, on n'ecrase pas.
+        if(syncModifie()) fusionner(rows[0].data);
+        else { applyState(rows[0].data); SYNC_BASE=rows[0].data; }
+        SYNC_PRET=true;
         buildTabs(); renderAll();
         var dm=document.getElementById('dark-toggle');
         if(dm) dm.textContent=DARK_MODE?'\u2600\ufe0f':'\ud83c\udf19';
         try{ rSvcBar(); rCpSelBar(); }catch(e){}
         syncIndic('\u2713','var(--green)','Synchronis\u00e9 \u2014 '+new Date().toLocaleTimeString('fr'));
+        try{ histoAuto(); }catch(e){}
       } else {
-        sbSaveNow();      // première initialisation
+        // Connecte, mais aucune ligne visible. On n'ecrase JAMAIS le serveur
+        // tout seul : c'est ainsi qu'un jeu de demonstration partirait en
+        // ligne. Amorcage volontaire par la console : radarInitServeur()
+        SYNC_PRET=false;
+        syncIndic('✗','var(--red)','Aucune donnée côté serveur');
+        alerteNonEnregistre(true,'Le serveur ne renvoie aucune donnée. '
+          +'Travail en local seulement : exportez avant de saisir.');
+        try{ lsLoad(); }catch(e){}
       }
-      try{ histoAuto(); }catch(e){}
     })
     .catch(function(e){
       console.error('sbLoad',e);
+      SYNC_PRET=false;
       syncIndic('\u2717','var(--red)','Hors ligne \u2014 donn\u00e9es locales');
       try{ lsLoad(); }catch(e2){}
     });
 }
+// Amorcage volontaire d'une base vide. Jamais automatique.
+function radarInitServeur(){
+  uiConfirm('Initialiser le serveur',
+    'Vous allez ecrire l\u2019etat affiche ici par-dessus la ligne partagee.\n'
+    +'A ne faire que si le serveur est reellement vide.',
+    function(){ SYNC_PRET=true; SYNC_REV++; sbSaveNow(); }, true);
+}
+try{ window.radarInitServeur=radarInitServeur; }catch(e){}
 
 var SYNC_DEBOUNCE=null;
 
@@ -3325,9 +3502,15 @@ function majFactu(){
 }
 
 function sbSave(){
+  SYNC_REV++;                            // une saisie de plus attend le serveur
+  // Avant la connexion, personne n'a rien tape : ce que l'application ecrit
+  // en montant (donnees livrees avec le fichier, reglages par defaut) n'est
+  // pas du travail a proteger. Sans cela la premiere lecture serveur fusionnait
+  // au lieu de reprendre, et les donnees livrees ecrasaient les vraies.
+  if(!SB_TOKEN) SYNC_REV_OK=SYNC_REV; else poserAttente();
   try{ lsSaveNow(); }catch(e){}          // filet de sécurité local
   try{ majFactu(); }catch(e){}           // la facturation suit l'avancement
-  if(!SYNC_ENABLED) return;
+  if(!SYNC_ENABLED){ SYNC_REV_OK=SYNC_REV; return; }
   if(SYNC_DEBOUNCE) clearTimeout(SYNC_DEBOUNCE);
   syncIndic('\u2026','var(--amber)','Enregistrement\u2026');
   SYNC_DEBOUNCE=setTimeout(sbSaveNow, 1200);
@@ -3335,12 +3518,37 @@ function sbSave(){
 
 // Écriture : on relit d'abord le serveur pour fusionner, puis on écrit
 function sbSaveNow(){
-  if(!SYNC_ENABLED){ lsSaveNow(); return; }
-  if(SYNC_BUSY){ if(SYNC_DEBOUNCE) clearTimeout(SYNC_DEBOUNCE); SYNC_DEBOUNCE=setTimeout(sbSaveNow,900); return; }
+  if(!SYNC_ENABLED){ lsSaveNow(); SYNC_REV_OK=SYNC_REV; return Promise.resolve(true); }
+  try{ lsSaveNow(); }catch(e){}                  // le local d'abord, toujours
+  if(SYNC_BUSY){
+    if(SYNC_DEBOUNCE) clearTimeout(SYNC_DEBOUNCE);
+    SYNC_DEBOUNCE=setTimeout(sbSaveNow,900);
+    return SYNC_EN_COURS || Promise.resolve(false);
+  }
+  // Sans jeton de session le serveur refuse l'ecriture (401). Inutile de
+  // partir : on le dit, au lieu de laisser croire que c'est enregistre.
+  if(!SB_TOKEN){
+    if(!syncModifie()) return Promise.resolve(false);   // rien a proteger : on se tait
+    SYNC_ECHEC=true;
+    syncIndic('✗','var(--red)','Session fermée — non partagé');
+    alerteNonEnregistre(true,'Vos saisies ne sont PAS sur le serveur : session fermée. '
+      +'Reconnectez-vous, puis cliquez Réessayer.');
+    return Promise.resolve(false);
+  }
   SYNC_BUSY=true;
-  syncIndic('\u27f3','var(--amber)','Fusion et enregistrement\u2026');
-  fetch(SB_URL+'/rest/v1/arma_state?id=eq.'+SB_ROW_ID+'&select=data',{headers:sbHeaders()})
-    .then(function(r){ return r.json(); })
+  var rev=SYNC_REV;
+  SYNC_EN_COURS=ecrireServeur(rev,0).then(function(ok){
+    SYNC_BUSY=false; SYNC_EN_COURS=null; return ok;
+  });
+  return SYNC_EN_COURS;
+}
+
+// Une ecriture, avec jusqu'a trois tentatives. Rend true si le serveur a pris.
+function ecrireServeur(rev, essai){
+  syncIndic('\u27f3','var(--amber)', essai ? 'Nouvelle tentative\u2026'
+                                           : 'Fusion et enregistrement\u2026');
+  return fetch(SB_URL+'/rest/v1/arma_state?id=eq.'+SB_ROW_ID+'&select=data',{headers:sbHeaders()})
+    .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status+' (lecture)'); return r.json(); })
     .then(function(rows){
       if(rows && rows.length && rows[0].data && rows[0].data!==SYNC_BASE){
         fusionner(rows[0].data);
@@ -3354,20 +3562,37 @@ function sbSaveNow(){
       }).then(function(res){
         if(!res.ok) throw new Error('HTTP '+res.status);
         SYNC_BASE=stateStr;
+        if(rev>SYNC_REV_OK) SYNC_REV_OK=rev;   // ce qui attendait est parti
+        SYNC_ECHEC=false;
+        SYNC_PRET=true;
+        if(!syncModifie()) leverAttente();
         try{ lsSaveNow(); }catch(e){}
+        alerteNonEnregistre(false);
         syncIndic('\u2713','var(--green)','Partag\u00e9 \u2014 '+new Date().toLocaleTimeString('fr'));
+        return true;
       });
     })
     .catch(function(e){
       console.error('sbSaveNow',e);
+      if(essai<2){
+        return new Promise(function(ok){ setTimeout(ok, 1500*(essai+1)); })
+          .then(function(){ return ecrireServeur(rev, essai+1); });
+      }
+      SYNC_ECHEC=true;
+      sauvegardeSecours('echec ecriture serveur');
       syncIndic('\u2717','var(--red)','\u00c9chec du partage \u2014 sauvegarde locale conserv\u00e9e');
-    })
-    .then(function(){ SYNC_BUSY=false; });
+      alerteNonEnregistre(true,'Vos derni\u00e8res saisies ne sont PAS sur le serveur. '
+        +'Ne fermez pas la page : cliquez R\u00e9essayer, ou Exporter.');
+      return false;
+    });
 }
 
 // Relecture périodique : fusionne sans écraser le travail en cours
 function sbPoll(){
   if(!SYNC_ENABLED || SYNC_BUSY) return;
+  // Tant que la premiere lecture n'a pas abouti, SYNC_BASE est vide : fusionner
+  // reprendrait le serveur tel quel et effacerait la saisie en cours.
+  if(!SYNC_PRET || !SB_TOKEN) return;
   fetch(SB_URL+'/rest/v1/arma_state?id=eq.'+SB_ROW_ID+'&select=data',{headers:sbHeaders()})
     .then(function(r){ return r.json(); })
     .then(function(rows){
@@ -15685,26 +15910,21 @@ function showV(v){
   if(v==='week')rWeek();else if(v==='ref'){ if(!refVerrouOk()){ demanderMdp(function(){ showV('ref'); }); return; } rRef(); }else if(v==='sc')rTDB();else if(v==='config')rConfig();else if(v==='links')rLinks();else if(v==='bo')rBO();else if(v==='idees')rIdees();else renderAll();
 }
 
-// Sauvegarde synchrone à la fermeture de l'onglet
+// Sauvegarde à la fermeture de l'onglet.
+//
+// L'ancienne version passait par navigator.sendBeacon. Un beacon ne PEUT PAS
+// porter d'en-tetes : ni la cle apikey, ni le jeton de session. Supabase le
+// refusait donc a tous les coups, en silence, et sendBeacon ne leve pas
+// d'erreur : le repli fetch n'etait jamais atteint. Toute saisie faite dans la
+// seconde precedant la fermeture etait perdue.
+//
+// L'ecriture reelle part maintenant plus tot, des que l'onglet passe en
+// arriere-plan (visibilitychange), quand la page est encore vivante. Ici on se
+// contente du poste : au demarrage suivant, le marqueur d'attente dira que ces
+// donnees ne sont jamais arrivees au serveur, et la fusion les protegera.
 window.addEventListener('beforeunload', function(){
-  if(SYNC_ENABLED && SYNC_DEBOUNCE){
-    clearTimeout(SYNC_DEBOUNCE);
-    // Sauvegarde synchrone via fetch keepalive
-    var payload=JSON.stringify({id:SB_ROW_ID,data:serializeState(),updated_at:new Date().toISOString()});
-    try{
-      navigator.sendBeacon(
-        SB_URL+'/rest/v1/arma_state',
-        new Blob([payload],{type:'application/json'})
-      );
-    }catch(e){
-      // Fallback fetch keepalive
-      fetch(SB_URL+'/rest/v1/arma_state',{
-        method:'POST',keepalive:true,
-        headers:Object.assign({},sbHeaders(),{'Prefer':'resolution=merge-duplicates'}),
-        body:payload
-      });
-    }
-  }
+  if(SYNC_DEBOUNCE) clearTimeout(SYNC_DEBOUNCE);
+  try{ lsSaveNow(); }catch(e){}
 });
 
 // ── WIRE EVENTS ───────────────────────────────────────────────
@@ -18976,10 +19196,17 @@ function masquerBandeau(){
     if(t && /powered by astridsen/i.test(t.textContent||'')) t.style.display='none';
   }catch(e){}
 }
+var BOOT_FAIT=false;
 function bootApp(){
   try{ masquerBandeau(); }catch(e){}
   try{ applyRoleUI(); }catch(e){}
   buildTabs(); renderAll();
+  // Premiere lecture serveur, une seule fois, et seulement une fois la session
+  // ouverte : c'est le jeton qui donne acces a la ligne partagee.
+  // onAuthStateChange rappelle showApp a chaque renouvellement de jeton ;
+  // sans ce garde-fou, chaque renouvellement rechargeait le serveur par-dessus
+  // le travail en cours.
+  if(!BOOT_FAIT){ BOOT_FAIT=true; try{ sbLoad(); }catch(e){ console.error('sbLoad',e); } }
   try{
     var uc=document.getElementById('user-chip'); if(uc) uc.textContent=USER_INI||'?';
     // On rouvre l'onglet quitté la dernière fois, Référent compris : son
@@ -19107,8 +19334,40 @@ window.addEventListener('load', function(){
 });
 
 buildTabs();renderAll();
-setTimeout(function(){ sbLoad(); }, 400);
+// Le poste d'abord. On remonte tout de suite ce qui est enregistre ici, avant
+// tout enregistrement automatique : sinon les donnees livrees avec le fichier
+// passent par-dessus le travail du jour.
+try{ lsLoad(); }catch(e){ console.error('lsLoad',e); }
+// La lecture serveur, elle, ne part plus avant la connexion : sans jeton, la
+// regle RLS renvoie zero ligne et l'application croyait la base vide.
+// C'est bootApp, apres l'ouverture de session, qui appelle sbLoad.
 setInterval(sbPoll, 20000);
+
+// Une saisie ne doit jamais rester en attente. Toutes les quinze secondes,
+// si quelque chose n'est pas parti, on repart.
+setInterval(function(){
+  if(SYNC_ENABLED && SB_TOKEN && !SYNC_BUSY && syncModifie()) sbSaveNow();
+}, 15000);
+
+// Fermeture d'onglet, bascule vers une autre application, mise en veille :
+// on ecrit tout de suite au lieu d'attendre la temporisation.
+function viderFileSync(){
+  try{ lsSaveNow(); }catch(e){}
+  if(SYNC_ENABLED && SB_TOKEN && syncModifie() && !SYNC_BUSY){
+    if(SYNC_DEBOUNCE) clearTimeout(SYNC_DEBOUNCE);
+    try{ sbSaveNow(); }catch(e){}
+  }
+}
+document.addEventListener('visibilitychange', function(){
+  if(document.visibilityState==='hidden') viderFileSync();
+});
+window.addEventListener('pagehide', viderFileSync);
+window.addEventListener('beforeunload', function(e){
+  try{ lsSaveNow(); }catch(err){}
+  if(!SYNC_ECHEC) return;               // on ne derange que si le serveur a refuse
+  e.preventDefault(); e.returnValue='';
+  return '';
+});
 
 // ══════════════════════════════════════════════════════════════
 // NOUVELLE VERSION EN LIGNE
@@ -19118,7 +19377,7 @@ setInterval(sbPoll, 20000);
 // On ne recharge jamais de force, une saisie en cours serait perdue :
 // on propose, la personne choisit son moment.
 // ══════════════════════════════════════════════════════════════
-var APP_VERSION='2026-09-04-8';
+var APP_VERSION='2026-09-05-1';
 var MAJ_VUE=false;
 function bandeauMaj(v){
   if(MAJ_VUE || document.getElementById('maj-banner')) return;
@@ -19137,9 +19396,23 @@ function bandeauMaj(v){
   ok.style.cssText='border:none;background:#fff;color:#1D4ED8;border-radius:8px;padding:6px 14px;'
     +'font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit';
   ok.textContent='Recharger';
+  // On attendait 250 ms avant de recharger, alors que l'ecriture demande une
+  // lecture puis un envoi : la montee de version emportait la derniere saisie.
+  // On attend maintenant la reponse du serveur, et on previent si elle est non.
   ok.addEventListener('click',function(){
-    try{ sbSaveNow(); }catch(e){}
-    setTimeout(function(){ location.reload(true); },250);
+    ok.disabled=true; ok.textContent='Enregistrement…';
+    var p; try{ p=sbSaveNow(); }catch(e){ p=Promise.resolve(false); }
+    Promise.resolve(p).then(function(bon){
+      if(bon===false && syncModifie()){
+        ok.disabled=false; ok.textContent='Recharger';
+        uiConfirm('Modifications non enregistrées',
+          'Le serveur n’a pas accepté vos dernières saisies.\n'
+          +'Recharger maintenant les perdrait.\n\nRecharger quand même ?',
+          function(){ location.reload(true); }, true);
+        return;
+      }
+      location.reload(true);
+    });
   });
   var no=document.createElement('button');
   no.style.cssText='border:1px solid rgba(255,255,255,.5);background:transparent;color:#fff;'
