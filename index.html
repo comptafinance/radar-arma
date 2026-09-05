@@ -1167,7 +1167,7 @@ function sbHeaders(){
 // Serialize full app state to JSON
 function serializeState(){
   return JSON.stringify({
-    DATA:DATA,AVC:AVC,DXP:DXP,COMMENTS:COMMENTS,ENGAGE_HIST:ENGAGE_HIST,PERIM:PERIM,CHARGE_CAP:CHARGE_CAP,CAP_SVC:CAP_SVC,DUREE_SVC:DUREE_SVC,UO_PARAMS:UO_PARAMS,CAP_HEURES:CAP_HEURES,IRVE_TACHES:IRVE_TACHES,TACHES_PREV:TACHES_PREV,MARCHE_MONTANT:MARCHE_MONTANT,AFFECT_PREV:AFFECT_PREV,FACTU_HIST:FACTU_HIST,REF_MDP:REF_MDP,UO_PRIX:UO_PRIX,IRVE_PRIX:IRVE_PRIX,TACHE_MONTANT:TACHE_MONTANT,COUT_MENSUEL:COUT_MENSUEL,MECA_PRIX:MECA_UOS.map(function(u){return u.prix;}),AFFECT_FIN:AFFECT_FIN,TAUX_ACTIVITE:TAUX_ACTIVITE,SVC_CUR:SVC_CUR,TIME_LOG:TIME_LOG,TJM:TJM,HISTO_SEM:HISTO_SEM,SKILLS:SKILLS,ECARTS:ECARTS,COMP_REFS:COMP_REFS,FORMATIONS:FORMATIONS,IDEES:IDEES,COMP_REQ_PAR_ENTITE:COMP_REQ_PAR_ENTITE,CONC_ACTIONS:CONC_ACTIONS,CONC_AJOUTS:CONC_AJOUTS,
+    DATA:DATA,AVC:AVC,DXP:DXP,COMMENTS:COMMENTS,ENGAGE_HIST:ENGAGE_HIST,PERIM:PERIM,CHARGE_CAP:CHARGE_CAP,CAP_SVC:CAP_SVC,DUREE_SVC:DUREE_SVC,UO_PARAMS:UO_PARAMS,CAP_HEURES:CAP_HEURES,IRVE_TACHES:IRVE_TACHES,TACHES_PREV:TACHES_PREV,MARCHE_MONTANT:MARCHE_MONTANT,AFFECT_PREV:AFFECT_PREV,FACTU_HIST:FACTU_HIST,REF_MDP:REF_MDP,UO_PRIX:UO_PRIX,IRVE_PRIX:IRVE_PRIX,TACHE_MONTANT:TACHE_MONTANT,COUT_MENSUEL:COUT_MENSUEL,MECA_PRIX:MECA_UOS.map(function(u){return u.prix;}),AFFECT_FIN:AFFECT_FIN,TAUX_ACTIVITE:TAUX_ACTIVITE,SVC_CUR:SVC_CUR,TIME_LOG:TIME_LOG,TJM:TJM,HISTO_SEM:HISTO_SEM,SKILLS:SKILLS,ECARTS:ECARTS,COMP_REFS:COMP_REFS,FORMATIONS:FORMATIONS,IDEES:IDEES,COMP_REQ_PAR_ENTITE:COMP_REQ_PAR_ENTITE,CONC_ACTIONS:CONC_ACTIONS,CONC_AJOUTS:CONC_AJOUTS,MIGR:MIGR,
     LINKS_DATA:LINKS_DATA,
     MAIL_DATA:MAIL_DATA,
     HISTORY:HISTORY,
@@ -1247,6 +1247,7 @@ function applyState(json){
       Object.keys(s.CONC_ACTIONS).forEach(function(k){CONC_ACTIONS[k]=s.CONC_ACTIONS[k];}); }
     if(s.CONC_AJOUTS){ Object.keys(CONC_AJOUTS).forEach(function(k){delete CONC_AJOUTS[k];});
       Object.keys(s.CONC_AJOUTS).forEach(function(k){CONC_AJOUTS[k]=s.CONC_AJOUTS[k];}); }
+    if(s.MIGR) Object.keys(s.MIGR).forEach(function(k){MIGR[k]=s.MIGR[k];});
     if(s.LINKS_DATA&&s.LINKS_DATA.length)LINKS_DATA.splice(0,LINKS_DATA.length,...s.LINKS_DATA);
     if(s.MAIL_DATA)Object.keys(s.MAIL_DATA).forEach(function(k){MAIL_DATA[k]=s.MAIL_DATA[k];});
     if(s.HISTORY)Object.keys(s.HISTORY).forEach(function(k){HISTORY[k]=s.HISTORY[k];});
@@ -1913,7 +1914,14 @@ function setService(k){
   AG_PHASE_FILTER='all';   // le filtre de phase est propre à chaque service
   try{ localStorage.setItem('radar_svc',k); }catch(e){}
   var list=cpsOfSvc(k);
-  if(list.length && list.indexOf(CCP)<0){ CCP=list[0]; }
+  if(list.length && list.indexOf(CCP)<0){
+    // On change de perimetre, pas de personne. Le portefeuille suit donc le
+    // charge de projet affiche. Sans cela, passer de ARMA a IRVE depuis le
+    // profil d'Alexis basculait sur le premier portefeuille declare, Paul.
+    var ini=(DATA[CCP]||{}).ini||'';
+    var sien=list.filter(function(cp){ return (DATA[cp]||{}).ini===ini; });
+    CCP = sien.length ? sien[0] : list[0];
+  }
   CP_SEL=null;
   buildTabs(); renderAll();
   try{ agSetMode(AG_MODE); }catch(e){}
@@ -2911,7 +2919,58 @@ var CONC_CONTACTS = {};
 // CONC_AJOUTS  : contacts saisis ici, en plus de ceux du fichier
 var CONC_ACTIONS = {};
 var CONC_AJOUTS  = {};
-var CONC_RESP = ['Concessionnaire','Astridsen','RATP','Autre'];
+var CONC_RESP = ['Concessionnaire','Astridsen','RATP','ENEDIS','Autre'];
+
+// ── Les commentaires du fichier portent déjà les actions ──────
+// Le fichier voirie écrit une action par ligne, précédée de son porteur :
+//   ALEXIS --> Envoyer l'accord mairie à l'AREMABT
+//   RATP   --> Attente signature de la convention par Paul
+//   ENEDIS --> Attente validation de la complétude des dossiers
+// « ALEXIS » est Astridsen. Les lignes « PI : » sont des informations, pas
+// des actions : on les laisse dans le commentaire.
+function concQuiDe(mot, nom){
+  var m=concCle(mot);
+  if(m==='ALEXIS'||m==='ASTRIDSEN') return 'Astridsen';
+  if(m==='RATP'||m==='PAUL') return 'RATP';
+  if(m==='ENEDIS') return 'ENEDIS';
+  if(m==='CONCESSIONNAIRE') return 'Concessionnaire';
+  // Le préfixe reprend souvent le nom du concessionnaire lui-même :
+  // ORANGE --> sur « Orange - Telecom », SFR --> sur « SFR - Fibre ».
+  var c=concCle(nom).replace(/ /g,''), mm=m.replace(/ /g,'');
+  if(c && mm && c.indexOf(mm)===0) return 'Concessionnaire';
+  return 'Autre';
+}
+function actionsDuCommentaire(txt, nom){
+  var out=[];
+  String(txt||'').split(/\r?\n/).forEach(function(ligne){
+    var m=ligne.match(/^\s*([^\n>:]{2,24}?)\s*-{1,3}>\s*(.+)$/);
+    if(!m) return;
+    var texte=m[2].trim();
+    if(!texte) return;
+    out.push({qui:concQuiDe(m[1], nom), texte:texte});
+  });
+  return out;
+}
+// Reprise dans les actions, sans doublon. Rejouable : une action déjà
+// présente, modifiée ou faite, n'est pas recréée.
+function reprendreActions(nom){
+  var s=concSuivi(nom), liste=concActions(nom), n=0;
+  actionsDuCommentaire(s.com, nom).forEach(function(a){
+    var deja=liste.some(function(x){ return String(x.texte||'').trim()===a.texte; });
+    if(deja) return;
+    liste.push({qui:a.qui, date:'', texte:a.texte, fait:false,
+                maj:s.date||'', src:'commentaire'});
+    n++;
+  });
+  return n;
+}
+function importerActionsCommentaires(){
+  if(MIGR.actionsCom) return 0;
+  var n=0;
+  Object.keys(CONC_SUIVI).forEach(function(nom){ n+=reprendreActions(nom); });
+  MIGR.actionsCom=true;
+  return n;
+}
 
 // Rapprochement souple : le fichier \u00e9crit \u00ab RATP Infrastructures \u00bb dans un
 // onglet et \u00ab RATP - Infrastructures \u00bb dans l'autre.
@@ -2923,18 +2982,50 @@ function concCle(nom){
 function concTrouve(source, nom){
   var c=concCle(nom);
   if(source[nom]) return source[nom];
-  var k=Object.keys(source).filter(function(x){ return concCle(x)===c; })[0];
+  var cles=Object.keys(source);
+  var k=cles.filter(function(x){ return concCle(x)===c; })[0];
   if(k) return source[k];
-  // Repli : le pr\u00e9fixe avant le tiret suffit souvent
-  var court=c.split(' ')[0];
-  k=Object.keys(source).filter(function(x){ return concCle(x).split(' ')[0]===court; })[0];
-  return k?source[k]:null;
+  // Repli par prefixe de mots : DALKIA rejoint DALKIA SIG IMAGE, PRIZZ rejoint
+  // PRIZZ INFRASTRUCTURE. On n'accepte QUE si un seul candidat correspond :
+  // l'ancien repli sur le premier mot collait les contacts du premier SFR
+  // venu a SFR Fibre, SFR Completel et SFR Telecom, qui sont distincts.
+  function prefixeDe(a,b){
+    return a===b || a.indexOf(b+' ')===0 || b.indexOf(a+' ')===0;
+  }
+  var cand=cles.filter(function(x){ return prefixeDe(concCle(x), c); });
+  return cand.length===1 ? source[cand[0]] : null;
 }
 function concSuivi(nom){ return concTrouve(CONC_SUIVI, nom) || {date:'', etat:'', com:''}; }
+function concGenerique(c){
+  var n=concCle((c||{}).nom);
+  return n==='STANDARD' || n.indexOf('ADRESSE')===0;
+}
 function concContacts(nom){
   var base=concTrouve(CONC_CONTACTS, nom) || [];
   var plus=CONC_AJOUTS[nom] || [];
-  return base.concat(plus);
+  // Tri et dedoublonnage a la lecture. Le fichier voirie repete les memes
+  // personnes sous chaque site : sans cela le meme nom revenait dix fois.
+  var vus={}, out=[];
+  base.concat(plus).forEach(function(c){
+    if(!c) return;
+    var s=concCle(c.nom)+'|'+String(c.tel||'').replace(/[^0-9]/g,'')
+         +'|'+String(c.mail||'').toLowerCase();
+    if(vus[s]) return;
+    vus[s]=1; out.push(c);
+  });
+  // Les personnes d'abord, par ordre alphabetique ; standards et adresses
+  // generiques a la fin.
+  out.sort(function(a,b){
+    var ga=concGenerique(a)?1:0, gb=concGenerique(b)?1:0;
+    if(ga!==gb) return ga-gb;
+    return concCle(a.nom).localeCompare(concCle(b.nom));
+  });
+  return out;
+}
+// Un numero par ligne : le fichier en met parfois deux, separes par un /
+function concTels(t){
+  return String(t||'').split(/[\/;]/).map(function(x){ return x.trim(); })
+    .filter(function(x){ return x.replace(/[^0-9]/g,'').length>=6; });
 }
 function concActions(nom){
   if(!CONC_ACTIONS[nom]) CONC_ACTIONS[nom]=[];
@@ -2982,6 +3073,25 @@ function mecaConcModal(cc){
         +'border:1px solid var(--b);font-size:10.5px;color:var(--t2);white-space:pre-wrap;line-height:1.5';
       zc.textContent=s.com;
       corps.appendChild(zc);
+      // Les lignes « ALEXIS --> … » du commentaire sont des actions. Celles
+      // qui ne figurent pas encore dans la liste peuvent être reprises.
+      var liste=concActions(nom);
+      var aRep=actionsDuCommentaire(s.com, nom).filter(function(x){
+        return !liste.some(function(y){ return String(y.texte||'').trim()===x.texte; });
+      });
+      if(aRep.length){
+        var br=document.createElement('button');
+        br.style.cssText='margin:0 15px 4px;border:1.5px solid #1D4ED8;background:#DBEAFE;'
+          +'color:#1D4ED8;border-radius:9px;padding:6px 11px;font-size:10.5px;font-weight:800;'
+          +'cursor:pointer;font-family:inherit';
+        br.textContent='↧ Reprendre '+aRep.length+' action'+(aRep.length>1?'s':'')+' de ce commentaire';
+        br.title=aRep.map(function(x){ return x.qui+' : '+x.texte; }).join('\n');
+        br.addEventListener('click',function(){
+          reprendreActions(nom); sbSave(); dessiner();
+          showToast(aRep.length+' action(s) reprise(s)');
+        });
+        corps.appendChild(br);
+      }
     }
 
     // \u2500\u2500 Actions \u2500\u2500
@@ -3093,7 +3203,10 @@ function mecaConcModal(cc){
           +[ct.role,ct.service].filter(Boolean).join(' \u00b7 ')+'</div>';
       }
       var liens=[];
-      if(ct.tel)  liens.push('<span style="color:var(--t2)">'+ct.tel+'</span>');
+      concTels(ct.tel).forEach(function(t){
+        liens.push('<a href="tel:'+t.replace(/[^0-9+]/g,'')+'" style="color:var(--t2);'
+          +'text-decoration:none;font-weight:700">'+t+'</a>');
+      });
       if(ct.mail) liens.push('<a href="mailto:'+ct.mail+'" style="color:var(--blue);text-decoration:none">'+ct.mail+'</a>');
       if(liens.length) h+='<div style="font-size:9.5px;margin-top:3px;line-height:1.5">'+liens.join(' \u00b7 ')+'</div>';
       r.innerHTML=h;
@@ -3456,6 +3569,18 @@ function sbLoad(){
         try{ rSvcBar(); rCpSelBar(); }catch(e){}
         syncIndic('\u2713','var(--green)','Synchronis\u00e9 \u2014 '+new Date().toLocaleTimeString('fr'));
         try{ histoAuto(); }catch(e){}
+        // Reprises de donnees, une fois l'etat partage en main.
+        try{
+          var nA=migrerAout26(), nC=0;
+          try{ nC=importerActionsCommentaires(); }catch(e2){ console.warn('actionsCom',e2); }
+          if(nA||nC){
+            SYNC_REV++; sbSave();
+            var msg=[];
+            if(nA) msg.push(nA+' UO déjà facturés datés d’août 26');
+            if(nC) msg.push(nC+' actions reprises des commentaires concessionnaires');
+            showToast(msg.join(' • '));
+          }
+        }catch(e){ console.warn('reprises',e); }
       } else {
         // Connecte, mais aucune ligne visible. On n'ecrase JAMAIS le serveur
         // tout seul : c'est ainsi qu'un jeu de demonstration partirait en
@@ -5135,7 +5260,7 @@ function celluleDateTache(t, apres){
   inp.type='text';
   inp.value = t.date ? (frToISO(t.date)?dFR(t.date):(dFR(t.date)||t.date)) : '';
   inp.placeholder='JJ/MM/AAAA';
-  inp.style.cssText=TACHE_ST_IN+';width:calc(100% - 20px);display:inline-block';
+  inp.style.cssText=TACHE_ST_IN+';width:calc(100% - 58px);display:inline-block';
   inp.title='Date de réalisation, ou un texte libre comme « À réaliser »';
   inp.addEventListener('focus',function(){ inp.style.borderColor='var(--b2)'; inp.style.background='var(--bg)'; });
   inp.addEventListener('mouseenter',function(){
@@ -5147,17 +5272,41 @@ function celluleDateTache(t, apres){
     var v=inp.value.trim(), iso=frToISO(v);
     if(iso) t.date=iso; else if(v) t.date=v; else delete t.date;
     sbSave();
+    try{ peindre(); }catch(e){}
     if(apres) apres();
   });
   td.appendChild(inp);
+  // Le sablier ne disait rien de l'etat de la tache et ne servait qu'a la
+  // rouvrir. A la place, un bouton qui montre l'etat et le change. Passer une
+  // tache en realisee demande sa date : sans date, elle reste ouverte.
   var b=document.createElement('button');
-  b.style.cssText='border:none;background:transparent;cursor:pointer;font-size:10px;padding:0 2px';
-  b.textContent='⏳';
-  b.title='Marquer « À réaliser »';
+  b.style.cssText='border:1px solid var(--b2);border-radius:6px;cursor:pointer;font-size:8.5px;'
+    +'font-weight:800;padding:2px 5px;font-family:inherit;white-space:nowrap;margin-left:2px';
+  function peindre(){
+    var faite=!tacheOuverte(t);
+    b.textContent = faite ? '✓ Fait' : '○ À faire';
+    b.style.background = faite ? '#D1FAE5' : 'var(--s2)';
+    b.style.color      = faite ? '#047857' : 'var(--t3)';
+    b.style.borderColor= faite ? '#047857' : 'var(--b2)';
+    b.title = faite ? 'Réalisée le '+dFR(t.date)+'\nCliquer pour la rouvrir'
+                    : 'Non réalisée\nCliquer pour la marquer réalisée et saisir la date';
+  }
   b.addEventListener('click',function(){
-    t.date='À réaliser'; inp.value='À réaliser'; sbSave();
-    if(apres) apres();
+    if(!tacheOuverte(t)){                      // realisee -> on la rouvre
+      t.date='À réaliser'; inp.value='À réaliser';
+      sbSave(); peindre(); if(apres) apres();
+      return;
+    }
+    var d=new Date();
+    var auj=String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear();
+    uiPrompt('Date de réalisation', auj, function(v){
+      var iso=frToISO(String(v||'').trim());
+      if(!iso){ uiAlert('Date attendue','Saisir la date au format JJ/MM/AAAA.\nLa tâche reste non réalisée.'); return; }
+      t.date=iso; inp.value=dFR(iso);
+      sbSave(); peindre(); if(apres) apres();
+    }, {message:'Quand cette tâche a-t-elle été réalisée ?', placeholder:'JJ/MM/AAAA', okLabel:'Marquer réalisée'});
   });
+  peindre();
   td.appendChild(b);
   return td;
 }
@@ -10935,6 +11084,30 @@ function setPrevUo(a,k,iso){
   if(iso) a.prev[k]=iso; else delete a.prev[k];
   if(a.prev && !Object.keys(a.prev).length) delete a.prev;
 }
+// ── Reprises de données, jouées une seule fois ────────────────
+// Le drapeau vit dans l'état partagé : la reprise ne se rejoue donc pas
+// d'un poste à l'autre, ni au rechargement.
+var MIGR = {};
+// Un UO facturé en entier ne pèse plus rien dans le prévisionnel : son mois
+// ne sert que d'historique. Steve les veut tous datés d'août 26.
+function migrerAout26(){
+  if(MIGR.aout26) return 0;
+  var n=0;
+  Object.keys(DATA).forEach(function(cp){
+    var svc=svcOf(cp);
+    (gAff(cp)||[]).forEach(function(a){
+      (UO_CAT[svc]||[]).forEach(function(u){
+        if(svc==='IRVE' && u.k.indexOf(irveProfil(a)+'_')!==0) return;
+        var f=0; try{ f=uoFacture(cp,a,u.k); }catch(e){ return; }
+        if(f<0.999) return;              // pas facturé en entier
+        if(prevUo(a,u.k)) return;        // un mois est déjà posé, on n'y touche pas
+        setPrevUo(a,u.k,'2026-08'); n++;
+      });
+    });
+  });
+  MIGR.aout26=true;
+  return n;
+}
 // Ancien décalage relatif, gardé en repli pour ne rien perdre
 function decalUo(a,k){ return ((a.decal||{})[k])||0; }
 function setDecalUo(a,k,v){
@@ -11903,7 +12076,7 @@ function rFactu(){
     selMois.appendChild(om);
   }
   var onc2=document.createElement('option');
-  onc2.value=PREV_NC; onc2.textContent='Date indéterminée';
+  onc2.value=PREV_NC; onc2.textContent='—  non compté';
   selMois.appendChild(onc2);
   selMois.value=FA_MOIS||'';
   selMois.title='N’afficher que les affaires dont un UO se facture ce mois-là';
@@ -12152,7 +12325,7 @@ function rFactu(){
       }catch(e){}
       selsDate.forEach(function(x){
         var au=neuf[x.cle];
-        x.sel.options[0].textContent = (au===undefined) ? '\u2014' : moisLabel(au);
+        x.sel.options[0].textContent = (au===undefined) ? '\u2014' : 'auto \u00b7 '+moisLabel(au);
         var v=x.sel.value;
         if(!v){ x.sel.style.color='var(--t3)'; x.sel.style.fontWeight='600';
                 x.sel.style.borderStyle='dashed'; x.sel.style.background='var(--bg)'; }
@@ -12173,11 +12346,13 @@ function rFactu(){
       var auto=calc[cleP];
       var o0=document.createElement('option');
       o0.value='';
-      o0.textContent = (auto===undefined) ? '\u2014' : moisLabel(auto);
+      // Le libelle disait seulement le mois calcule : rien ne montrait qu'on
+      // pouvait revenir dessus. Il annonce maintenant qu'il s'agit du calcul.
+      o0.textContent = (auto===undefined) ? '\u2014' : 'auto \u00b7 '+moisLabel(auto);
       sd.appendChild(o0);
-      // Date inconnue : l'UO sort du pr\u00e9visionnel sans dispara\u00eetre du tableau
+      // Le tiret : l'UO reste au tableau mais sort du previsionnel.
       var onc=document.createElement('option');
-      onc.value=PREV_NC; onc.textContent='Date ind\u00e9termin\u00e9e';
+      onc.value=PREV_NC; onc.textContent='\u2014  non compt\u00e9';
       sd.appendChild(onc);
       // Les mois pass\u00e9s servent \u00e0 dater un UO d\u00e9j\u00e0 factur\u00e9
       for(var mp=PREV_RETRO; mp<0; mp++){
@@ -15716,8 +15891,11 @@ function boutonIdees(){
     b.style.opacity = on?'1':'.6';
     b.style.borderColor = on?'var(--brand)':'var(--b2)';
     b.style.color = on?'var(--brand)':'var(--t3)';
+    // En vue ordinateur le libelle reste affiche : le bouton occupe la place
+    // d'une ligne de texte au pied de la colonne des onglets.
+    var desktop=(document.documentElement.getAttribute('data-layout')==='desktop');
     var t=document.getElementById('idees-txt');
-    if(t) t.style.display = on?'inline':'none';
+    if(t) t.style.display = (on||desktop)?'inline':'none';
   }
   b.addEventListener('mouseenter',function(){ ouvrir(true); });
   b.addEventListener('mouseleave',function(){ ouvrir(false); });
@@ -15727,19 +15905,25 @@ function boutonIdees(){
   // latérale, qui ne disait rien d'utile. Sinon il se cale sur le bord
   // gauche de l'application, centrée quand la fenêtre est large.
   var pied=document.querySelector('.dt-foot');
+  var colonne=document.querySelector('aside');
+  // On se cale sur la COLONNE DES ONGLETS, pas sur son pied : une fois le pied
+  // masque sa largeur tombe a zero et le bouton repartait sur le bord de la
+  // zone centrale. La colonne, elle, garde sa taille.
   function caler(){
     var desktop=(document.documentElement.getAttribute('data-layout')==='desktop');
     if(pied) pied.style.display = desktop ? 'none' : '';
-    if(desktop && pied){
-      var rp=pied.getBoundingClientRect();
-      if(rp.width){
-        b.style.left=Math.round(rp.left+8)+'px';
-        b.style.bottom=Math.round(window.innerHeight-rp.bottom+6)+'px';
-        return;
-      }
+    var txt=document.getElementById('idees-txt');
+    if(txt) txt.style.display = desktop ? 'inline' : 'none';
+    var cible = desktop ? (colonne||app) : app;
+    var r=cible.getBoundingClientRect();
+    if(r.width){
+      b.style.left=Math.round(r.left+8)+'px';
+      b.style.bottom=Math.round(Math.max(8, window.innerHeight-r.bottom+8))+'px';
+      b.style.maxWidth=Math.round(Math.max(60, r.width-16))+'px';
+      return;
     }
-    var r=app.getBoundingClientRect();
-    b.style.left=Math.round(r.left+8)+'px';
+    var ra=app.getBoundingClientRect();
+    b.style.left=Math.round(ra.left+8)+'px';
     b.style.bottom='60px';
   }
   caler();
@@ -19377,7 +19561,7 @@ window.addEventListener('beforeunload', function(e){
 // On ne recharge jamais de force, une saisie en cours serait perdue :
 // on propose, la personne choisit son moment.
 // ══════════════════════════════════════════════════════════════
-var APP_VERSION='2026-09-05-1';
+var APP_VERSION='2026-09-05-2';
 var MAJ_VUE=false;
 function bandeauMaj(v){
   if(MAJ_VUE || document.getElementById('maj-banner')) return;
