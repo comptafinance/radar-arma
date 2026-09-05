@@ -1167,7 +1167,7 @@ function sbHeaders(){
 // Serialize full app state to JSON
 function serializeState(){
   return JSON.stringify({
-    DATA:DATA,AVC:AVC,DXP:DXP,COMMENTS:COMMENTS,ENGAGE_HIST:ENGAGE_HIST,PERIM:PERIM,CHARGE_CAP:CHARGE_CAP,CAP_SVC:CAP_SVC,DUREE_SVC:DUREE_SVC,UO_PARAMS:UO_PARAMS,CAP_HEURES:CAP_HEURES,IRVE_TACHES:IRVE_TACHES,TACHES_PREV:TACHES_PREV,MARCHE_MONTANT:MARCHE_MONTANT,AFFECT_PREV:AFFECT_PREV,FACTU_HIST:FACTU_HIST,REF_MDP:REF_MDP,UO_PRIX:UO_PRIX,IRVE_PRIX:IRVE_PRIX,TACHE_MONTANT:TACHE_MONTANT,COUT_MENSUEL:COUT_MENSUEL,MECA_PRIX:MECA_UOS.map(function(u){return u.prix;}),AFFECT_FIN:AFFECT_FIN,TAUX_ACTIVITE:TAUX_ACTIVITE,SVC_CUR:SVC_CUR,TIME_LOG:TIME_LOG,TJM:TJM,HISTO_SEM:HISTO_SEM,SKILLS:SKILLS,ECARTS:ECARTS,COMP_REFS:COMP_REFS,FORMATIONS:FORMATIONS,IDEES:IDEES,COMP_REQ_PAR_ENTITE:COMP_REQ_PAR_ENTITE,CONC_ACTIONS:CONC_ACTIONS,CONC_AJOUTS:CONC_AJOUTS,
+    DATA:DATA,AVC:AVC,DXP:DXP,COMMENTS:COMMENTS,ENGAGE_HIST:ENGAGE_HIST,PERIM:PERIM,CHARGE_CAP:CHARGE_CAP,CAP_SVC:CAP_SVC,DUREE_SVC:DUREE_SVC,UO_PARAMS:UO_PARAMS,CAP_HEURES:CAP_HEURES,IRVE_TACHES:IRVE_TACHES,TACHES_PREV:TACHES_PREV,MARCHE_MONTANT:MARCHE_MONTANT,AFFECT_PREV:AFFECT_PREV,FACTU_HIST:FACTU_HIST,REF_MDP:REF_MDP,UO_PRIX:UO_PRIX,IRVE_PRIX:IRVE_PRIX,TACHE_MONTANT:TACHE_MONTANT,COUT_MENSUEL:COUT_MENSUEL,MECA_PRIX:MECA_UOS.map(function(u){return u.prix;}),AFFECT_FIN:AFFECT_FIN,TAUX_ACTIVITE:TAUX_ACTIVITE,SVC_CUR:SVC_CUR,TIME_LOG:TIME_LOG,TJM:TJM,HISTO_SEM:HISTO_SEM,SKILLS:SKILLS,ECARTS:ECARTS,COMP_REFS:COMP_REFS,FORMATIONS:FORMATIONS,IDEES:IDEES,COMP_REQ_PAR_ENTITE:COMP_REQ_PAR_ENTITE,CONC_ACTIONS:CONC_ACTIONS,CONC_AJOUTS:CONC_AJOUTS,MIGR:MIGR,
     LINKS_DATA:LINKS_DATA,
     MAIL_DATA:MAIL_DATA,
     HISTORY:HISTORY,
@@ -1247,6 +1247,7 @@ function applyState(json){
       Object.keys(s.CONC_ACTIONS).forEach(function(k){CONC_ACTIONS[k]=s.CONC_ACTIONS[k];}); }
     if(s.CONC_AJOUTS){ Object.keys(CONC_AJOUTS).forEach(function(k){delete CONC_AJOUTS[k];});
       Object.keys(s.CONC_AJOUTS).forEach(function(k){CONC_AJOUTS[k]=s.CONC_AJOUTS[k];}); }
+    if(s.MIGR) Object.keys(s.MIGR).forEach(function(k){MIGR[k]=s.MIGR[k];});
     if(s.LINKS_DATA&&s.LINKS_DATA.length)LINKS_DATA.splice(0,LINKS_DATA.length,...s.LINKS_DATA);
     if(s.MAIL_DATA)Object.keys(s.MAIL_DATA).forEach(function(k){MAIL_DATA[k]=s.MAIL_DATA[k];});
     if(s.HISTORY)Object.keys(s.HISTORY).forEach(function(k){HISTORY[k]=s.HISTORY[k];});
@@ -1913,7 +1914,14 @@ function setService(k){
   AG_PHASE_FILTER='all';   // le filtre de phase est propre à chaque service
   try{ localStorage.setItem('radar_svc',k); }catch(e){}
   var list=cpsOfSvc(k);
-  if(list.length && list.indexOf(CCP)<0){ CCP=list[0]; }
+  if(list.length && list.indexOf(CCP)<0){
+    // On change de perimetre, pas de personne. Le portefeuille suit donc le
+    // charge de projet affiche. Sans cela, passer de ARMA a IRVE depuis le
+    // profil d'Alexis basculait sur le premier portefeuille declare, Paul.
+    var ini=(DATA[CCP]||{}).ini||'';
+    var sien=list.filter(function(cp){ return (DATA[cp]||{}).ini===ini; });
+    CCP = sien.length ? sien[0] : list[0];
+  }
   CP_SEL=null;
   buildTabs(); renderAll();
   try{ agSetMode(AG_MODE); }catch(e){}
@@ -2905,13 +2913,64 @@ function rMecaLegend(affs){
 // Les actions et les contacts ajoutes ensuite vivent dans l'etat.
 // ══════════════════════════════════════════════════════════════
 var CONC_SUIVI = {"RTE":{"date":"","etat":"A FAIRE","com":""},"ENEDIS - HTA BT":{"date":"2026-08-28","etat":"","com":"PdeV : 260717D000065\nPdeClignancourt : 260717D000037 \nGoncourt : 260717D000068\nStalingrad : 260717D000078 \nAubervilliers : RAC-IFE-26-007429\nCroix de Chavaux : RAC-IFE-26-007431\n\nENEDIS --> Les 4 projets sans n° RAC sont en cours de complétude\nENEDIS --> Attente validation de la complétude des dossiers suite aux échanges mairies\nRATP --> Réponse envoyée par Julien concernant l'obtention de l'accord mairie, présentation prévue début septembre.\nALEXIS --> Envoyer l'accord mairie à l'AREMABT puis les appeler au 09.69.32.18.99 choix 1 afin de valider les éléments"},"RATP - Infrastructures":{"date":"","etat":"NA","com":"GC RATP"},"DALKIA":{"date":"","etat":"A FAIRE","com":"ALEXIS --> Relire les échanges et les contacter (call ou mail)"},"DALKIA - Sogelink":{"date":"","etat":"A FAIRE","com":"ALEXIS --> Voir à quoi ce réseau correspond sur la DT puis les contacter (call ou mail)"},"GRDF - Gaz":{"date":"2026-08-17","etat":"","com":"RATP --> Attente signature de la convention par Paul + Ils sont en retard pour édition contrat cadre\nALEXIS --> Renvoyer la convention signée à dridf-gpu@grdf.fr et francois.cugnet@grdf.fr + demander si il faut faire le même document pour chaque projet et demander les dates de rendus des devis étude et trx ? Ainsi que le délai pour chaque rendu d'étude ?"},"CIELIS - Eclairage EP":{"date":"2026-08-17","etat":"","com":"RATP --> Paul va contacter la STV pour demander l'accord pour que CIELIS réalise leurs études et envoi des fonds de plans.\nPI : Il faut prendre RDV avec la STV afin de planifier une ROC (démarche pour pouvoir solliciter CIELIS afin d'établir les devis EP et SLT)"},"CIELIS - Signalisation SLT":{"date":"2026-08-17","etat":"","com":"RATP --> Paul va contacter la STV pour demander l'accord pour que CIELIS réalise leurs études et envoi des fonds de plans.\nPI : Il faut prendre RDV avec la STV afin de planifier une ROC (démarche pour pouvoir solliciter CIELIS afin d'établir les devis EP et SLT)"},"STEA - Assainissement":{"date":"","etat":"A FAIRE","com":"ALEXIS --> Rebondir sur le mail de Paul pour prendre la suite sur le dévoiement (demander quels sont les réseaux qui transit dans leurs GC, pour dévoiement)"},"Eau de Paris - AEP":{"date":"2026-08-24","etat":"","com":"Démarche en cours pour Porte de Versailles\n\nALEXIS --> Relancer Nordin \nEAUDEPARIS --> Att fond de plans + étude en cours + besoin d'une convetion ? + contrat cadre possible ? (depuis le 12/08)\nALEXIS --> Envoyer les plans des emprises pour les 3 autres projets quand cela sera possible"},"Orange - Telecom":{"date":"2026-08-27","etat":"","com":"ALEXIS --> Porte de Clignancourt, il nous faut le plan en classe A + sur les autres projets aussi\nRATP --> Faire point avec Paul afin de répondre au mail de Muzette (MAJ convention PdeV + répondre pour les autres projets)\nORANGE --> Attente retour convention modifiée\n\nPI : Orange va gérer les demandes de dévoiement des réseaux qui passent dans ses multitubulaires, RATP signera les devis en direct"},"Orange - ALTITUDE INFRA EXPLOIT":{"date":"","etat":"A FAIRE","com":"ALEXIS --> Confirmer si cela c'est bien pris en compte dans l'étude (demander quels sont les réseaux qui transit dans leurs GC)"},"SFR - Fibre Orange":{"date":"2026-08-18","etat":"","com":"ALEXIS --> mail envoyé le 03-09, Call pour relancer\nSFR --> Attente réponse mail pour savoir si l'ensemble des réseaux SFR passent dans les infrastructures Orange ou en égout (SAP). Si oui, contacter directement les proprio des infras."},"SFR - Telecom":{"date":"2026-08-18","etat":"","com":"ALEXIS --> mail envoyé le 03-09, Call pour relancer\nSFR --> Attente réponse mail pour savoir si l'ensemble des réseaux SFR passent dans les infrastructures Orange ou en égout (SAP). Si oui, contacter directement les proprio des infras."},"SFR - Fibre":{"date":"2026-08-18","etat":"","com":"ALEXIS --> mail envoyé le 03-09, Call pour relancer\nSFR --> Attente réponse mail pour savoir si l'ensemble des réseaux SFR passent dans les infrastructures Orange ou en égout (SAP). Si oui, contacter directement les proprio des infras."},"SFR - COMPLETEL":{"date":"2026-08-18","etat":"","com":"ALEXIS --> mail envoyé le 03-09, Call pour relancer\nSFR --> Attente réponse mail pour savoir si l'ensemble des réseaux SFR passent dans les infrastructures Orange ou en égout (SAP). Si oui, contacter directement les proprio des infras."},"SFR - SA":{"date":"2026-08-18","etat":"","com":"ALEXIS --> mail envoyé le 03-09, Call pour relancer\nSFR --> Attente réponse mail pour savoir si l'ensemble des réseaux SFR passent dans les infrastructures Orange ou en égout (SAP). Si oui, contacter directement les proprio des infras."},"PRIZZ":{"date":"","etat":"A FAIRE","com":"ALEXIS --> Envoyer synthèse à Orange, des conssesionnaire qui passent (si ils retrouvent les mêmes réseaux, si ils peuvent nous envoyer une synthèse de l'ensemble des réseaux qui cheminent + le nombre\nALEXIS --> Après retour Orange, faire estimation du coût des travaux"},"COLT":{"date":"","etat":"A FAIRE","com":"ALEXIS --> Envoyer synthèse à Orange, des conssesionnaire qui passent (si ils retrouvent les mêmes réseaux, si ils peuvent nous envoyer une synthèse de l'ensemble des réseaux qui cheminent + le nombre\nALEXIS --> Après retour Orange, faire estimation du coût des travaux"},"IELO":{"date":"","etat":"A FAIRE","com":"ALEXIS --> Envoyer synthèse à Orange, des conssesionnaire qui passent (si ils retrouvent les mêmes réseaux, si ils peuvent nous envoyer une synthèse de l'ensemble des réseaux qui cheminent + le nombre\nALEXIS --> Après retour Orange, faire estimation du coût des travaux"},"GTIE NETCOM":{"date":"","etat":"A FAIRE","com":"ALEXIS --> Envoyer synthèse à Orange, des conssesionnaire qui passent (si ils retrouvent les mêmes réseaux, si ils peuvent nous envoyer une synthèse de l'ensemble des réseaux qui cheminent + le nombre\nALEXIS --> Après retour Orange, faire estimation du coût des travaux"},"Mairie de Paris (Section des tunnels des berges et du périphériques)":{"date":"","etat":"A FAIRE","com":"A confirmer mais normalement RAS"},"CPCU":{"date":"","etat":"A FAIRE","com":"ALEXIS --> A contacter en urgence"},"SNCF RESEAU":{"date":"","etat":"A FAIRE","com":"A confirmer mais normalement RAS"},"JC DECAUX":{"date":"","etat":"A FAIRE","com":"ALEXIS --> A contacter"},"CITELUM":{"date":"","etat":"A FAIRE","com":"ALEXIS --> A contacter"},"Département de la Seine-Saint-Denis":{"date":"","etat":"A FAIRE","com":"A confirmer mais normalement RAS"},"COMMUNAUTE AGGLOMERATION PLAINE COMMUNE":{"date":"","etat":"A FAIRE","com":"ALEXIS --> A contacter"},"DEA CD93 - Assainissement":{"date":"2026-08-28","etat":"","com":"ALEXIS --> Envoyer le plan à jour avec le relevé topographique du réseau (détail du devis + planning)\n\nPI : \"Le projet coutera plusieurs centaine de milliers d'euros\""},"Etablissement Public Territorial Est Ensemble":{"date":"","etat":"A FAIRE","com":"ALEXIS --> A contacter (pas seulement CD93)"},"REGIE PUBLIQUE DE L'EAU ET DE L'ASSAINISSEMENT D'EST ENSEMBLE":{"date":"","etat":"A FAIRE","com":"Trouver les contacts"},"EAU PUBLIQUE EST ENSEMBLE - Assainissement":{"date":"","etat":"A FAIRE","com":"Trouver les contacts"},"EAU PUBLIQUE EST ENSEMBLE - Eau":{"date":"","etat":"A FAIRE","com":"Trouver les contacts"},"VEOLIA EAU FRANCILIANE":{"date":"","etat":"A FAIRE","com":"Trouver les contacts"},"LUMEN":{"date":"","etat":"A FAIRE","com":"Trouver les contacts"},"Sipartech":{"date":"","etat":"A FAIRE","com":"Trouver les contacts"},"CD 93 DVD":{"date":"","etat":"A FAIRE","com":"Trouver les contacts"},"Communauté d'agglomeration plaine commune":{"date":"","etat":"A FAIRE","com":"Trouver les contacts"},"Asteria":{"date":"","etat":"A FAIRE","com":"Trouver les contacts"},"SATELEC":{"date":"","etat":"A FAIRE","com":"Trouver les contacts"},"SATELEC - Eclairage EP":{"date":"","etat":"A FAIRE","com":"Trouver les contacts"},"VERIZON":{"date":"","etat":"NA","com":""},"ILLAD SERVICE DICT":{"date":"","etat":"NA","com":""},"BOUYGUES TELECOM FIBRE":{"date":"","etat":"NA","com":""},"IMOPTEL":{"date":"","etat":"NA","com":""}};
-var CONC_CONTACTS = {"ENEDIS - HTA BT":[{"nom":"Alexis DUPRE","role":"Responsable unité MOED","service":"Astridsen\nPrestataire pour Enedis","tel":"06.49.11.28.66","mail":"alexis-externe.dupre@enedis.fr"},{"nom":"Benjamin VICTOR","role":"Chargé d'affaire MOED","service":"Astridsen\nPrestataire pour Enedis","tel":"07.89.07.70.57","mail":"benjamin-externe.victor@enedis.fr"},{"nom":"Alexis DUPRE","role":"Responsable unité MOED","service":"Astridsen\nPrestataire pour Enedis","tel":"06.49.11.28.66","mail":"alexis-externe.dupre@enedis.fr"},{"nom":"Benjamin VICTOR","role":"Chargé d'affaire MOED","service":"Astridsen\nPrestataire pour Enedis","tel":"07.89.07.70.57","mail":"benjamin-externe.victor@enedis.fr"},{"nom":"Alexis DUPRE","role":"Responsable unité MOED","service":"Astridsen\nPrestataire pour Enedis","tel":"06.49.11.28.66","mail":"alexis-externe.dupre@enedis.fr"},{"nom":"Benjamin VICTOR","role":"Chargé d'affaire MOED","service":"Astridsen\nPrestataire pour Enedis","tel":"07.89.07.70.57","mail":"benjamin-externe.victor@enedis.fr"},{"nom":"Alexis DUPRE","role":"Responsable unité MOED","service":"Astridsen\nPrestataire pour Enedis","tel":"06.49.11.28.66","mail":"alexis-externe.dupre@enedis.fr"},{"nom":"Benjamin VICTOR","role":"Chargé d'affaire MOED","service":"Astridsen\nPrestataire pour Enedis","tel":"07.89.07.70.57","mail":"benjamin-externe.victor@enedis.fr"},{"nom":"Alexis DUPRE","role":"Responsable unité MOED","service":"Astridsen\nPrestataire pour Enedis","tel":"06.49.11.28.66","mail":"alexis-externe.dupre@enedis.fr"},{"nom":"Benjamin VICTOR","role":"Chargé d'affaire MOED","service":"Astridsen\nPrestataire pour Enedis","tel":"07.89.07.70.57","mail":"benjamin-externe.victor@enedis.fr"},{"nom":"Alexis DUPRE","role":"Responsable unité MOED","service":"Astridsen\nPrestataire pour Enedis","tel":"06.49.11.28.66","mail":"alexis-externe.dupre@enedis.fr"},{"nom":"Benjamin VICTOR","role":"Chargé d'affaire MOED","service":"Astridsen\nPrestataire pour Enedis","tel":"07.89.07.70.57","mail":"benjamin-externe.victor@enedis.fr"}],"RATP Infrastructures":[{"nom":"Arnaud LOISON","role":"Responsable d'études travaux","service":"Pôle exploitation maintenance du réseau HTA (PEF-Câbles)","tel":"01.58.78.84.94\n06.23.76.39.71","mail":"arnaud.loison@ratp.fr"},{"nom":"Jean-michel CATTIAUX","role":"","service":"","tel":"","mail":""},{"nom":"Daphne LANG","role":"Responsable d'études travaux","service":"Pôle exploitation maintenance du réseau HTA (PEF-Câbles)","tel":"01.58.78.84.94\n06.35.83.69.69","mail":"daphne.lang@ratp.fr"},{"nom":"Arnaud LOISON","role":"Responsable d'études travaux","service":"Pôle exploitation maintenance du réseau HTA (PEF-Câbles)","tel":"01.58.78.84.94\n06.23.76.39.71","mail":"arnaud.loison@ratp.fr"},{"nom":"Daphne LANG","role":"Responsable d'études travaux","service":"Pôle exploitation maintenance du réseau HTA (PEF-Câbles)","tel":"01.58.78.84.94\n06.35.83.69.69","mail":"daphne.lang@ratp.fr"},{"nom":"Interne","role":"","service":"","tel":"","mail":""},{"nom":"Arnaud LOISON","role":"Responsable d'études travaux","service":"Pôle exploitation maintenance du réseau HTA (PEF-Câbles)","tel":"01.58.78.84.94\n06.23.76.39.71","mail":"arnaud.loison@ratp.fr"},{"nom":"Daphne LANG","role":"Responsable d'études travaux","service":"Pôle exploitation maintenance du réseau HTA (PEF-Câbles)","tel":"01.58.78.84.94\n06.35.83.69.69","mail":"daphne.lang@ratp.fr"},{"nom":"Arnaud LOISON","role":"Responsable d'études travaux","service":"Pôle exploitation maintenance du réseau HTA (PEF-Câbles)","tel":"01.58.78.84.94\n06.23.76.39.71","mail":"arnaud.loison@ratp.fr"},{"nom":"Daphne LANG","role":"Responsable d'études travaux","service":"Pôle exploitation maintenance du réseau HTA (PEF-Câbles)","tel":"01.58.78.84.94\n06.35.83.69.69","mail":"daphne.lang@ratp.fr"}],"CIELIS - Eclairage EP":[{"nom":"Mourad BOUHADJAR","role":"Conducteur de travaux","service":"/","tel":"06.26.02.39.57","mail":"mourad.bouhadjar@cielis.fr"},{"nom":"Damien DEMARET","role":"Conducteur de Travaux","service":"STV Nord-Ouest","tel":"06.19.05.62.20","mail":"damien.demaret@cielis.fr"},{"nom":"David CHALU","role":"Conducteur travaux","service":"STV Nord-Est","tel":"06.26.71.64.02","mail":"david.chalu@cielis.fr"},{"nom":"David CHALU","role":"Conducteur travaux","service":"STV Nord-Est","tel":"06.26.71.64.02","mail":"david.chalu@cielis.fr"}],"GRDF - Gaz":[{"nom":"Melanie LAMBERT","role":"Responsable Grands Projets Urbains","service":"Direction Réseaux Ile de France","tel":"/","mail":"melanie.lambert@grdf.fr"},{"nom":"François CUGNET","role":"Chargé d’études Grands Projets Urbains","service":"Direction Réseaux Ile de France","tel":"06.86.05.76.44","mail":"francois.cugnet@grdf.fr"},{"nom":"Frédéric BLIN","role":"Manager A2T","service":"Direction Réseaux Ile de France - DIEM IDF Ouest","tel":"01.30.86.41.33 \n06.37.42.19.54","mail":"frederic-jean.blin@grdf.fr"},{"nom":"Adresse générique","role":"/","service":"Service Grands Projets Urbains","tel":"/","mail":"dridf-gpu@grdf.fr"},{"nom":"Melanie LAMBERT","role":"Responsable Grands Projets Urbains","service":"Direction Réseaux Ile de France","tel":"/","mail":"melanie.lambert@grdf.fr"},{"nom":"François CUGNET","role":"Chargé d’études Grands Projets Urbains","service":"Direction Réseaux Ile de France","tel":"06.86.05.76.44","mail":"francois.cugnet@grdf.fr"},{"nom":"Adresse générique","role":"/","service":"Service Grands Projets Urbains","tel":"/","mail":"dridf-gpu@grdf.fr"},{"nom":"Melanie LAMBERT","role":"Responsable Grands Projets Urbains","service":"Direction Réseaux Ile de France","tel":"/","mail":"melanie.lambert@grdf.fr"},{"nom":"François CUGNET","role":"Chargé d’études Grands Projets Urbains","service":"Direction Réseaux Ile de France","tel":"06.86.05.76.44","mail":"francois.cugnet@grdf.fr"},{"nom":"Adresse générique","role":"/","service":"Service Grands Projets Urbains","tel":"/","mail":"dridf-gpu@grdf.fr"},{"nom":"Melanie LAMBERT","role":"Responsable Grands Projets Urbains","service":"Direction Réseaux Ile de France","tel":"/","mail":"melanie.lambert@grdf.fr"},{"nom":"François CUGNET","role":"Chargé d’études Grands Projets Urbains","service":"Direction Réseaux Ile de France","tel":"06.86.05.76.44","mail":"francois.cugnet@grdf.fr"},{"nom":"Adresse générique","role":"/","service":"Service Grands Projets Urbains","tel":"/","mail":"dridf-gpu@grdf.fr"},{"nom":"Melanie LAMBERT","role":"Responsable Grands Projets Urbains","service":"Direction Réseaux Ile de France","tel":"/","mail":"melanie.lambert@grdf.fr"},{"nom":"François CUGNET","role":"Chargé d’études Grands Projets Urbains","service":"Direction Réseaux Ile de France","tel":"06.86.05.76.44","mail":"francois.cugnet@grdf.fr"},{"nom":"Adresse générique","role":"/","service":"Service Grands Projets Urbains","tel":"/","mail":"dridf-gpu@grdf.fr"},{"nom":"CUGNET François","role":"Chargé d’études Grands Projets Urbains","service":"Direction Réseaux Ile de France","tel":"06.86.05.76.44","mail":"francois.cugnet@grdf.fr"}],"STEA - Assainissement":[{"nom":"Xavier BIGNON","role":"Chef de la Subdivision Travaux","service":"SERAP - Travaux Circonscription Ouest","tel":"01.53.68.25.55","mail":"xavier.bignon@paris.fr"},{"nom":"Mickaël GROS-JEAN","role":"Chef de la Subdivision Travaux","service":"SERAP - Travaux Circonscription Ouest","tel":"01.53.68.26.75","mail":"mickael.gros-jean@paris.fr"},{"nom":"Marie Viviane BORGIA","role":"Technicienne Supérieure Principale","service":"SERAP - Travaux Circonscription Ouest","tel":"01.53.68.25.81\n06.85.72.58.73","mail":"marie-vivianne.borgia@paris.fr"},{"nom":"Stephanie VENTURA MOSTACCHI","role":"Cheffe de la subdivision Travaux","service":"SERAP - Travaux Circonscription Est","tel":"01.44.75.22.92\n06.23.80.34.81","mail":"stephanie.ventura-mostachchi@paris.fr"},{"nom":"Stephanie VENTURA MOSTACCHI","role":"Cheffe de la subdivision Travaux","service":"SERAP - Travaux Circonscription Est","tel":"01.44.75.22.92\n06.23.80.34.81","mail":"stephanie.venturamostacchi@paris.fr"},{"nom":"Marc SAUVAGE","role":"Chef d'exploitation","service":"SERAP - Cellule d'accès au réseau d'assainissement","tel":"01.53.68.24.17\n06.23.80.36.57","mail":"marc.sauvage@paris.fr"},{"nom":"Nicolas CHARLES","role":"Chef de la subdivision SSUP","service":"SERAP - SSUP Circonscription Est","tel":"01.44.75.22.97\n06.89.25.26.03","mail":"nicolas.charles@paris.fr"},{"nom":"Xavier VELIN","role":"Adjoint de la subdivision SSUP","service":"SERAP - SSUP Circonscription Est","tel":"01.44.75.22.91\n06.23.8034.01","mail":"xavier.velin@paris.fr"},{"nom":"?","role":"Chef d'équipe sur site","service":"SERAP - SSUP Circonscription Est","tel":"06.95.57.44.03","mail":"/"}],"Eau de Paris - AEP":[{"nom":"Albin MOIRET","role":"Responsable de Service","service":"Direction de la Distribution - Service Exploitation OUEST (1/2/6/7/8/9/15/16/17/18 ème arrondissements)","tel":"/","mail":"albin.moiret@eaudeparis.fr"},{"nom":"Ouassim TAIBI","role":"Adjoint Responsable de Service","service":"Direction de la Distribution - Service Exploitation OUEST (1/2/6/7/8/9/15/16/17/18 ème arrondissements)","tel":"06.73.38.89.82","mail":"ouassim.taibi@eaudeparis.fr"},{"nom":"Olivier JUIN","role":"Chargé d’affaire","service":"Direction de la Distribution - Agence SUD","tel":"01.41.17.29.01\n06.38.43.51.59","mail":"olivier.juin@eaudeparis.fr"},{"nom":"Olivier FOURNIER","role":"Chef de service exploitation","service":"/","tel":"/","mail":"olivier.fournier@eaudeparis.fr"},{"nom":"Christophe LEBRET","role":"Chef de service exploitation","service":"/","tel":"/","mail":"Christophe.lebret@eaudeparis.fr"},{"nom":"Herve GAVOUYERE","role":"Adjoint Responsable de Service","service":"Direction de la Distribution - Service Exploitation EST","tel":"06.38.43.45.89","mail":"herve.gavouyere@eaudeparis.fr"}],"CIELIS - Signalisation SLT":[{"nom":"Fabrice BEGOT","role":"Conducteur de travaux","service":"SLT Statique Sud","tel":"06.21.45.57.68","mail":"fabrice.begot@cielis.fr"},{"nom":"Antonin SCHIANO","role":"Conducteur de travaux","service":"SLT Statique Sud","tel":"06.62.96.59.11","mail":"antonin.schiano@cielis.fr"},{"nom":"Adresse générique","role":"/","service":"/","tel":"/","mail":"SLTStatiqueSud@cielis.fr"},{"nom":"Franck DARDILLAC","role":"Conducteur de Travaux","service":"SLT Statique Nord","tel":"/","mail":"franck.dardillac@cielis.fr"},{"nom":"Calvin LETELLIER","role":"Conducteur de Travaux","service":"SLT Statique Nord","tel":"/","mail":"calvin.letellier@cielis.fr"},{"nom":"Adresse générique","role":"/","service":"SLT Statique Nord","tel":"/","mail":"SLTStatiqueNord@cielis.fr"},{"nom":"Franck DARDILLAC","role":"Conducteur de Travaux","service":"SLT Statique Nord","tel":"/","mail":"franck.dardillac@cielis.fr"},{"nom":"Calvin LETELLIER","role":"Conducteur de Travaux","service":"SLT Statique Nord","tel":"/","mail":"calvin.letellier@cielis.fr"},{"nom":"Adresse générique","role":"/","service":"SLT Statique Nord","tel":"/","mail":"SLTStatiqueNord@cielis.fr"},{"nom":"Franck DARDILLAC","role":"Conducteur de Travaux","service":"SLT Statique Nord","tel":"/","mail":"franck.dardillac@cielis.fr"},{"nom":"Calvin LETELLIER","role":"Conducteur de Travaux","service":"SLT Statique Nord","tel":"/","mail":"calvin.letellier@cielis.fr"},{"nom":"Adresse générique","role":"/","service":"SLT Statique Nord","tel":"/","mail":"SLTStatiqueNord@cielis.fr"}],"Orange - Telecom":[{"nom":"Hugo MUZETTE","role":"Chef de Projet - Génie Civil","service":"INFRA IDF - DA GC-CL","tel":"06.07.21.90.02","mail":"hugo.muzette@orange.com"},{"nom":"Valentino BAGNATO","role":"Chef de Projet - MOA Grands Projets","service":"INFRA IDF","tel":"/","mail":"valentino.bagnato@orange.com"},{"nom":"Martin RIMBAUD","role":"Chargé d'affaires et d'études","service":"INFRA IDF - ETUDES - CAFFMT75","tel":"06.07.44.79.51","mail":"martin.rimbaud@orange.com"},{"nom":"Christophe GUYARD","role":"Chargé d'affaires - Coordonnateur","service":"INFRA IDF","tel":"/","mail":"christophe.guyard@orange.com"},{"nom":"Elsa BOURINET","role":"Chargé d'affaires et d'études","service":"INFRA IDF","tel":"/","mail":"elsa.bourinet@orange.com"},{"nom":"Pierre EGGENSPIELER","role":"/","service":"INFRA IDF","tel":"/","mail":"pierre.eggenspieler@orange.com"},{"nom":"Vincent LEMENTEC","role":"/","service":"INFRA IDF","tel":"/","mail":"vincent.lementec@orange.com"},{"nom":"Hugo MUZETTE","role":"Chef de Projet - Génie Civil","service":"INFRA IDF - DA GC-CL","tel":"06.07.21.90.02","mail":"hugo.muzette@orange.com"},{"nom":"Valentino BAGNATO","role":"Chef de Projet - MOA Grands Projets","service":"INFRA IDF","tel":"/","mail":"valentino.bagnato@orange.com"},{"nom":"Martin RIMBAUD","role":"Chargé d'affaires et d'études","service":"INFRA IDF - ETUDES - CAFFMT75","tel":"06.07.44.79.51","mail":"martin.rimbaud@orange.com"},{"nom":"Christophe GUYARD","role":"Chargé d'affaires - Coordonnateur","service":"INFRA IDF","tel":"/","mail":"christophe.guyard@orange.com"},{"nom":"Elsa BOURINET","role":"Chargé d'affaires et d'études","service":"INFRA IDF","tel":"/","mail":"elsa.bourinet@orange.com"},{"nom":"Pierre EGGENSPIELER","role":"/","service":"INFRA IDF","tel":"/","mail":"pierre.eggenspieler@orange.com"},{"nom":"Vincent LEMENTEC","role":"/","service":"INFRA IDF","tel":"/","mail":"vincent.lementec@orange.com"},{"nom":"Hugo MUZETTE","role":"Chef de Projet - Génie Civil","service":"INFRA IDF - DA GC-CL","tel":"06.07.21.90.02","mail":"hugo.muzette@orange.com"},{"nom":"Valentino BAGNATO","role":"Chef de Projet - MOA Grands Projets","service":"INFRA IDF","tel":"/","mail":"valentino.bagnato@orange.com"},{"nom":"Martin RIMBAUD","role":"Chargé d'affaires et d'études","service":"INFRA IDF - ETUDES - CAFFMT75","tel":"06.07.44.79.51","mail":"martin.rimbaud@orange.com"},{"nom":"Christophe GUYARD","role":"Chargé d'affaires - Coordonnateur","service":"INFRA IDF","tel":"/","mail":"christophe.guyard@orange.com"},{"nom":"Elsa BOURINET","role":"Chargé d'affaires et d'études","service":"INFRA IDF","tel":"/","mail":"elsa.bourinet@orange.com"},{"nom":"Pierre EGGENSPIELER","role":"/","service":"INFRA IDF","tel":"/","mail":"pierre.eggenspieler@orange.com"},{"nom":"Vincent LEMENTEC","role":"/","service":"INFRA IDF","tel":"/","mail":"vincent.lementec@orange.com"},{"nom":"Hugo MUZETTE","role":"Chef de Projet - Génie Civil","service":"INFRA IDF - DA GC-CL","tel":"06.07.21.90.02","mail":"hugo.muzette@orange.com"},{"nom":"Valentino BAGNATO","role":"Chef de Projet - MOA Grands Projets","service":"INFRA IDF","tel":"/","mail":"valentino.bagnato@orange.com"},{"nom":"Martin RIMBAUD","role":"Chargé d'affaires et d'études","service":"INFRA IDF - ETUDES - CAFFMT75","tel":"06.07.44.79.51","mail":"martin.rimbaud@orange.com"},{"nom":"Christophe GUYARD","role":"Chargé d'affaires - Coordonnateur","service":"INFRA IDF","tel":"/","mail":"christophe.guyard@orange.com"},{"nom":"Elsa BOURINET","role":"Chargé d'affaires et d'études","service":"INFRA IDF","tel":"/","mail":"elsa.bourinet@orange.com"},{"nom":"Pierre EGGENSPIELER","role":"/","service":"INFRA IDF","tel":"/","mail":"pierre.eggenspieler@orange.com"},{"nom":"Hugo MUZETTE","role":"Chef de Projet - Génie Civil","service":"INFRA IDF - DA GC-CL","tel":"06.07.21.90.02","mail":"hugo.muzette@orange.com"},{"nom":"Valentino BAGNATO","role":"Chef de Projet - MOA Grands Projets","service":"INFRA IDF","tel":"/","mail":"valentino.bagnato@orange.com"},{"nom":"Martin RIMBAUD","role":"Chargé d'affaires et d'études","service":"INFRA IDF - ETUDES - CAFFMT75","tel":"06.07.44.79.51","mail":"martin.rimbaud@orange.com"},{"nom":"Christophe GUYARD","role":"Chargé d'affaires - Coordonnateur","service":"INFRA IDF","tel":"/","mail":"christophe.guyard@orange.com"},{"nom":"Elsa BOURINET","role":"Chargé d'affaires et d'études","service":"INFRA IDF","tel":"/","mail":"elsa.bourinet@orange.com"},{"nom":"Pierre EGGENSPIELER","role":"/","service":"INFRA IDF","tel":"/","mail":"pierre.eggenspieler@orange.com"},{"nom":"Hugo MUZETTE","role":"Chef de Projet - Génie Civil","service":"INFRA IDF - DA GC-CL","tel":"06.07.21.90.02","mail":"hugo.muzette@orange.com"},{"nom":"Valentino BAGNATO","role":"Chef de Projet - MOA Grands Projets","service":"INFRA IDF","tel":"/","mail":"valentino.bagnato@orange.com"},{"nom":"Martin RIMBAUD","role":"Chargé d'affaires et d'études","service":"INFRA IDF - ETUDES - CAFFMT75","tel":"06.07.44.79.51","mail":"martin.rimbaud@orange.com"},{"nom":"Christophe GUYARD","role":"Chargé d'affaires - Coordonnateur","service":"INFRA IDF","tel":"/","mail":"christophe.guyard@orange.com"},{"nom":"Elsa BOURINET","role":"Chargé d'affaires et d'études","service":"INFRA IDF","tel":"/","mail":"elsa.bourinet@orange.com"},{"nom":"Pierre EGGENSPIELER","role":"/","service":"INFRA IDF","tel":"/","mail":"pierre.eggenspieler@orange.com"}],"SFR - Telecom":[{"nom":"Jose LOPES","role":"Responsable de projet","service":"DRSIO DOBF - Projets spécifiques","tel":"01.87.26.34.15\n06.28.09.73.89","mail":"jose.lopes@sfr.com"},{"nom":"Franck BELLEGUIC","role":"/","service":"/","tel":"/","mail":"franck.belleguic@sfr.com"},{"nom":"Olivier GUETTIER","role":"Chargé d affaires techniques","service":"DRET IDF","tel":"06.77.70.99.45","mail":"olivier.guettier@sfr.com"},{"nom":"Sophie BALSA","role":"/","service":"/","tel":"/","mail":"sophie.balsa@sfr.com"},{"nom":"Jose LOPES","role":"Responsable de projet","service":"DRSIO DOBF - Projets spécifiques","tel":"01.87.26.34.15\n06.28.09.73.89","mail":"jose.lopes@sfr.com"},{"nom":"Franck BELLEGUIC","role":"/","service":"/","tel":"/","mail":"franck.belleguic@sfr.com"},{"nom":"Olivier GUETTIER","role":"Chargé d affaires techniques","service":"DRET IDF","tel":"06.77.70.99.45","mail":"olivier.guettier@sfr.com"},{"nom":"Sophie BALSA","role":"/","service":"/","tel":"/","mail":"sophie.balsa@sfr.com"},{"nom":"Jose LOPES","role":"Responsable de projet","service":"DRSIO DOBF - Projets spécifiques","tel":"01.87.26.34.15\n06.28.09.73.89","mail":"jose.lopes@sfr.com"},{"nom":"Franck BELLEGUIC","role":"/","service":"/","tel":"/","mail":"franck.belleguic@sfr.com"},{"nom":"Olivier GUETTIER","role":"Chargé d affaires techniques","service":"DRET IDF","tel":"06.77.70.99.45","mail":"olivier.guettier@sfr.com"},{"nom":"Sophie BALSA","role":"/","service":"/","tel":"/","mail":"sophie.balsa@sfr.com"},{"nom":"Jose LOPES","role":"Responsable de projet","service":"DRSIO DOBF - Projets spécifiques","tel":"01.87.26.34.15\n06.28.09.73.89","mail":"jose.lopes@sfr.com"},{"nom":"Marius TIMOFTE","role":"Responsable de projet","service":"/","tel":"/","mail":"marius.timofte@sfr.com"},{"nom":"Patrick AGUIAR","role":"/","service":"Entreprise sst de suivi projet - ICART","tel":"/","mail":"paguiar@icart-france.com"},{"nom":"Pedro PINTO","role":"/","service":"Entreprise sst de suivi projet - ICART","tel":"/","mail":"ppinto@icart-france.com"},{"nom":"Christophe LEJEUNE","role":"/","service":"Entreprise sst de suivi projet - ICART","tel":"/","mail":"clejeune@icart-france.com"},{"nom":"Jose LOPES","role":"Responsable de projet","service":"DRSIO DOBF - Projets spécifiques","tel":"01.87.26.34.15\n06.28.09.73.89","mail":"jose.lopes@sfr.com"},{"nom":"Marius TIMOFTE","role":"Responsable de projet","service":"/","tel":"/","mail":"marius.timofte@sfr.com"},{"nom":"Patrick AGUIAR","role":"/","service":"ICART - SFR","tel":"/","mail":"paguiar@icart-france.com"},{"nom":"Pedro PINTO","role":"/","service":"ICART - SFR","tel":"/","mail":"ppinto@icart-france.com"},{"nom":"Christophe LEJEUNE","role":"/","service":"ICART - SFR","tel":"/","mail":"clejeune@icart-france.com"},{"nom":"Jose LOPES","role":"Responsable de projet","service":"DRSIO DOBF - Projets spécifiques","tel":"01.87.26.34.15\n06.28.09.73.89","mail":"jose.lopes@sfr.com"}],"RTE":[{"nom":"Nicolas LUCAS","role":"Assistant Environnement Tiers","service":"RTE - Pôle Gestion de l'Infrastructure","tel":"33665320159","mail":"nicolas.lucas@rte-france.com"},{"nom":"Nicolas LUCAS","role":"Assistant Environnement Tiers","service":"RTE - Pôle Gestion de l'Infrastructure","tel":"33665320159","mail":"nicolas.lucas@rte-france.com"},{"nom":"Nicolas LUCAS","role":"Assistant Environnement Tiers","service":"RTE - Pôle Gestion de l'Infrastructure","tel":"33665320159","mail":"nicolas.lucas@rte-france.com"}],"DVD STV Sud Ouest - Voirie / Emprise":[{"nom":"Claudie SOLIMAN","role":"Cheffe de subdivision","service":"Subdivision du 15ème arrondissement","tel":"01.71.28.28.18\n07.86.81.33.72","mail":"claudie.soliman@paris.fr"},{"nom":"Abdelkader AZEHAF","role":"Chef d’exploitation","service":"Subdivision du 15ème arrondissement","tel":"01.71.28.28.16\n 06.86.33.37.31","mail":"Abdelkader.Azehaf@paris.fr"},{"nom":"Fabien GRADYS","role":"Chargé de secteur","service":"STV Sud Ouest 15 et 16ème arrondissements","tel":"01 71 28 28 20","mail":"Fabien.Gradys@paris.fr"},{"nom":"Marina BOURGEOIS","role":"Cheffe du Pôle Ressources","service":"STV Sud Ouest 15 et 16ème arrondissements","tel":"01.71.28.28.00","mail":"marina.bourgeois@paris.fr"}],"Eau de Paris":[{"nom":"Nordine IKHLEF","role":"Responsable de Service","service":"/","tel":"/","mail":"nordine.ikhlef@eaudeparis.fr"},{"nom":"Yassim TITOUS","role":"Chargé d'affaire","service":"/","tel":"/","mail":"yassim.titous@eaudeparis.fr"},{"nom":"Nordine IKHLEF","role":"Responsable de Service","service":"/","tel":"/","mail":"nordine.ikhlef@eaudeparis.fr"},{"nom":"Yassim TITOUS","role":"Chargé d'affaire","service":"/","tel":"/","mail":"yassim.titous@eaudeparis.fr"}],"DVD STV Nord Ouest - Voirie / Emprise":[{"nom":"Thomas JOUANNEAU","role":"Chef de subdivision","service":"Subdivision du 15ème arrondissement","tel":"01.71.28.28.18\n07.86.81.33.72","mail":"claudie.soliman@paris.fr"},{"nom":"Yvonnick JOUBIER","role":"Adjoint Chef de subdivision","service":"Subdivision du 18ème arrondissement","tel":"01.43.18.51.52","mail":"Yvonnick.Joubier@paris.fr"},{"nom":"Fatema SHAMSI","role":"Chargé de secteur","service":"Subdivision du 18ème arrondissement","tel":"01.43.18.51.00","mail":"Fatema.Shamsi@paris.fr"},{"nom":"Fanja RANDRIANANTOANDRO","role":"Chargé de secteur","service":"Subdivision du 18ème arrondissement","tel":"01.43.18.51.19\n06.74.94.76.81","mail":"Fanja.Randrianantoandro@paris.fr"}],"DVD STV Centre - Voirie / Emprise":[{"nom":"Laëtitia KIEFFER","role":"Cheffe de subdivision","service":"Subdivision Projets","tel":"01.44.76.65.40","mail":"laetitia.kieffer@paris.fr"},{"nom":"GC Aménagement\n(définitif)\nGC Initial","role":"","service":"","tel":"","mail":""}],"STV Nord Est - Voirie / Emprise":[{"nom":"Razkallah HILMI","role":"Chef de la Subdivision Travaux 19ème","service":"STV Nord Est 11e/19e/20e\nDirection de la Voirie et des Déplacements","tel":"/","mail":"razkallah.hilmi@paris.fr"},{"nom":"Boubacar DIABIRA","role":"Chargé de secteur 19ème","service":"STV Nord Est 11e/19e/20e\nDirection de la Voirie et des Déplacements","tel":"01.53.38.69.51\n07.89.05.21.95","mail":"boubacar.diabira@paris.fr"}],"DEA CD93 - Assainissement":[{"nom":"Tristan FALSE","role":"Chef du Bureau Exploitation du réseau","service":"Service Exploitation et de l'Entretien des Réseaux","tel":"01.43.93.67.20\n07.78.86.04.97","mail":"tfalse@seinesaintdenis.fr"},{"nom":"Abdel-hafid ZEKRI","role":"Responsable secteur","service":"Service Etudes et Travaux","tel":"06.09.73.28.39","mail":"ahzekri@seinesaintdenis.fr"},{"nom":"Diana DA MOTA DUARTE","role":"Cheffe du bureau études","service":"Service Etudes et Travaux","tel":"01.43.93.65.41\n06.22.94.05.65","mail":"ddamotaduarte@seinesaintdenis.fr"}],"Ville d'Aubervilliers - Voirie / Emprise":[{"nom":"Salwa EL-KHOUSSI","role":"Cheffe de projet Mobilités actives","service":"DGA Dynamique de la ville","tel":"/","mail":"salwa.el-khoussi@mairie-aubervilliers.fr"}],"DVD CD93 - Voirie / Arbre / Emprise":[{"nom":"Philippe KMIEC","role":"Responsable de secteur géographique\nAubervilliers-Bobigny-Pantin (RD932-RD27)","service":"Bureau Maintenance et Exploitation\nService Territorial Nord","tel":"01.43.93.98.60","mail":"pkmiec@seinesaintdenis.fr"},{"nom":"Clémentine HAYAUX DU TILLY","role":"Ingénieure études et travaux","service":"Bureau Etudes et Travaux 2 - Service Etudes et Travaux - Voirie","tel":"01.43.93.95.46\n06.23.36.40.60","mail":"chayauxdutilly@seinesaintdenis.fr"},{"nom":"Lamine NIABALY","role":"Chef de service","service":"Bureau Maintenance et Exploitation - Service Territorial Nord","tel":"/","mail":"lniabaly@seinesaintdenis.fr"},{"nom":"Nicolas FARCETTE","role":"Chef de bureau","service":"Service Etudes et Travaux - Voirie","tel":"/","mail":"nfarcette@seinesaintdenis.fr"},{"nom":"Delphine CHATILLON","role":"/","service":"/","tel":"/","mail":"dchatillon@seinesaintdenis.fr"},{"nom":"Ivan PHUNG","role":"/","service":"/","tel":"/","mail":"iphung@seinesaintdenis.fr"},{"nom":"Secrétariat","role":"/","service":"Bureau Maintenance et Exploitation","tel":"01.43.93.96.73","mail":"/"}],"SATELEC - Eclairage EP":[{"nom":"?","role":"","service":"","tel":"","mail":""}],"EAU PUBLIQUE EST ENSEMBLE - Assainissement":[{"nom":"Benoit DUCROT","role":"Responsable de secteur","service":"Pôle Travaux","tel":"/","mail":"benoit.ducrot@est-ensemble.fr"}],"EAU PUBLIQUE EST ENSEMBLE - Eau":[{"nom":"Benoit DUCROT","role":"Responsable de secteur","service":"Pôle Travaux","tel":"/","mail":"benoit.ducrot@est-ensemble.fr"}],"Ville de Montreuil - Voirie et emprise":[{"nom":"Sebastien COUVILLERS","role":"Chef de service","service":"Service Aménagement et Mobilité Durable\nDirection Espace public et Mobilité","tel":"/","mail":"sebastien.couvillers@montreuil.fr"},{"nom":"Elise RATCLIFFE","role":"Cheffe de projet Espaces Publics","service":"Service Aménagement et Mobilité Durable\nDirection Espace public et Mobilité","tel":"01.48.70.65.41\n06.03.96.67.52","mail":"elise.ratcliffe@montreuil.fr"},{"nom":"Secrétariat SGEP","role":"/","service":"/","tel":"/","mail":"secretariatsgep@montreuil.fr"},{"nom":"Secrétariat Permission de voirie","role":"/","service":"/","tel":"/","mail":"permissionsdevoirie@montreuil.fr"},{"nom":"Goulven TURMEL","role":"/","service":"/","tel":"/","mail":"goulven.turmel@montreuil.fr"},{"nom":"Cyril POIGNET","role":"/","service":"/","tel":"/","mail":"cyril.poignet@montreuil.fr"},{"nom":"Jerome PILLON","role":"/","service":"/","tel":"/","mail":"jerome.pillon@montreuil.fr"},{"nom":"Secretariat DPSTP","role":"/","service":"/","tel":"/","mail":"dpstp@montreuil.fr"},{"nom":"Olivia SOMCHIT","role":"/","service":"/","tel":"/","mail":"olivia.somchit@montreuil.fr"},{"nom":"Essaid CHAOUCHE","role":"/","service":"/","tel":"/","mail":"essaid.chaouche@montreuil.fr"}]};
+var CONC_CONTACTS = {"ENEDIS - HTA BT":[{"nom":"Alexis DUPRE","role":"Responsable unité MOED","service":"Astridsen Prestataire pour Enedis","tel":"06.49.11.28.66","mail":"alexis-externe.dupre@enedis.fr"},{"nom":"Benjamin VICTOR","role":"Chargé d'affaire MOED","service":"Astridsen Prestataire pour Enedis","tel":"07.89.07.70.57","mail":"benjamin-externe.victor@enedis.fr"}],"RATP Infrastructures":[{"nom":"Arnaud LOISON","role":"Responsable d'études travaux","service":"Pôle exploitation maintenance du réseau HTA (PEF-Câbles)","tel":"01.58.78.84.94 06.23.76.39.71","mail":"arnaud.loison@ratp.fr"},{"nom":"Daphne LANG","role":"Responsable d'études travaux","service":"Pôle exploitation maintenance du réseau HTA (PEF-Câbles)","tel":"01.58.78.84.94 06.35.83.69.69","mail":"daphne.lang@ratp.fr"},{"nom":"Interne","role":"","service":"","tel":"","mail":""},{"nom":"Jean-michel CATTIAUX","role":"","service":"","tel":"","mail":""}],"DALKIA":[{"nom":"Standard","role":"","service":"","tel":"01 44 93 65 00","mail":""}],"CIELIS - Eclairage EP":[{"nom":"Damien DEMARET","role":"Conducteur de Travaux","service":"STV Nord-Ouest","tel":"06.19.05.62.20","mail":"damien.demaret@cielis.fr"},{"nom":"David CHALU","role":"Conducteur travaux","service":"STV Nord-Est","tel":"06.26.71.64.02","mail":"david.chalu@cielis.fr"},{"nom":"Mourad BOUHADJAR","role":"Conducteur de travaux","service":"","tel":"06.26.02.39.57","mail":"mourad.bouhadjar@cielis.fr"}],"GRDF - Gaz":[{"nom":"CUGNET François","role":"Chargé d’études Grands Projets Urbains","service":"Direction Réseaux Ile de France","tel":"06.86.05.76.44","mail":"francois.cugnet@grdf.fr"},{"nom":"François CUGNET","role":"Chargé d’études Grands Projets Urbains","service":"Direction Réseaux Ile de France","tel":"06.86.05.76.44","mail":"francois.cugnet@grdf.fr"},{"nom":"Frédéric BLIN","role":"Manager A2T","service":"Direction Réseaux Ile de France - DIEM IDF Ouest","tel":"01.30.86.41.33 06.37.42.19.54","mail":"frederic-jean.blin@grdf.fr"},{"nom":"Melanie LAMBERT","role":"Responsable Grands Projets Urbains","service":"Direction Réseaux Ile de France","tel":"","mail":"melanie.lambert@grdf.fr"},{"nom":"Adresse générique","role":"","service":"Service Grands Projets Urbains","tel":"","mail":"dridf-gpu@grdf.fr"}],"STEA - Assainissement":[{"nom":"?","role":"Chef d'équipe sur site","service":"SERAP - SSUP Circonscription Est","tel":"06.95.57.44.03","mail":""},{"nom":"Marc SAUVAGE","role":"Chef d'exploitation","service":"SERAP - Cellule d'accès au réseau d'assainissement","tel":"01.53.68.24.17 06.23.80.36.57","mail":"marc.sauvage@paris.fr"},{"nom":"Marie Viviane BORGIA","role":"Technicienne Supérieure Principale","service":"SERAP - Travaux Circonscription Ouest","tel":"01.53.68.25.81 06.85.72.58.73","mail":"marie-vivianne.borgia@paris.fr"},{"nom":"Mickaël GROS-JEAN","role":"Chef de la Subdivision Travaux","service":"SERAP - Travaux Circonscription Ouest","tel":"01.53.68.26.75","mail":"mickael.gros-jean@paris.fr"},{"nom":"Nicolas CHARLES","role":"Chef de la subdivision SSUP","service":"SERAP - SSUP Circonscription Est","tel":"01.44.75.22.97 06.89.25.26.03","mail":"nicolas.charles@paris.fr"},{"nom":"Stephanie VENTURA MOSTACCHI","role":"Cheffe de la subdivision Travaux","service":"SERAP - Travaux Circonscription Est","tel":"01.44.75.22.92 06.23.80.34.81","mail":"stephanie.ventura-mostachchi@paris.fr"},{"nom":"Stephanie VENTURA MOSTACCHI","role":"Cheffe de la subdivision Travaux","service":"SERAP - Travaux Circonscription Est","tel":"01.44.75.22.92 06.23.80.34.81","mail":"stephanie.venturamostacchi@paris.fr"},{"nom":"Xavier BIGNON","role":"Chef de la Subdivision Travaux","service":"SERAP - Travaux Circonscription Ouest","tel":"01.53.68.25.55","mail":"xavier.bignon@paris.fr"},{"nom":"Xavier VELIN","role":"Adjoint de la subdivision SSUP","service":"SERAP - SSUP Circonscription Est","tel":"01.44.75.22.91 06.23.8034.01","mail":"xavier.velin@paris.fr"}],"Eau de Paris - AEP":[{"nom":"Albin MOIRET","role":"Responsable de Service","service":"Direction de la Distribution - Service Exploitation OUEST (1/2/6/7/8/9/15/16/17/18 ème arrondissements)","tel":"","mail":"albin.moiret@eaudeparis.fr"},{"nom":"Christophe LEBRET","role":"Chef de service exploitation","service":"","tel":"","mail":"Christophe.lebret@eaudeparis.fr"},{"nom":"Herve GAVOUYERE","role":"Adjoint Responsable de Service","service":"Direction de la Distribution - Service Exploitation EST","tel":"06.38.43.45.89","mail":"herve.gavouyere@eaudeparis.fr"},{"nom":"Olivier FOURNIER","role":"Chef de service exploitation","service":"","tel":"","mail":"olivier.fournier@eaudeparis.fr"},{"nom":"Olivier JUIN","role":"Chargé d’affaire","service":"Direction de la Distribution - Agence SUD","tel":"01.41.17.29.01 06.38.43.51.59","mail":"olivier.juin@eaudeparis.fr"},{"nom":"Ouassim TAIBI","role":"Adjoint Responsable de Service","service":"Direction de la Distribution - Service Exploitation OUEST (1/2/6/7/8/9/15/16/17/18 ème arrondissements)","tel":"06.73.38.89.82","mail":"ouassim.taibi@eaudeparis.fr"}],"CIELIS - Signalisation SLT":[{"nom":"Antonin SCHIANO","role":"Conducteur de travaux","service":"SLT Statique Sud","tel":"06.62.96.59.11","mail":"antonin.schiano@cielis.fr"},{"nom":"Calvin LETELLIER","role":"Conducteur de Travaux","service":"SLT Statique Nord","tel":"","mail":"calvin.letellier@cielis.fr"},{"nom":"Fabrice BEGOT","role":"Conducteur de travaux","service":"SLT Statique Sud","tel":"06.21.45.57.68","mail":"fabrice.begot@cielis.fr"},{"nom":"Franck DARDILLAC","role":"Conducteur de Travaux","service":"SLT Statique Nord","tel":"","mail":"franck.dardillac@cielis.fr"},{"nom":"Adresse générique","role":"","service":"","tel":"","mail":"SLTStatiqueSud@cielis.fr"},{"nom":"Adresse générique","role":"","service":"SLT Statique Nord","tel":"","mail":"SLTStatiqueNord@cielis.fr"}],"PRIZZ":[{"nom":"Standard","role":"","service":"","tel":"04 26 72 77 06","mail":""}],"COLT":[{"nom":"Standard","role":"","service":"","tel":"01 70 99 55 00","mail":""}],"SFR - Fibre Orange":[{"nom":"Standard","role":"","service":"","tel":"09 80 80 43 03","mail":""}],"Orange - Telecom":[{"nom":"Christophe GUYARD","role":"Chargé d'affaires - Coordonnateur","service":"INFRA IDF","tel":"","mail":"christophe.guyard@orange.com"},{"nom":"Elsa BOURINET","role":"Chargé d'affaires et d'études","service":"INFRA IDF","tel":"","mail":"elsa.bourinet@orange.com"},{"nom":"Hugo MUZETTE","role":"Chef de Projet - Génie Civil","service":"INFRA IDF - DA GC-CL","tel":"06.07.21.90.02","mail":"hugo.muzette@orange.com"},{"nom":"Martin RIMBAUD","role":"Chargé d'affaires et d'études","service":"INFRA IDF - ETUDES - CAFFMT75","tel":"06.07.44.79.51","mail":"martin.rimbaud@orange.com"},{"nom":"Pierre EGGENSPIELER","role":"","service":"INFRA IDF","tel":"","mail":"pierre.eggenspieler@orange.com"},{"nom":"Valentino BAGNATO","role":"Chef de Projet - MOA Grands Projets","service":"INFRA IDF","tel":"","mail":"valentino.bagnato@orange.com"},{"nom":"Vincent LEMENTEC","role":"","service":"INFRA IDF","tel":"","mail":"vincent.lementec@orange.com"}],"SFR - Telecom":[{"nom":"Christophe LEJEUNE","role":"","service":"Entreprise sst de suivi projet - ICART","tel":"","mail":"clejeune@icart-france.com"},{"nom":"Franck BELLEGUIC","role":"","service":"","tel":"","mail":"franck.belleguic@sfr.com"},{"nom":"Jose LOPES","role":"Responsable de projet","service":"DRSIO DOBF - Projets spécifiques","tel":"01.87.26.34.15 06.28.09.73.89","mail":"jose.lopes@sfr.com"},{"nom":"Marius TIMOFTE","role":"Responsable de projet","service":"","tel":"","mail":"marius.timofte@sfr.com"},{"nom":"Olivier GUETTIER","role":"Chargé d affaires techniques","service":"DRET IDF","tel":"06.77.70.99.45","mail":"olivier.guettier@sfr.com"},{"nom":"Patrick AGUIAR","role":"","service":"Entreprise sst de suivi projet - ICART","tel":"","mail":"paguiar@icart-france.com"},{"nom":"Pedro PINTO","role":"","service":"Entreprise sst de suivi projet - ICART","tel":"","mail":"ppinto@icart-france.com"},{"nom":"Sophie BALSA","role":"","service":"","tel":"","mail":"sophie.balsa@sfr.com"}],"IMOPTEL":[{"nom":"Standard","role":"","service":"","tel":"01 49 87 80 87","mail":""}],"SFR Fibre":[{"nom":"Standard","role":"","service":"","tel":"09 80 80 43 03","mail":""}],"SFR - COMPLETEL":[{"nom":"Standard","role":"","service":"","tel":"09 80 80 43 03","mail":""}],"RTE":[{"nom":"Nicolas LUCAS","role":"Assistant Environnement Tiers","service":"RTE - Pôle Gestion de l'Infrastructure","tel":"33665320159","mail":"nicolas.lucas@rte-france.com"}],"DVD STV Sud Ouest - Voirie / Emprise":[{"nom":"Abdelkader AZEHAF","role":"Chef d’exploitation","service":"Subdivision du 15ème arrondissement","tel":"01.71.28.28.16 06.86.33.37.31","mail":"Abdelkader.Azehaf@paris.fr"},{"nom":"Claudie SOLIMAN","role":"Cheffe de subdivision","service":"Subdivision du 15ème arrondissement","tel":"01.71.28.28.18 07.86.81.33.72","mail":"claudie.soliman@paris.fr"},{"nom":"Fabien GRADYS","role":"Chargé de secteur","service":"STV Sud Ouest 15 et 16ème arrondissements","tel":"01 71 28 28 20","mail":"Fabien.Gradys@paris.fr"},{"nom":"Marina BOURGEOIS","role":"Cheffe du Pôle Ressources","service":"STV Sud Ouest 15 et 16ème arrondissements","tel":"01.71.28.28.00","mail":"marina.bourgeois@paris.fr"}],"Eau de Paris":[{"nom":"Nordine IKHLEF","role":"Responsable de Service","service":"","tel":"","mail":"nordine.ikhlef@eaudeparis.fr"},{"nom":"Yassim TITOUS","role":"Chargé d'affaire","service":"","tel":"","mail":"yassim.titous@eaudeparis.fr"}],"GTIE NETCOM":[{"nom":"Standard","role":"","service":"","tel":"01 64 53 20 30","mail":""}],"Prizz infrastructure":[{"nom":"Standard","role":"","service":"","tel":"04 26 72 77 06","mail":""}],"Mairie de Paris (Section des tunnels des berges et du périphériques)":[{"nom":"Standard","role":"","service":"","tel":"04 26 72 77 06","mail":""}],"CPCU":[{"nom":"Standard","role":"","service":"","tel":"01 44 68 67 12","mail":""}],"SNCF RESEAU":[{"nom":"Standard","role":"","service":"","tel":"04 49 38 01 02","mail":""}],"JC DECAUX":[{"nom":"Standard","role":"","service":"","tel":"01 47 76 52 88","mail":""}],"DVD STV Nord Ouest - Voirie / Emprise":[{"nom":"Fanja RANDRIANANTOANDRO","role":"Chargé de secteur","service":"Subdivision du 18ème arrondissement","tel":"01.43.18.51.19 06.74.94.76.81","mail":"Fanja.Randrianantoandro@paris.fr"},{"nom":"Fatema SHAMSI","role":"Chargé de secteur","service":"Subdivision du 18ème arrondissement","tel":"01.43.18.51.00","mail":"Fatema.Shamsi@paris.fr"},{"nom":"Thomas JOUANNEAU","role":"Chef de subdivision","service":"Subdivision du 15ème arrondissement","tel":"01.71.28.28.18 07.86.81.33.72","mail":"claudie.soliman@paris.fr"},{"nom":"Yvonnick JOUBIER","role":"Adjoint Chef de subdivision","service":"Subdivision du 18ème arrondissement","tel":"01.43.18.51.52","mail":"Yvonnick.Joubier@paris.fr"}],"IELO-LIAZO SERVICES":[{"nom":"Standard","role":"","service":"","tel":"09 70 30 66 18","mail":""}],"SFR FIBRE SAS ORANGE":[{"nom":"Standard","role":"","service":"","tel":"09 80 80 43 03","mail":""}],"SFR FIBRE SAS":[{"nom":"Standard","role":"","service":"","tel":"09 80 80 43 03","mail":""}],"DVD STV Centre - Voirie / Emprise":[{"nom":"GC Aménagement (définitif) GC Initial","role":"","service":"","tel":"","mail":""},{"nom":"Laëtitia KIEFFER","role":"Cheffe de subdivision","service":"Subdivision Projets","tel":"01.44.76.65.40","mail":"laetitia.kieffer@paris.fr"}],"DALKIA (SIG-IMAGE)":[{"nom":"Standard","role":"","service":"","tel":"06 28 70 99 68","mail":""}],"CITELUM":[{"nom":"Standard","role":"","service":"","tel":"04 26 72 77 06","mail":""}],"STV Nord Est - Voirie / Emprise":[{"nom":"Boubacar DIABIRA","role":"Chargé de secteur 19ème","service":"STV Nord Est 11e/19e/20e Direction de la Voirie et des Déplacements","tel":"01.53.38.69.51 07.89.05.21.95","mail":"boubacar.diabira@paris.fr"},{"nom":"Razkallah HILMI","role":"Chef de la Subdivision Travaux 19ème","service":"STV Nord Est 11e/19e/20e Direction de la Voirie et des Déplacements","tel":"","mail":"razkallah.hilmi@paris.fr"}],"Département de la Seine-Saint-Denis":[{"nom":"Standard","role":"","service":"","tel":"01 43 93 65 00","mail":""},{"nom":"Standard","role":"","service":"","tel":"04 26 72 77 06","mail":""}],"COMMUNAUTE AGGLOMERATION PLAINE COMMUNE":[{"nom":"Standard","role":"","service":"","tel":"01 55 93 49 27","mail":""}],"DEA CD93 - Assainissement":[{"nom":"Abdel-hafid ZEKRI","role":"Responsable secteur","service":"Service Etudes et Travaux","tel":"06.09.73.28.39","mail":"ahzekri@seinesaintdenis.fr"},{"nom":"Diana DA MOTA DUARTE","role":"Cheffe du bureau études","service":"Service Etudes et Travaux","tel":"01.43.93.65.41 06.22.94.05.65","mail":"ddamotaduarte@seinesaintdenis.fr"},{"nom":"Tristan FALSE","role":"Chef du Bureau Exploitation du réseau","service":"Service Exploitation et de l'Entretien des Réseaux","tel":"01.43.93.67.20 07.78.86.04.97","mail":"tfalse@seinesaintdenis.fr"}],"REGIE PUBLIQUE DE L'EAU ET DE L'ASSAINISSEMENT D'EST ENSEMBLE":[{"nom":"Standard","role":"","service":"","tel":"04 26 72 77 06","mail":""}],"VEOLIA EAU FRANCILIANE":[{"nom":"Standard","role":"","service":"","tel":"09 69 36 99 00","mail":""}],"LUMEN":[{"nom":"Standard","role":"","service":"","tel":"01 73 19 07 10","mail":""}],"Sipartech":[{"nom":"Standard","role":"","service":"","tel":"08 00 69 56 95","mail":""}],"ALTITUDE INFRA EXPLOIT - ORANGE":[{"nom":"Standard","role":"","service":"","tel":"04 26 72 77 06","mail":""}],"CD 93 DVD":[{"nom":"Standard","role":"","service":"","tel":"04 26 72 77 06","mail":""}],"IELO-LIAZO":[{"nom":"Standard","role":"","service":"","tel":"09 70 30 66 18","mail":""}],"Communauté d'agglomeration plaine commune":[{"nom":"Standard","role":"","service":"","tel":"01 48 39 52 65","mail":""}],"Asteria":[{"nom":"Standard","role":"","service":"","tel":"01 48 11 37 50","mail":""}],"BOUYGUES TELECOM FIBRE":[{"nom":"Standard","role":"","service":"","tel":"01 46 01 87 82","mail":""}],"VERIZON":[{"nom":"Standard","role":"","service":"","tel":"01 70 73 70 21","mail":""}],"Ville d'Aubervilliers - Voirie / Emprise":[{"nom":"Salwa EL-KHOUSSI","role":"Cheffe de projet Mobilités actives","service":"DGA Dynamique de la ville","tel":"","mail":"salwa.el-khoussi@mairie-aubervilliers.fr"}],"DVD CD93 - Voirie / Arbre / Emprise":[{"nom":"Clémentine HAYAUX DU TILLY","role":"Ingénieure études et travaux","service":"Bureau Etudes et Travaux 2 - Service Etudes et Travaux - Voirie","tel":"01.43.93.95.46 06.23.36.40.60","mail":"chayauxdutilly@seinesaintdenis.fr"},{"nom":"Delphine CHATILLON","role":"","service":"","tel":"","mail":"dchatillon@seinesaintdenis.fr"},{"nom":"Ivan PHUNG","role":"","service":"","tel":"","mail":"iphung@seinesaintdenis.fr"},{"nom":"Lamine NIABALY","role":"Chef de service","service":"Bureau Maintenance et Exploitation - Service Territorial Nord","tel":"","mail":"lniabaly@seinesaintdenis.fr"},{"nom":"Nicolas FARCETTE","role":"Chef de bureau","service":"Service Etudes et Travaux - Voirie","tel":"","mail":"nfarcette@seinesaintdenis.fr"},{"nom":"Philippe KMIEC","role":"Responsable de secteur géographique Aubervilliers-Bobigny-Pantin (RD932-RD27)","service":"Bureau Maintenance et Exploitation Service Territorial Nord","tel":"01.43.93.98.60","mail":"pkmiec@seinesaintdenis.fr"},{"nom":"Secrétariat","role":"","service":"Bureau Maintenance et Exploitation","tel":"01.43.93.96.73","mail":""}],"Etablissement Public Territorial Est Ensemble":[{"nom":"Standard","role":"","service":"","tel":"04 26 72 77 06","mail":""}],"SATELEC":[{"nom":"Standard","role":"","service":"","tel":"04 26 72 77 06","mail":""}],"SATELEC - Eclairage EP":[{"nom":"?","role":"","service":"","tel":"","mail":""}],"EAU PUBLIQUE EST ENSEMBLE - Assainissement":[{"nom":"Benoit DUCROT","role":"Responsable de secteur","service":"Pôle Travaux","tel":"","mail":"benoit.ducrot@est-ensemble.fr"}],"EAU PUBLIQUE EST ENSEMBLE - Eau":[{"nom":"Benoit DUCROT","role":"Responsable de secteur","service":"Pôle Travaux","tel":"","mail":"benoit.ducrot@est-ensemble.fr"}],"Ville de Montreuil - Voirie et emprise":[{"nom":"Cyril POIGNET","role":"","service":"","tel":"","mail":"cyril.poignet@montreuil.fr"},{"nom":"Elise RATCLIFFE","role":"Cheffe de projet Espaces Publics","service":"Service Aménagement et Mobilité Durable Direction Espace public et Mobilité","tel":"01.48.70.65.41 06.03.96.67.52","mail":"elise.ratcliffe@montreuil.fr"},{"nom":"Essaid CHAOUCHE","role":"","service":"","tel":"","mail":"essaid.chaouche@montreuil.fr"},{"nom":"Goulven TURMEL","role":"","service":"","tel":"","mail":"goulven.turmel@montreuil.fr"},{"nom":"Jerome PILLON","role":"","service":"","tel":"","mail":"jerome.pillon@montreuil.fr"},{"nom":"Olivia SOMCHIT","role":"","service":"","tel":"","mail":"olivia.somchit@montreuil.fr"},{"nom":"Sebastien COUVILLERS","role":"Chef de service","service":"Service Aménagement et Mobilité Durable Direction Espace public et Mobilité","tel":"","mail":"sebastien.couvillers@montreuil.fr"},{"nom":"Secretariat DPSTP","role":"","service":"","tel":"","mail":"dpstp@montreuil.fr"},{"nom":"Secrétariat Permission de voirie","role":"","service":"","tel":"","mail":"permissionsdevoirie@montreuil.fr"},{"nom":"Secrétariat SGEP","role":"","service":"","tel":"","mail":"secretariatsgep@montreuil.fr"}]};
 // \u2500\u2500 Actions et contacts ajout\u00e9s dans l'application \u2500\u2500
 // CONC_ACTIONS : { 'nom du concessionnaire' : [{qui, date, texte, fait}] }
 // CONC_AJOUTS  : contacts saisis ici, en plus de ceux du fichier
 var CONC_ACTIONS = {};
 var CONC_AJOUTS  = {};
-var CONC_RESP = ['Concessionnaire','Astridsen','RATP','Autre'];
+var CONC_RESP = ['Concessionnaire','Astridsen','RATP','ENEDIS','Autre'];
+
+// ── Les commentaires du fichier portent déjà les actions ──────
+// Le fichier voirie écrit une action par ligne, précédée de son porteur :
+//   ALEXIS --> Envoyer l'accord mairie à l'AREMABT
+//   RATP   --> Attente signature de la convention par Paul
+//   ENEDIS --> Attente validation de la complétude des dossiers
+// « ALEXIS » est Astridsen. Les lignes « PI : » sont des informations, pas
+// des actions : on les laisse dans le commentaire.
+function concQuiDe(mot, nom){
+  var m=concCle(mot);
+  if(m==='ALEXIS'||m==='ASTRIDSEN') return 'Astridsen';
+  if(m==='RATP'||m==='PAUL') return 'RATP';
+  if(m==='ENEDIS') return 'ENEDIS';
+  if(m==='CONCESSIONNAIRE') return 'Concessionnaire';
+  // Le préfixe reprend souvent le nom du concessionnaire lui-même :
+  // ORANGE --> sur « Orange - Telecom », SFR --> sur « SFR - Fibre ».
+  var c=concCle(nom).replace(/ /g,''), mm=m.replace(/ /g,'');
+  if(c && mm && c.indexOf(mm)===0) return 'Concessionnaire';
+  return 'Autre';
+}
+function actionsDuCommentaire(txt, nom){
+  var out=[];
+  String(txt||'').split(/\r?\n/).forEach(function(ligne){
+    var m=ligne.match(/^\s*([^\n>:]{2,24}?)\s*-{1,3}>\s*(.+)$/);
+    if(!m) return;
+    var texte=m[2].trim();
+    if(!texte) return;
+    out.push({qui:concQuiDe(m[1], nom), texte:texte});
+  });
+  return out;
+}
+// Reprise dans les actions, sans doublon. Rejouable : une action déjà
+// présente, modifiée ou faite, n'est pas recréée.
+function reprendreActions(nom){
+  var s=concSuivi(nom), liste=concActions(nom), n=0;
+  actionsDuCommentaire(s.com, nom).forEach(function(a){
+    var deja=liste.some(function(x){ return String(x.texte||'').trim()===a.texte; });
+    if(deja) return;
+    liste.push({qui:a.qui, date:'', texte:a.texte, fait:false,
+                maj:s.date||'', src:'commentaire'});
+    n++;
+  });
+  return n;
+}
+function importerActionsCommentaires(){
+  if(MIGR.actionsCom) return 0;
+  var n=0;
+  Object.keys(CONC_SUIVI).forEach(function(nom){ n+=reprendreActions(nom); });
+  MIGR.actionsCom=true;
+  return n;
+}
 
 // Rapprochement souple : le fichier \u00e9crit \u00ab RATP Infrastructures \u00bb dans un
 // onglet et \u00ab RATP - Infrastructures \u00bb dans l'autre.
@@ -2923,18 +2982,50 @@ function concCle(nom){
 function concTrouve(source, nom){
   var c=concCle(nom);
   if(source[nom]) return source[nom];
-  var k=Object.keys(source).filter(function(x){ return concCle(x)===c; })[0];
+  var cles=Object.keys(source);
+  var k=cles.filter(function(x){ return concCle(x)===c; })[0];
   if(k) return source[k];
-  // Repli : le pr\u00e9fixe avant le tiret suffit souvent
-  var court=c.split(' ')[0];
-  k=Object.keys(source).filter(function(x){ return concCle(x).split(' ')[0]===court; })[0];
-  return k?source[k]:null;
+  // Repli par prefixe de mots : DALKIA rejoint DALKIA SIG IMAGE, PRIZZ rejoint
+  // PRIZZ INFRASTRUCTURE. On n'accepte QUE si un seul candidat correspond :
+  // l'ancien repli sur le premier mot collait les contacts du premier SFR
+  // venu a SFR Fibre, SFR Completel et SFR Telecom, qui sont distincts.
+  function prefixeDe(a,b){
+    return a===b || a.indexOf(b+' ')===0 || b.indexOf(a+' ')===0;
+  }
+  var cand=cles.filter(function(x){ return prefixeDe(concCle(x), c); });
+  return cand.length===1 ? source[cand[0]] : null;
 }
 function concSuivi(nom){ return concTrouve(CONC_SUIVI, nom) || {date:'', etat:'', com:''}; }
+function concGenerique(c){
+  var n=concCle((c||{}).nom);
+  return n==='STANDARD' || n.indexOf('ADRESSE')===0;
+}
 function concContacts(nom){
   var base=concTrouve(CONC_CONTACTS, nom) || [];
   var plus=CONC_AJOUTS[nom] || [];
-  return base.concat(plus);
+  // Tri et dedoublonnage a la lecture. Le fichier voirie repete les memes
+  // personnes sous chaque site : sans cela le meme nom revenait dix fois.
+  var vus={}, out=[];
+  base.concat(plus).forEach(function(c){
+    if(!c) return;
+    var s=concCle(c.nom)+'|'+String(c.tel||'').replace(/[^0-9]/g,'')
+         +'|'+String(c.mail||'').toLowerCase();
+    if(vus[s]) return;
+    vus[s]=1; out.push(c);
+  });
+  // Les personnes d'abord, par ordre alphabetique ; standards et adresses
+  // generiques a la fin.
+  out.sort(function(a,b){
+    var ga=concGenerique(a)?1:0, gb=concGenerique(b)?1:0;
+    if(ga!==gb) return ga-gb;
+    return concCle(a.nom).localeCompare(concCle(b.nom));
+  });
+  return out;
+}
+// Un numero par ligne : le fichier en met parfois deux, separes par un /
+function concTels(t){
+  return String(t||'').split(/[\/;]/).map(function(x){ return x.trim(); })
+    .filter(function(x){ return x.replace(/[^0-9]/g,'').length>=6; });
 }
 function concActions(nom){
   if(!CONC_ACTIONS[nom]) CONC_ACTIONS[nom]=[];
@@ -2982,6 +3073,25 @@ function mecaConcModal(cc){
         +'border:1px solid var(--b);font-size:10.5px;color:var(--t2);white-space:pre-wrap;line-height:1.5';
       zc.textContent=s.com;
       corps.appendChild(zc);
+      // Les lignes « ALEXIS --> … » du commentaire sont des actions. Celles
+      // qui ne figurent pas encore dans la liste peuvent être reprises.
+      var liste=concActions(nom);
+      var aRep=actionsDuCommentaire(s.com, nom).filter(function(x){
+        return !liste.some(function(y){ return String(y.texte||'').trim()===x.texte; });
+      });
+      if(aRep.length){
+        var br=document.createElement('button');
+        br.style.cssText='margin:0 15px 4px;border:1.5px solid #1D4ED8;background:#DBEAFE;'
+          +'color:#1D4ED8;border-radius:9px;padding:6px 11px;font-size:10.5px;font-weight:800;'
+          +'cursor:pointer;font-family:inherit';
+        br.textContent='↧ Reprendre '+aRep.length+' action'+(aRep.length>1?'s':'')+' de ce commentaire';
+        br.title=aRep.map(function(x){ return x.qui+' : '+x.texte; }).join('\n');
+        br.addEventListener('click',function(){
+          reprendreActions(nom); sbSave(); dessiner();
+          showToast(aRep.length+' action(s) reprise(s)');
+        });
+        corps.appendChild(br);
+      }
     }
 
     // \u2500\u2500 Actions \u2500\u2500
@@ -3093,7 +3203,10 @@ function mecaConcModal(cc){
           +[ct.role,ct.service].filter(Boolean).join(' \u00b7 ')+'</div>';
       }
       var liens=[];
-      if(ct.tel)  liens.push('<span style="color:var(--t2)">'+ct.tel+'</span>');
+      concTels(ct.tel).forEach(function(t){
+        liens.push('<a href="tel:'+t.replace(/[^0-9+]/g,'')+'" style="color:var(--t2);'
+          +'text-decoration:none;font-weight:700">'+t+'</a>');
+      });
       if(ct.mail) liens.push('<a href="mailto:'+ct.mail+'" style="color:var(--blue);text-decoration:none">'+ct.mail+'</a>');
       if(liens.length) h+='<div style="font-size:9.5px;margin-top:3px;line-height:1.5">'+liens.join(' \u00b7 ')+'</div>';
       r.innerHTML=h;
@@ -3456,6 +3569,18 @@ function sbLoad(){
         try{ rSvcBar(); rCpSelBar(); }catch(e){}
         syncIndic('\u2713','var(--green)','Synchronis\u00e9 \u2014 '+new Date().toLocaleTimeString('fr'));
         try{ histoAuto(); }catch(e){}
+        // Reprises de donnees, une fois l'etat partage en main.
+        try{
+          var nA=migrerAout26(), nC=0;
+          try{ nC=importerActionsCommentaires(); }catch(e2){ console.warn('actionsCom',e2); }
+          if(nA||nC){
+            SYNC_REV++; sbSave();
+            var msg=[];
+            if(nA) msg.push(nA+' UO déjà facturés datés d’août 26');
+            if(nC) msg.push(nC+' actions reprises des commentaires concessionnaires');
+            showToast(msg.join(' • '));
+          }
+        }catch(e){ console.warn('reprises',e); }
       } else {
         // Connecte, mais aucune ligne visible. On n'ecrase JAMAIS le serveur
         // tout seul : c'est ainsi qu'un jeu de demonstration partirait en
@@ -5135,7 +5260,7 @@ function celluleDateTache(t, apres){
   inp.type='text';
   inp.value = t.date ? (frToISO(t.date)?dFR(t.date):(dFR(t.date)||t.date)) : '';
   inp.placeholder='JJ/MM/AAAA';
-  inp.style.cssText=TACHE_ST_IN+';width:calc(100% - 20px);display:inline-block';
+  inp.style.cssText=TACHE_ST_IN+';width:calc(100% - 58px);display:inline-block';
   inp.title='Date de réalisation, ou un texte libre comme « À réaliser »';
   inp.addEventListener('focus',function(){ inp.style.borderColor='var(--b2)'; inp.style.background='var(--bg)'; });
   inp.addEventListener('mouseenter',function(){
@@ -5147,17 +5272,41 @@ function celluleDateTache(t, apres){
     var v=inp.value.trim(), iso=frToISO(v);
     if(iso) t.date=iso; else if(v) t.date=v; else delete t.date;
     sbSave();
+    try{ peindre(); }catch(e){}
     if(apres) apres();
   });
   td.appendChild(inp);
+  // Le sablier ne disait rien de l'etat de la tache et ne servait qu'a la
+  // rouvrir. A la place, un bouton qui montre l'etat et le change. Passer une
+  // tache en realisee demande sa date : sans date, elle reste ouverte.
   var b=document.createElement('button');
-  b.style.cssText='border:none;background:transparent;cursor:pointer;font-size:10px;padding:0 2px';
-  b.textContent='⏳';
-  b.title='Marquer « À réaliser »';
+  b.style.cssText='border:1px solid var(--b2);border-radius:6px;cursor:pointer;font-size:8.5px;'
+    +'font-weight:800;padding:2px 5px;font-family:inherit;white-space:nowrap;margin-left:2px';
+  function peindre(){
+    var faite=!tacheOuverte(t);
+    b.textContent = faite ? '✓ Fait' : '○ À faire';
+    b.style.background = faite ? '#D1FAE5' : 'var(--s2)';
+    b.style.color      = faite ? '#047857' : 'var(--t3)';
+    b.style.borderColor= faite ? '#047857' : 'var(--b2)';
+    b.title = faite ? 'Réalisée le '+dFR(t.date)+'\nCliquer pour la rouvrir'
+                    : 'Non réalisée\nCliquer pour la marquer réalisée et saisir la date';
+  }
   b.addEventListener('click',function(){
-    t.date='À réaliser'; inp.value='À réaliser'; sbSave();
-    if(apres) apres();
+    if(!tacheOuverte(t)){                      // realisee -> on la rouvre
+      t.date='À réaliser'; inp.value='À réaliser';
+      sbSave(); peindre(); if(apres) apres();
+      return;
+    }
+    var d=new Date();
+    var auj=String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear();
+    uiPrompt('Date de réalisation', auj, function(v){
+      var iso=frToISO(String(v||'').trim());
+      if(!iso){ uiAlert('Date attendue','Saisir la date au format JJ/MM/AAAA.\nLa tâche reste non réalisée.'); return; }
+      t.date=iso; inp.value=dFR(iso);
+      sbSave(); peindre(); if(apres) apres();
+    }, {message:'Quand cette tâche a-t-elle été réalisée ?', placeholder:'JJ/MM/AAAA', okLabel:'Marquer réalisée'});
   });
+  peindre();
   td.appendChild(b);
   return td;
 }
@@ -10935,6 +11084,30 @@ function setPrevUo(a,k,iso){
   if(iso) a.prev[k]=iso; else delete a.prev[k];
   if(a.prev && !Object.keys(a.prev).length) delete a.prev;
 }
+// ── Reprises de données, jouées une seule fois ────────────────
+// Le drapeau vit dans l'état partagé : la reprise ne se rejoue donc pas
+// d'un poste à l'autre, ni au rechargement.
+var MIGR = {};
+// Un UO facturé en entier ne pèse plus rien dans le prévisionnel : son mois
+// ne sert que d'historique. Steve les veut tous datés d'août 26.
+function migrerAout26(){
+  if(MIGR.aout26) return 0;
+  var n=0;
+  Object.keys(DATA).forEach(function(cp){
+    var svc=svcOf(cp);
+    (gAff(cp)||[]).forEach(function(a){
+      (UO_CAT[svc]||[]).forEach(function(u){
+        if(svc==='IRVE' && u.k.indexOf(irveProfil(a)+'_')!==0) return;
+        var f=0; try{ f=uoFacture(cp,a,u.k); }catch(e){ return; }
+        if(f<0.999) return;              // pas facturé en entier
+        if(prevUo(a,u.k)) return;        // un mois est déjà posé, on n'y touche pas
+        setPrevUo(a,u.k,'2026-08'); n++;
+      });
+    });
+  });
+  MIGR.aout26=true;
+  return n;
+}
 // Ancien décalage relatif, gardé en repli pour ne rien perdre
 function decalUo(a,k){ return ((a.decal||{})[k])||0; }
 function setDecalUo(a,k,v){
@@ -11903,7 +12076,7 @@ function rFactu(){
     selMois.appendChild(om);
   }
   var onc2=document.createElement('option');
-  onc2.value=PREV_NC; onc2.textContent='Date indéterminée';
+  onc2.value=PREV_NC; onc2.textContent='—  non compté';
   selMois.appendChild(onc2);
   selMois.value=FA_MOIS||'';
   selMois.title='N’afficher que les affaires dont un UO se facture ce mois-là';
@@ -12152,7 +12325,7 @@ function rFactu(){
       }catch(e){}
       selsDate.forEach(function(x){
         var au=neuf[x.cle];
-        x.sel.options[0].textContent = (au===undefined) ? '\u2014' : moisLabel(au);
+        x.sel.options[0].textContent = (au===undefined) ? '\u2014' : 'auto \u00b7 '+moisLabel(au);
         var v=x.sel.value;
         if(!v){ x.sel.style.color='var(--t3)'; x.sel.style.fontWeight='600';
                 x.sel.style.borderStyle='dashed'; x.sel.style.background='var(--bg)'; }
@@ -12173,11 +12346,13 @@ function rFactu(){
       var auto=calc[cleP];
       var o0=document.createElement('option');
       o0.value='';
-      o0.textContent = (auto===undefined) ? '\u2014' : moisLabel(auto);
+      // Le libelle disait seulement le mois calcule : rien ne montrait qu'on
+      // pouvait revenir dessus. Il annonce maintenant qu'il s'agit du calcul.
+      o0.textContent = (auto===undefined) ? '\u2014' : 'auto \u00b7 '+moisLabel(auto);
       sd.appendChild(o0);
-      // Date inconnue : l'UO sort du pr\u00e9visionnel sans dispara\u00eetre du tableau
+      // Le tiret : l'UO reste au tableau mais sort du previsionnel.
       var onc=document.createElement('option');
-      onc.value=PREV_NC; onc.textContent='Date ind\u00e9termin\u00e9e';
+      onc.value=PREV_NC; onc.textContent='\u2014  non compt\u00e9';
       sd.appendChild(onc);
       // Les mois pass\u00e9s servent \u00e0 dater un UO d\u00e9j\u00e0 factur\u00e9
       for(var mp=PREV_RETRO; mp<0; mp++){
@@ -15716,8 +15891,11 @@ function boutonIdees(){
     b.style.opacity = on?'1':'.6';
     b.style.borderColor = on?'var(--brand)':'var(--b2)';
     b.style.color = on?'var(--brand)':'var(--t3)';
+    // En vue ordinateur le libelle reste affiche : le bouton occupe la place
+    // d'une ligne de texte au pied de la colonne des onglets.
+    var desktop=(document.documentElement.getAttribute('data-layout')==='desktop');
     var t=document.getElementById('idees-txt');
-    if(t) t.style.display = on?'inline':'none';
+    if(t) t.style.display = (on||desktop)?'inline':'none';
   }
   b.addEventListener('mouseenter',function(){ ouvrir(true); });
   b.addEventListener('mouseleave',function(){ ouvrir(false); });
@@ -15727,19 +15905,25 @@ function boutonIdees(){
   // latérale, qui ne disait rien d'utile. Sinon il se cale sur le bord
   // gauche de l'application, centrée quand la fenêtre est large.
   var pied=document.querySelector('.dt-foot');
+  var colonne=document.querySelector('aside');
+  // On se cale sur la COLONNE DES ONGLETS, pas sur son pied : une fois le pied
+  // masque sa largeur tombe a zero et le bouton repartait sur le bord de la
+  // zone centrale. La colonne, elle, garde sa taille.
   function caler(){
     var desktop=(document.documentElement.getAttribute('data-layout')==='desktop');
     if(pied) pied.style.display = desktop ? 'none' : '';
-    if(desktop && pied){
-      var rp=pied.getBoundingClientRect();
-      if(rp.width){
-        b.style.left=Math.round(rp.left+8)+'px';
-        b.style.bottom=Math.round(window.innerHeight-rp.bottom+6)+'px';
-        return;
-      }
+    var txt=document.getElementById('idees-txt');
+    if(txt) txt.style.display = desktop ? 'inline' : 'none';
+    var cible = desktop ? (colonne||app) : app;
+    var r=cible.getBoundingClientRect();
+    if(r.width){
+      b.style.left=Math.round(r.left+8)+'px';
+      b.style.bottom=Math.round(Math.max(8, window.innerHeight-r.bottom+8))+'px';
+      b.style.maxWidth=Math.round(Math.max(60, r.width-16))+'px';
+      return;
     }
-    var r=app.getBoundingClientRect();
-    b.style.left=Math.round(r.left+8)+'px';
+    var ra=app.getBoundingClientRect();
+    b.style.left=Math.round(ra.left+8)+'px';
     b.style.bottom='60px';
   }
   caler();
@@ -19377,7 +19561,7 @@ window.addEventListener('beforeunload', function(e){
 // On ne recharge jamais de force, une saisie en cours serait perdue :
 // on propose, la personne choisit son moment.
 // ══════════════════════════════════════════════════════════════
-var APP_VERSION='2026-09-05-1';
+var APP_VERSION='2026-09-05-2';
 var MAJ_VUE=false;
 function bandeauMaj(v){
   if(MAJ_VUE || document.getElementById('maj-banner')) return;
