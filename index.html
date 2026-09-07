@@ -1167,7 +1167,7 @@ function sbHeaders(){
 // Serialize full app state to JSON
 function serializeState(){
   return JSON.stringify({
-    DATA:DATA,AVC:AVC,DXP:DXP,COMMENTS:COMMENTS,ENGAGE_HIST:ENGAGE_HIST,PERIM:PERIM,CHARGE_CAP:CHARGE_CAP,CAP_SVC:CAP_SVC,DUREE_SVC:DUREE_SVC,UO_PARAMS:UO_PARAMS,CAP_HEURES:CAP_HEURES,IRVE_TACHES:IRVE_TACHES,TACHES_PREV:TACHES_PREV,MARCHE_MONTANT:MARCHE_MONTANT,AFFECT_PREV:AFFECT_PREV,FACTU_HIST:FACTU_HIST,REF_MDP:REF_MDP,UO_PRIX:UO_PRIX,IRVE_PRIX:IRVE_PRIX,TACHE_MONTANT:TACHE_MONTANT,COUT_MENSUEL:COUT_MENSUEL,MECA_PRIX:MECA_UOS.map(function(u){return u.prix;}),AFFECT_FIN:AFFECT_FIN,TAUX_ACTIVITE:TAUX_ACTIVITE,SVC_CUR:SVC_CUR,TIME_LOG:TIME_LOG,TJM:TJM,HISTO_SEM:HISTO_SEM,SKILLS:SKILLS,ECARTS:ECARTS,COMP_REFS:COMP_REFS,FORMATIONS:FORMATIONS,IDEES:IDEES,COMP_REQ_PAR_ENTITE:COMP_REQ_PAR_ENTITE,CONC_ACTIONS:CONC_ACTIONS,CONC_AJOUTS:CONC_AJOUTS,MIGR:MIGR,TACHES_PREV_CP:TACHES_PREV_CP,CONC_RESEAU:CONC_RESEAU,
+    DATA:DATA,AVC:AVC,DXP:DXP,COMMENTS:COMMENTS,ENGAGE_HIST:ENGAGE_HIST,PERIM:PERIM,CHARGE_CAP:CHARGE_CAP,CAP_SVC:CAP_SVC,DUREE_SVC:DUREE_SVC,UO_PARAMS:UO_PARAMS,CAP_HEURES:CAP_HEURES,IRVE_TACHES:IRVE_TACHES,TACHES_PREV:TACHES_PREV,MARCHE_MONTANT:MARCHE_MONTANT,AFFECT_PREV:AFFECT_PREV,FACTU_HIST:FACTU_HIST,REF_MDP:REF_MDP,UO_PRIX:UO_PRIX,IRVE_PRIX:IRVE_PRIX,TACHE_MONTANT:TACHE_MONTANT,COUT_MENSUEL:COUT_MENSUEL,MECA_PRIX:MECA_UOS.map(function(u){return u.prix;}),AFFECT_FIN:AFFECT_FIN,TAUX_ACTIVITE:TAUX_ACTIVITE,SVC_CUR:SVC_CUR,TIME_LOG:TIME_LOG,TJM:TJM,HISTO_SEM:HISTO_SEM,SKILLS:SKILLS,ECARTS:ECARTS,COMP_REFS:COMP_REFS,FORMATIONS:FORMATIONS,IDEES:IDEES,COMP_REQ_PAR_ENTITE:COMP_REQ_PAR_ENTITE,CONC_ACTIONS:CONC_ACTIONS,CONC_AJOUTS:CONC_AJOUTS,MIGR:MIGR,GEN_PARAMS:GEN_PARAMS,GEN_HISTO:GEN_HISTO,TACHES_PREV_CP:TACHES_PREV_CP,CONC_RESEAU:CONC_RESEAU,
     LINKS_DATA:LINKS_DATA,
     MAIL_DATA:MAIL_DATA,
     HISTORY:HISTORY,
@@ -1248,6 +1248,10 @@ function applyState(json){
     if(s.CONC_AJOUTS){ Object.keys(CONC_AJOUTS).forEach(function(k){delete CONC_AJOUTS[k];});
       Object.keys(s.CONC_AJOUTS).forEach(function(k){CONC_AJOUTS[k]=s.CONC_AJOUTS[k];}); }
     if(s.MIGR) Object.keys(s.MIGR).forEach(function(k){MIGR[k]=s.MIGR[k];});
+    if(s.GEN_PARAMS) Object.keys(s.GEN_PARAMS).forEach(function(k){
+      GEN_PARAMS[k]=Object.assign(GEN_PARAMS[k]||{}, s.GEN_PARAMS[k]); });
+    if(Array.isArray(s.GEN_HISTO)){ GEN_HISTO.length=0;
+      s.GEN_HISTO.forEach(function(x){ GEN_HISTO.push(x); }); }
     if(s.TACHES_PREV_CP){ Object.keys(TACHES_PREV_CP).forEach(function(k){delete TACHES_PREV_CP[k];});
       Object.keys(s.TACHES_PREV_CP).forEach(function(k){TACHES_PREV_CP[k]=s.TACHES_PREV_CP[k];}); }
     if(s.CONC_RESEAU) Object.keys(s.CONC_RESEAU).forEach(function(k){CONC_RESEAU[k]=s.CONC_RESEAU[k];});
@@ -18122,6 +18126,782 @@ function boBadge(doc){
   return s;
 }
 
+// ══════════════════════════════════════════════════════════════
+// MOTEUR DE GÉNÉRATION DOCUMENTAIRE
+//
+// Un .docx est un ZIP qui contient du XML. On ne reconstruit RIEN : on
+// substitue des chaînes dans word/document.xml et on écrase les images de
+// word/media. La mise en page, les styles, les signets et les images du
+// modèle restent donc strictement identiques.
+//
+// Tout se passe dans le navigateur, sans serveur. Les fichiers déposés ne
+// vivent qu'en mémoire ; seuls les paramètres et l'historique des lots
+// partent dans l'état partagé.
+// ══════════════════════════════════════════════════════════════
+
+// Chargement d'une bibliothèque à la demande. On ne les charge pas au
+// démarrage : elles ne servent qu'à ce module.
+var LIBS_CHARGEES = {};
+function chargerScript(url){
+  if(LIBS_CHARGEES[url]) return LIBS_CHARGEES[url];
+  LIBS_CHARGEES[url]=new Promise(function(ok, non){
+    var s=document.createElement('script');
+    s.src=url; s.async=true;
+    s.onload=function(){ ok(true); };
+    s.onerror=function(){ delete LIBS_CHARGEES[url]; non(new Error('Chargement impossible : '+url)); };
+    document.head.appendChild(s);
+  });
+  return LIBS_CHARGEES[url];
+}
+var LIB_JSZIP='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+var LIB_XLSX ='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+function libsGen(){
+  return Promise.all([chargerScript(LIB_JSZIP), chargerScript(LIB_XLSX)]);
+}
+
+// ── Lecture du .docx ──────────────────────────────────────────
+function docxOuvrir(buffer){
+  return JSZip.loadAsync(buffer).then(function(zip){
+    return zip.file('word/document.xml').async('string').then(function(xml){
+      return {zip:zip, xml:xml};
+    });
+  });
+}
+// Jetons {{NOM}} présents, avec leur nombre d'occurrences
+function docxJetons(xml){
+  var m=String(xml).match(/\{\{[A-Z0-9_]+\}\}/g)||[];
+  var n={};
+  m.forEach(function(x){ var k=x.slice(2,-2); n[k]=(n[k]||0)+1; });
+  return n;
+}
+// Substitution. Renvoie le XML et le compte par jeton, pour le journal.
+function docxSubstituer(xml, valeurs){
+  var faits={}, manquants=[];
+  Object.keys(valeurs).forEach(function(k){
+    var jeton='{{'+k+'}}';
+    var avant=xml.split(jeton).length-1;
+    if(!avant){ return; }
+    xml=xml.split(jeton).join(xmlEchap(String(valeurs[k]===undefined?'':valeurs[k])));
+    faits[k]=avant;
+  });
+  (Object.keys(docxJetons(xml))).forEach(function(k){ manquants.push(k); });
+  return {xml:xml, faits:faits, restants:manquants};
+}
+function xmlEchap(s){
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── Défauts connus du modèle Enedis ───────────────────────────
+// Le modèle fourni est déjà corrigé. On ne corrige donc pas d'office : on
+// détecte, on alerte, et la correction reste une option. Le jour où Enedis
+// livre une nouvelle version brute, elle sera là.
+function docxDefauts(xml){
+  var d=[];
+  if(!xml) return d;
+  var nTbl=(xml.match(/<w:tblpPr[^>]*w:vertAnchor="page"/g)||[]).length;
+  if(nTbl) d.push({k:'flottant', n:nTbl,
+    l:nTbl+' tableau(x) d’en-tête ancré(s) à la page — ils chevauchent le tableau suivant (pages 5 et 12)'});
+  // Le symbole ET le libellé doivent être dans le MÊME run. Sans le garde
+  // sur </w:r>, la sonde franchissait la frontière et signalait comme
+  // défectueux un document qui venait justement d'être corrigé.
+  var nSym=(xml.match(/<w:r>(?:(?!<\/w:r>)[\s\S])*?<w:sym w:font="Wingdings"(?:(?!<\/w:r>)[\s\S])*?<w:t[^>]*>/g)||[]).length;
+  if(nSym) d.push({k:'wingdings', n:nSym,
+    l:nSym+' run(s) mêlant une case Wingdings et son libellé — le texte s’affiche en symboles (pages 3 et 10)'});
+  return d;
+}
+function docxCorriger(xml, opts){
+  opts=opts||{};
+  var n={flottant:0, wingdings:0, doc:0};
+  if(opts.flottant!==false){
+    xml=xml.replace(/<w:tblpPr[^>]*w:vertAnchor="page"[^>]*\/>/g, function(){ n.flottant++; return ''; });
+  }
+  if(opts.wingdings!==false){
+    // Un run qui porte à la fois le symbole et le texte est scindé en deux
+    // runs partageant le même <w:rPr>.
+    xml=xml.replace(/<w:r>((?:(?!<\/w:r>)[\s\S])*?)<\/w:r>/g, function(tout, corps){
+      if(corps.indexOf('<w:sym w:font="Wingdings"')<0) return tout;
+      if(corps.indexOf('<w:t')<0) return tout;
+      var rpr=(corps.match(/<w:rPr>[\s\S]*?<\/w:rPr>/)||[''])[0];
+      var sym=(corps.match(/<w:sym[^>]*\/>/)||[''])[0];
+      var txt=corps.substring(corps.indexOf('<w:t'));
+      n.wingdings++;
+      return '<w:r>'+rpr+sym+'</w:r><w:r>'+rpr+txt+'</w:r>';
+    });
+  }
+  return {xml:xml, n:n};
+}
+
+// ── Images ────────────────────────────────────────────────────
+// Taille réelle d'un PNG, lue dans l'en-tête IHDR.
+function pngTaille(buf){
+  var v=new DataView(buf);
+  if(v.getUint32(0)!==0x89504E47) return null;
+  return {w:v.getUint32(16), h:v.getUint32(20)};
+}
+// Le cadre de la page 12 : largeur 332,2 pt, hauteur totale 240 pt au plus.
+// Au-delà, le bloc bascule sur la page suivante et laisse la page vide.
+var APS_MAX_W=332.2, APS_MAX_H=240;
+function apsDimensions(tailles, parPage){
+  // Une seule image, ou une par page : chacune occupe le cadre entier.
+  if(parPage || tailles.length===1){
+    return tailles.map(function(t){
+      var w=APS_MAX_W, h=w*t.h/t.w;
+      if(h>APS_MAX_H){ h=APS_MAX_H; w=h*t.w/t.h; }
+      return {w:Math.round(w*10)/10, h:Math.round(h*10)/10};
+    });
+  }
+  // Empilées : une largeur commune telle que la somme des hauteurs tienne.
+  var somme=tailles.reduce(function(s,t){ return s+t.h/t.w; },0);
+  var w=Math.min(APS_MAX_W, APS_MAX_H/somme);
+  return tailles.map(function(t){
+    return {w:Math.round(w*10)/10, h:Math.round(w*t.h/t.w*10)/10};
+  });
+}
+
+// Écrase l'image de remplacement et empile les suivantes dans le même cadre.
+function docxImages(zip, xml, images, parPage){
+  if(!images || !images.length) return xml;
+  var dims=apsDimensions(images.map(function(i){ return i.taille; }), parPage);
+  // La première remplace word/media/image4.png
+  zip.file('word/media/image4.png', images[0].buffer);
+  var forme=xml.match(/<v:shape[^>]*>[\s\S]*?<\/v:shape>/);
+  if(!forme) return xml;
+  var base=forme[0];
+  function dimensionner(s, d){
+    return s.replace(/width:[0-9.]+pt/,'width:'+d.w+'pt')
+            .replace(/height:[0-9.]+pt/,'height:'+d.h+'pt');
+  }
+  var sortie=dimensionner(base, dims[0]);
+  // Les suivantes : un fichier, une relation et une forme de plus
+  for(var i=1;i<images.length;i++){
+    var nom='image_aps_'+i+'.png';
+    zip.file('word/media/'+nom, images[i].buffer);
+    var rid='rIdAps'+i;
+    var suite=dimensionner(base, dims[i])
+      .replace(/r:id="[^"]*"/, 'r:id="'+rid+'"')
+      .replace(/ id="[^"]*"/, ' id="apsShape'+i+'"')
+      .replace(/o:spid="[^"]*"/, 'o:spid="_x0000_s99'+(90+i)+'"');
+    sortie += '<w:br/>'+suite;
+    zip.__relsAps=(zip.__relsAps||[]);
+    zip.__relsAps.push({id:rid, cible:'media/'+nom});
+  }
+  return xml.replace(base, sortie);
+}
+function docxRelations(zip){
+  var liste=zip.__relsAps||[];
+  if(!liste.length) return Promise.resolve();
+  return zip.file('word/_rels/document.xml.rels').async('string').then(function(r){
+    var ajout=liste.map(function(x){
+      return '<Relationship Id="'+x.id+'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="'+x.cible+'"/>';
+    }).join('');
+    zip.file('word/_rels/document.xml.rels', r.replace('</Relationships>', ajout+'</Relationships>'));
+    delete zip.__relsAps;
+  });
+}
+
+// ── Contrôle de non-régression ────────────────────────────────
+// Le document produit doit avoir le même nombre de paragraphes que le
+// modèle, hors suppressions volontaires, et ne plus porter aucun jeton.
+function docxControle(xmlModele, xmlSortie, suppressionsPrevues){
+  var pM=(xmlModele.match(/<w:p[ >]/g)||[]).length;
+  var pS=(xmlSortie.match(/<w:p[ >]/g)||[]).length;
+  var restants=Object.keys(docxJetons(xmlSortie));
+  var ecart=pM-pS-(suppressionsPrevues||0);
+  return {
+    paragraphesModele:pM, paragraphesSortie:pS, ecart:ecart,
+    jetonsRestants:restants,
+    ok:(ecart===0 && !restants.length)
+  };
+}
+
+// ══════════════════════════════════════════════════════════════
+// RÈGLES MÉTIER DU PPS
+// ══════════════════════════════════════════════════════════════
+// Validité du plan : début + 6 mois, en ramenant au dernier jour du mois
+// quand le jour n'existe pas (31/08 + 6 mois = 28/02, jamais 31/02).
+function moisPlus(iso, n){
+  var m=String(iso||'').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if(!m) return '';
+  var an=+m[1], mo=+m[2]-1, jo=+m[3];
+  var cible=new Date(an, mo+n, 1);
+  var dernier=new Date(cible.getFullYear(), cible.getMonth()+1, 0).getDate();
+  cible.setDate(Math.min(jo, dernier));
+  return cible.getFullYear()+'-'+String(cible.getMonth()+1).padStart(2,'0')
+         +'-'+String(cible.getDate()).padStart(2,'0');
+}
+// Une date lue dans un tableur : nombre de série Excel, Date, ou texte
+function dateSouple(v){
+  if(v===null || v===undefined || v==='') return '';
+  if(v instanceof Date && !isNaN(v))
+    return v.getFullYear()+'-'+String(v.getMonth()+1).padStart(2,'0')
+           +'-'+String(v.getDate()).padStart(2,'0');
+  if(typeof v==='number' && v>20000 && v<80000){
+    var d=new Date(Date.UTC(1899,11,30)+v*86400000);
+    return d.getUTCFullYear()+'-'+String(d.getUTCMonth()+1).padStart(2,'0')
+           +'-'+String(d.getUTCDate()).padStart(2,'0');
+  }
+  var s=String(v).trim();
+  var f=frToISO(s);
+  if(f) return f;
+  return /^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(0,10) : '';
+}
+
+var GEN_PARAMS = {
+  PPS:{
+    redacteur:'Amira ABID',
+    dateRedaction:'2026-08-12',
+    signataireEnedis:'Amira ABID',
+    interlocuteur:'Amira ABID',
+    telInterlocuteur:'06.64.17.80.58',
+    mailInterlocuteur:'amira.abid@enedis.fr',
+    qualiteEE:'Conducteur travaux',
+    validiteMois:6,
+    texteInconnu:'à définir',
+    page3:'supprimer',        // 'supprimer' ou 'conserver'
+    capturesParPage:false,
+    corrigerModele:false,     // le modèle fourni est déjà corrigé
+    raisons:{'SPIE':'SPIE CITY NETWORK'}
+  }
+};
+var GEN_HISTO = [];   // lots générés : {q, date, module, n, affaires}
+
+// Libellés du tableur → jetons du modèle
+var PPS_CHAMPS = [
+  {lib:/n.?\s*d.?affaire|^affaire$/i,            jeton:'N_AFFAIRE'},
+  {lib:/^commune/i,                              jeton:'COMMUNE'},
+  {lib:/adresse/i,                               jeton:'ADRESSE', maj:true},
+  {lib:/entreprise/i,                            jeton:'ENTREPRISE', raison:true},
+  {lib:/n.?\s*de\s*commande|^commande/i,         jeton:'N_COMMANDE'},
+  {lib:/ecc/i,                                   jeton:'N_ECC'},
+  {lib:/d.?but.*travaux/i,                       jeton:'DATE_DEBUT', date:true},
+  {lib:/fin.*travaux/i,                          jeton:'DATE_FIN', date:true},
+  {lib:/charg.?\s*d.?affaires?/i,                jeton:'CHARGE_AFFAIRES'},
+  {lib:/ma.?tre\s*d.?.?uvre|moe/i,               jeton:'MAITRE_OEUVRE'},
+  {lib:/participant.*inspection|nom.*participant/i, jeton:'PARTICIPANT_INSPECTION'},
+  {lib:/fonction.*participant/i,                 jeton:'FONCTION_PARTICIPANT'}
+];
+
+// Une ligne du tableur devient le jeu de valeurs d'un document
+function ppsValeurs(ligne, p){
+  var v={};
+  Object.keys(ligne).forEach(function(k){ v[k]=ligne[k]; });
+  // Raison sociale : nom court → raison sociale du modèle
+  var ent=String(v.ENTREPRISE||'').trim();
+  Object.keys(p.raisons).forEach(function(court){
+    if(ent.toUpperCase()===court.toUpperCase()) ent=p.raisons[court];
+  });
+  v.ENTREPRISE=ent;
+  v.ADRESSE=String(v.ADRESSE||'').toUpperCase();
+  var deb=v.DATE_DEBUT||'';
+  v.VALIDITE_DEBUT = deb ? dFR(deb) : '';
+  v.VALIDITE_FIN   = deb ? dFR(moisPlus(deb, p.validiteMois)) : '';
+  v.DATE_MEO       = deb ? dFR(deb) : '';
+  v.DATE_DEBUT     = deb ? dFR(deb) : '';
+  v.DATE_FIN       = v.DATE_FIN ? dFR(v.DATE_FIN) : '';
+  // Dates encore inconnues à la rédaction
+  v.DATE_REUNION_PREALABLE = p.texteInconnu;
+  v.DATE_INSPECTION        = p.texteInconnu;
+  // Paramètres du module
+  v.REDACTEUR             = p.redacteur;
+  v.DATE_REDACTION        = dFR(p.dateRedaction);
+  v.SIGNATAIRE_ENEDIS     = p.signataireEnedis;
+  v.INTERLOCUTEUR_ENEDIS  = p.interlocuteur;
+  v.TEL_INTERLOCUTEUR     = p.telInterlocuteur;
+  v.MAIL_INTERLOCUTEUR    = p.mailInterlocuteur;
+  // Côté entreprise extérieure, la qualité seule : les conducteurs changent
+  // en cours d'affaire, le nom serait faux dès la semaine suivante.
+  v.QUALITE_REPRESENTANT_EE = p.qualiteEE;
+  return v;
+}
+
+// Statut d'une affaire dans le tableau de contrôle
+function ppsStatut(l, captures){
+  var cmd=String(l.N_COMMANDE||'').trim();
+  if(!/^\d+$/.test(cmd)) return {k:'cmd', l:'En attente de commande', c:'#B45309', bg:'#FEF3C7'};
+  if(!(captures[l.N_AFFAIRE]||[]).length) return {k:'aps', l:'Capture manquante', c:'#B91C1C', bg:'#FEE2E2'};
+  return {k:'ok', l:'Prêt', c:'#047857', bg:'#D1FAE5'};
+}
+
+
+// ══════════════════════════════════════════════════════════════
+// ÉCRAN DES MODULES DE GÉNÉRATION
+// Trois modules, une seule mécanique : dépôt des données, tableau de
+// contrôle, génération du lot, ZIP. Ils ne diffèrent que par le modèle
+// Word et le mapping des champs.
+// ══════════════════════════════════════════════════════════════
+var GEN_ETAT = {};    // en mémoire seulement : fichiers déposés, lignes lues
+
+// Les modèles vivent à côté de l'application, dans le dossier modeles/ du
+// dépôt. On les charge à l'ouverture ; à défaut, l'utilisateur en dépose un.
+var GEN_MODELES = {
+  PPS:{fichier:'modeles/Modele_PPS_RADAR_tokenise.docx',
+       prefixe:'Plan_de_prevention_PRESTA_INT_-_',
+       feuille:'PPS', champs:PPS_CHAMPS, aps:true},
+  DIE_AVENANT:{fichier:'modeles/Modele_avenant_DIE.docx',
+       prefixe:'Demande_avenant_DIE_-_', feuille:null, champs:[], aps:false},
+  FDO:{fichier:'modeles/Modele_FDO.docx',
+       prefixe:'FDO_-_', feuille:null, champs:[], aps:false}
+};
+
+function genEtat(cle){
+  if(!GEN_ETAT[cle]) GEN_ETAT[cle]={lignes:[], captures:{}, modele:null,
+                                    nomModele:'', journal:[], sel:{}};
+  return GEN_ETAT[cle];
+}
+function genParams(cle){
+  if(!GEN_PARAMS[cle]) GEN_PARAMS[cle]=JSON.parse(JSON.stringify(GEN_PARAMS.PPS));
+  return GEN_PARAMS[cle];
+}
+
+// Lecture du tableur : feuille en COLONNES, la colonne A porte les libellés
+// et chaque colonne suivante est une affaire.
+function genLireTableur(buffer, cfg){
+  var wb=XLSX.read(buffer, {type:'array', cellDates:true});
+  var nom=cfg.feuille && wb.Sheets[cfg.feuille] ? cfg.feuille : wb.SheetNames[0];
+  var grille=XLSX.utils.sheet_to_json(wb.Sheets[nom], {header:1, raw:true, defval:''});
+  var lignes=[], nCol=0;
+  grille.forEach(function(r){ nCol=Math.max(nCol, r.length); });
+  for(var c=1;c<nCol;c++){
+    var l={}, vide=true;
+    grille.forEach(function(r){
+      var lib=String(r[0]||'').trim();
+      if(!lib) return;
+      var val=r[c];
+      if(val===undefined) val='';
+      var ch=cfg.champs.filter(function(x){ return x.lib.test(lib); })[0];
+      if(!ch) return;
+      var v=ch.date ? dateSouple(val) : String(val===null?'':val).trim();
+      if(v) vide=false;
+      l[ch.jeton]=v;
+    });
+    if(!vide && (l.N_AFFAIRE||'').length) lignes.push(l);
+  }
+  return {feuille:nom, lignes:lignes};
+}
+
+// Les captures sont nommées {N° affaire}.png, avec un suffixe optionnel
+// quand une affaire en compte plusieurs.
+function genRangerCapture(etat, nom, buffer){
+  var base=String(nom).replace(/^.*[\\\/]/,'').replace(/\.png$/i,'');
+  var aff=base.replace(/_[A-Za-z0-9]+$/,'');
+  var cle=(etat.lignes.filter(function(l){ return l.N_AFFAIRE===base; })[0]) ? base : aff;
+  if(!etat.captures[cle]) etat.captures[cle]=[];
+  etat.captures[cle].push({nom:base, buffer:buffer, taille:pngTaille(buffer)});
+  etat.captures[cle].sort(function(a,b){ return a.nom.localeCompare(b.nom); });
+}
+
+function renderGenModule(el, cle){
+  var doc=BO_DOCS[cle]||{}, cfg=GEN_MODELES[cle]||{}, etat=genEtat(cle), p=genParams(cle);
+  el.innerHTML='';
+
+  var hdr=document.createElement('div');
+  hdr.style.cssText='display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap';
+  var back=document.createElement('button');
+  back.style.cssText='background:var(--s2);border:1px solid var(--b);border-radius:6px;padding:4px 9px;'
+    +'font-size:10px;font-weight:700;cursor:pointer;font-family:inherit';
+  back.textContent='← Retour';
+  back.addEventListener('click',function(){ BO_DOC=null; rBO(); });
+  var tit=document.createElement('div'); tit.style.flex='1';
+  tit.innerHTML='<div style="font-size:14px;font-weight:800">'+(doc.icon||'📄')+' '+(doc.label||cle)
+    +' — génération en lot</div>'
+    +'<div style="font-size:10px;color:var(--t3)">'+(doc.desc||'')+'</div>';
+  hdr.appendChild(back); hdr.appendChild(tit); hdr.appendChild(boBadge(doc));
+  el.appendChild(hdr);
+
+  var zone=document.createElement('div'); el.appendChild(zone);
+
+  function info(txt, coul, fond){
+    var d=document.createElement('div');
+    d.style.cssText='margin-bottom:9px;padding:8px 11px;border-radius:8px;font-size:10.5px;'
+      +'font-weight:700;line-height:1.5;background:'+(fond||'var(--s2)')+';color:'+(coul||'var(--t2)')
+      +';border:1px solid '+(coul||'var(--b)')+'44';
+    d.innerHTML=txt;
+    return d;
+  }
+
+  // ── Dépôts ──────────────────────────────────────────────────
+  function boiteDepot(titre, aide, accept, multiple, onFichiers){
+    var b=document.createElement('label');
+    b.style.cssText='display:block;border:1.5px dashed var(--b2);border-radius:10px;padding:10px 12px;'
+      +'margin-bottom:7px;cursor:pointer;background:var(--s)';
+    b.innerHTML='<div style="font-size:11px;font-weight:800;color:var(--t2)">'+titre+'</div>'
+      +'<div style="font-size:9.5px;color:var(--t3);margin-top:2px">'+aide+'</div>';
+    var inp=document.createElement('input');
+    inp.type='file'; inp.accept=accept; inp.multiple=!!multiple;
+    inp.style.display='none';
+    inp.addEventListener('change',function(){ onFichiers([].slice.call(inp.files)); });
+    b.appendChild(inp);
+    b.addEventListener('dragover',function(e){ e.preventDefault(); b.style.borderColor='var(--blue)'; });
+    b.addEventListener('dragleave',function(){ b.style.borderColor='var(--b2)'; });
+    b.addEventListener('drop',function(e){
+      e.preventDefault(); b.style.borderColor='var(--b2)';
+      onFichiers([].slice.call(e.dataTransfer.files));
+    });
+    return b;
+  }
+
+  function lireFichier(f){
+    return new Promise(function(ok){
+      var r=new FileReader();
+      r.onload=function(){ ok(r.result); };
+      r.readAsArrayBuffer(f);
+    });
+  }
+
+  function dessiner(){
+    zone.innerHTML='';
+
+    // Modèle
+    if(!etat.modele){
+      zone.appendChild(info('Le modèle Word n’est pas encore chargé. '
+        +'Il est cherché dans <b>'+(cfg.fichier||'modeles/…')+'</b>, à côté de l’application. '
+        +'Dépose-le ci-dessous, ou pousse-le dans le dépôt pour qu’il soit là pour tout le monde.',
+        '#B45309','#FEF3C7'));
+    } else {
+      var jt=docxJetons(etat.modele.xml);
+      var nj=Object.keys(jt).length;
+      var def=docxDefauts(etat.modele.xml);
+      zone.appendChild(info('Modèle chargé : <b>'+etat.nomModele+'</b> — '+nj+' jeton(s), '
+        +(etat.modele.xml.match(/<w:p[ >]/g)||[]).length+' paragraphes.'
+        +(def.length?'<br><span style="color:#B91C1C">⚠ '+def.map(function(d){ return d.l; }).join('<br>⚠ ')
+          +'</span>':''), def.length?'#B91C1C':'#047857', def.length?'#FEE2E2':'#D1FAE5'));
+    }
+
+    zone.appendChild(boiteDepot('📄 Modèle Word (.docx)',
+      etat.nomModele||'Facultatif si le modèle est déjà dans le dépôt', '.docx', false,
+      function(fs){
+        if(!fs.length) return;
+        libsGen().then(function(){ return lireFichier(fs[0]); }).then(function(buf){
+          return docxOuvrir(buf).then(function(m){ m.__buf=buf; return m; });
+        }).then(function(m){
+          etat.modele={brut:m.__buf, zip:m.zip, xml:m.xml};
+          etat.nomModele=fs[0].name; dessiner();
+        }).catch(function(e){ uiAlert('Modèle illisible', String(e.message||e)); });
+      }));
+
+    zone.appendChild(boiteDepot('📊 Tableur de suivi (.xlsx)',
+      etat.lignes.length ? (etat.lignes.length+' affaire(s) lue(s)')
+        : 'Feuille « '+(cfg.feuille||'première feuille')+' », libellés en colonne A, une colonne par affaire',
+      '.xlsx,.xls', false,
+      function(fs){
+        if(!fs.length) return;
+        libsGen().then(function(){ return lireFichier(fs[0]); }).then(function(buf){
+          var r=genLireTableur(buf, cfg);
+          etat.lignes=r.lignes;
+          etat.sel={};
+          etat.lignes.forEach(function(l){ etat.sel[l.N_AFFAIRE]=true; });
+          showToast(r.lignes.length+' affaire(s) lue(s) dans la feuille '+r.feuille);
+          dessiner();
+        }).catch(function(e){ uiAlert('Tableur illisible', String(e.message||e)); });
+      }));
+
+    if(cfg.aps){
+      var nAps=Object.keys(etat.captures).reduce(function(s,k){ return s+etat.captures[k].length; },0);
+      zone.appendChild(boiteDepot('🖼 Captures APS (.png)',
+        nAps ? (nAps+' capture(s) pour '+Object.keys(etat.captures).length+' affaire(s)')
+             : 'Nommées {N° affaire}.png, suffixe libre quand il y en a plusieurs',
+        '.png', true,
+        function(fs){
+          Promise.all(fs.map(function(f){
+            return lireFichier(f).then(function(buf){ genRangerCapture(etat, f.name, buf); });
+          })).then(dessiner);
+        }));
+    }
+
+    // ── Paramètres ────────────────────────────────────────────
+    var pan=document.createElement('details');
+    pan.style.cssText='border:1px solid var(--b);border-radius:9px;padding:0;margin:9px 0;background:var(--s)';
+    var som=document.createElement('summary');
+    som.style.cssText='padding:8px 11px;font-size:10.5px;font-weight:800;cursor:pointer;color:var(--t2)';
+    som.textContent='⚙ Paramètres du module';
+    pan.appendChild(som);
+    var corps=document.createElement('div');
+    corps.style.cssText='padding:4px 11px 10px;display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:8px';
+    function champ(lab, val, onSet, type){
+      var d=document.createElement('div');
+      var x=document.createElement('div');
+      x.style.cssText='font-size:9px;font-weight:700;color:var(--t3);margin-bottom:2px';
+      x.textContent=lab; d.appendChild(x);
+      var i=document.createElement('input');
+      i.type=type||'text'; i.value=val;
+      i.style.cssText='width:100%;border:1px solid var(--b2);border-radius:6px;padding:4px 7px;'
+        +'font-size:11px;background:var(--bg);color:var(--t);font-family:inherit;box-sizing:border-box';
+      i.addEventListener('change',function(){ onSet(i.value); sbSave(); });
+      d.appendChild(i); corps.appendChild(d);
+      return i;
+    }
+    champ('Rédacteur du plan', p.redacteur, function(v){ p.redacteur=v; });
+    champ('Date de signature', p.dateRedaction, function(v){ p.dateRedaction=v; }, 'date');
+    champ('Interlocuteur Enedis', p.interlocuteur, function(v){ p.interlocuteur=v; p.signataireEnedis=v; });
+    champ('Téléphone', p.telInterlocuteur, function(v){ p.telInterlocuteur=v; });
+    champ('Adresse mail', p.mailInterlocuteur, function(v){ p.mailInterlocuteur=v; });
+    champ('Qualité représentant EE', p.qualiteEE, function(v){ p.qualiteEE=v; });
+    champ('Validité du plan (mois)', p.validiteMois, function(v){ p.validiteMois=+v||6; }, 'number');
+    champ('Texte des dates inconnues', p.texteInconnu, function(v){ p.texteInconnu=v; });
+    function coche(lab, val, onSet, aide){
+      var l=document.createElement('label');
+      l.style.cssText='display:flex;align-items:center;gap:6px;font-size:10px;font-weight:700;'
+        +'color:var(--t2);cursor:pointer;grid-column:1/-1';
+      var c=document.createElement('input'); c.type='checkbox'; c.checked=!!val;
+      c.style.cssText='width:14px;height:14px;cursor:pointer';
+      c.addEventListener('change',function(){ onSet(c.checked); sbSave(); dessiner(); });
+      l.appendChild(c); l.appendChild(document.createTextNode(lab));
+      if(aide) l.title=aide;
+      corps.appendChild(l);
+    }
+    coche('Une capture par page plutôt qu’empilées', p.capturesParPage, function(v){ p.capturesParPage=v; },
+      'Deux captures empilées tombent à 5,8 cm de large, les annotations deviennent illisibles.');
+    coche('Conserver la liste du Dossier des Ouvrages Construits (page 3)',
+      p.page3==='conserver', function(v){ p.page3=v?'conserver':'supprimer'; });
+    coche('Corriger les défauts du modèle avant substitution',
+      p.corrigerModele, function(v){ p.corrigerModele=v; },
+      'Le modèle fourni est déjà corrigé. À cocher si Enedis livre une version brute.');
+    // Raisons sociales
+    var rs=document.createElement('div');
+    rs.style.cssText='grid-column:1/-1';
+    var rl=document.createElement('div');
+    rl.style.cssText='font-size:9px;font-weight:700;color:var(--t3);margin-bottom:2px';
+    rl.textContent='Raisons sociales — un couple par ligne, nom court = raison sociale';
+    var ra=document.createElement('textarea');
+    ra.value=Object.keys(p.raisons).map(function(k){ return k+' = '+p.raisons[k]; }).join('\n');
+    ra.style.cssText='width:100%;min-height:52px;border:1px solid var(--b2);border-radius:6px;'
+      +'padding:5px 7px;font-size:11px;background:var(--bg);color:var(--t);font-family:inherit;box-sizing:border-box';
+    ra.addEventListener('change',function(){
+      var m={};
+      ra.value.split(/\n/).forEach(function(l){
+        var x=l.split('='); if(x.length<2) return;
+        var k=x[0].trim(); if(k) m[k]=x.slice(1).join('=').trim();
+      });
+      p.raisons=m; sbSave(); dessiner();
+    });
+    rs.appendChild(rl); rs.appendChild(ra); corps.appendChild(rs);
+    pan.appendChild(corps);
+    zone.appendChild(pan);
+
+    // ── Tableau de contrôle ───────────────────────────────────
+    if(!etat.lignes.length){
+      zone.appendChild(info('Dépose le tableur de suivi pour voir la liste des affaires.', 'var(--t3)'));
+      return;
+    }
+    var stats={ok:0, cmd:0, aps:0};
+    var tbl=document.createElement('table');
+    tbl.style.cssText='width:100%;border-collapse:collapse;font-size:10px;margin-top:4px';
+    var th=document.createElement('thead');
+    var trh=document.createElement('tr');
+    ['','N° affaire','Commune','Adresse','Entreprise','Commande','APS','Statut'].forEach(function(t){
+      var c=document.createElement('th');
+      c.style.cssText='text-align:left;padding:5px 6px;font-size:8.5px;font-weight:800;'
+        +'text-transform:uppercase;letter-spacing:.05em;color:var(--t3);border-bottom:1.5px solid var(--b)';
+      c.textContent=t; trh.appendChild(c);
+    });
+    th.appendChild(trh); tbl.appendChild(th);
+    var tb=document.createElement('tbody');
+    etat.lignes.forEach(function(l){
+      var st=ppsStatut(l, etat.captures);
+      stats[st.k]++;
+      if(st.k!=='ok') etat.sel[l.N_AFFAIRE]=false;
+      var tr=document.createElement('tr');
+      tr.style.borderBottom='1px solid var(--b)';
+      var tc=document.createElement('td'); tc.style.padding='4px 6px';
+      var cb=document.createElement('input'); cb.type='checkbox';
+      cb.checked=!!etat.sel[l.N_AFFAIRE];
+      cb.disabled=(st.k!=='ok');
+      cb.style.cssText='width:13px;height:13px;cursor:'+(st.k==='ok'?'pointer':'not-allowed');
+      cb.addEventListener('change',function(){ etat.sel[l.N_AFFAIRE]=cb.checked; majBouton(); });
+      tc.appendChild(cb); tr.appendChild(tc);
+      [l.N_AFFAIRE, l.COMMUNE, l.ADRESSE, l.ENTREPRISE, l.N_COMMANDE].forEach(function(v,i){
+        var c=document.createElement('td');
+        c.style.cssText='padding:4px 6px;color:var(--t2);max-width:150px;overflow:hidden;'
+          +'text-overflow:ellipsis;white-space:nowrap'+(i===0?';font-weight:800;color:var(--t)':'');
+        c.textContent=v||'—'; c.title=v||''; tr.appendChild(c);
+      });
+      var ca=document.createElement('td'); ca.style.cssText='padding:4px 6px';
+      var caps=etat.captures[l.N_AFFAIRE]||[];
+      if(caps.length){
+        var img=document.createElement('img');
+        try{ img.src=URL.createObjectURL(new Blob([caps[0].buffer],{type:'image/png'})); }catch(e){}
+        img.style.cssText='height:26px;border-radius:3px;border:1px solid var(--b);vertical-align:middle';
+        img.title=caps.map(function(c){ return c.nom; }).join('\n');
+        ca.appendChild(img);
+        if(caps.length>1){
+          var n=document.createElement('span');
+          n.style.cssText='font-size:8px;font-weight:900;margin-left:3px;color:var(--t3)';
+          n.textContent='×'+caps.length; ca.appendChild(n);
+        }
+      } else { ca.textContent='—'; ca.style.color='var(--b2)'; }
+      tr.appendChild(ca);
+      var ts=document.createElement('td'); ts.style.cssText='padding:4px 6px';
+      var sp=document.createElement('span');
+      sp.style.cssText='font-size:8.5px;font-weight:800;padding:2px 7px;border-radius:5px;'
+        +'background:'+st.bg+';color:'+st.c+';white-space:nowrap';
+      sp.textContent=st.l; ts.appendChild(sp); tr.appendChild(ts);
+      tb.appendChild(tr);
+    });
+    tbl.appendChild(tb);
+    var wrap=document.createElement('div');
+    wrap.style.cssText='overflow-x:auto;border:1px solid var(--b);border-radius:9px;background:var(--s)';
+    wrap.appendChild(tbl);
+    zone.appendChild(wrap);
+
+    var res=document.createElement('div');
+    res.style.cssText='display:flex;gap:8px;flex-wrap:wrap;margin:8px 0';
+    [['Prêt',stats.ok,'#047857','#D1FAE5'],
+     ['En attente de commande',stats.cmd,'#B45309','#FEF3C7'],
+     ['Capture manquante',stats.aps,'#B91C1C','#FEE2E2']].forEach(function(x){
+      if(!x[1]) return;
+      var s=document.createElement('span');
+      s.style.cssText='font-size:9.5px;font-weight:800;padding:3px 9px;border-radius:7px;background:'
+        +x[3]+';color:'+x[2];
+      s.textContent=x[0]+' · '+x[1];
+      res.appendChild(s);
+    });
+    zone.appendChild(res);
+
+    // ── Génération ────────────────────────────────────────────
+    var bar=document.createElement('div');
+    bar.style.cssText='display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:8px';
+    var bGen=document.createElement('button');
+    bGen.style.cssText='border:none;background:var(--blue);color:#fff;border-radius:9px;padding:7px 16px;'
+      +'font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit';
+    var prog=document.createElement('span');
+    prog.style.cssText='font-size:10px;color:var(--t3);font-weight:700';
+    function nSel(){ return etat.lignes.filter(function(l){ return etat.sel[l.N_AFFAIRE]; }).length; }
+    function majBouton(){
+      var n=nSel();
+      bGen.textContent='Générer la sélection ('+n+')';
+      bGen.disabled=!n || !etat.modele;
+      bGen.style.opacity=(!n||!etat.modele)?'.5':'1';
+      bGen.style.cursor=(!n||!etat.modele)?'not-allowed':'pointer';
+    }
+    majBouton();
+    bGen.addEventListener('click',function(){ lancer(prog, majBouton); });
+    bar.appendChild(bGen); bar.appendChild(prog);
+    zone.appendChild(bar);
+
+    // ── Journal ───────────────────────────────────────────────
+    if(etat.journal.length){
+      var jd=document.createElement('details');
+      jd.open=true;
+      jd.style.cssText='border:1px solid var(--b);border-radius:9px;background:var(--s);margin-bottom:8px';
+      var js=document.createElement('summary');
+      js.style.cssText='padding:7px 11px;font-size:10.5px;font-weight:800;cursor:pointer;color:var(--t2)';
+      js.textContent='📋 Journal de génération — '+etat.journal.length+' ligne(s)';
+      jd.appendChild(js);
+      var jc=document.createElement('div');
+      jc.style.cssText='padding:0 11px 9px;max-height:220px;overflow-y:auto;font-size:9.5px;line-height:1.6';
+      etat.journal.forEach(function(x){
+        var d=document.createElement('div');
+        d.style.color = x.err ? 'var(--red)' : 'var(--t2)';
+        d.textContent=(x.err?'⚠ ':'· ')+x.txt;
+        jc.appendChild(d);
+      });
+      jd.appendChild(jc); zone.appendChild(jd);
+    }
+
+    // ── Historique des lots ───────────────────────────────────
+    var lots=GEN_HISTO.filter(function(h){ return h.module===cle; }).slice(-8).reverse();
+    if(lots.length){
+      var hd=document.createElement('div');
+      hd.style.cssText='font-size:8.5px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;'
+        +'color:var(--t3);margin:6px 0 4px';
+      hd.textContent='Derniers lots générés';
+      zone.appendChild(hd);
+      lots.forEach(function(h){
+        var d=document.createElement('div');
+        d.style.cssText='font-size:9.5px;color:var(--t3);padding:2px 0';
+        d.textContent=dFR(h.date)+' · '+h.q+' · '+h.n+' document(s)';
+        d.title=(h.affaires||[]).join('\n');
+        zone.appendChild(d);
+      });
+    }
+  }
+
+  // ── Le lot ──────────────────────────────────────────────────
+  // Une copie fraîche du modèle par affaire : on ne réutilise jamais un ZIP
+  // déjà modifié, sinon les images de l'affaire précédente resteraient.
+  function genererUn(zipLot, l){
+    return JSZip.loadAsync(etat.modele.brut).then(function(zip){
+      var xml=etat.modele.xml;
+      if(p.corrigerModele){
+        var c=docxCorriger(xml, {});
+        xml=c.xml;
+        etat.journal.push({txt:l.N_AFFAIRE+' : modèle corrigé — '+c.n.flottant
+          +' ancrage(s) retiré(s), '+c.n.wingdings+' run(s) scindé(s)'});
+      }
+      var caps=etat.captures[l.N_AFFAIRE]||[];
+      if(cfg.aps){
+        if(!caps.length) throw new Error('capture APS absente, document non généré');
+        xml=docxImages(zip, xml, caps, p.capturesParPage);
+      }
+      var s=docxSubstituer(xml, ppsValeurs(l, p));
+      var ctrl=docxControle(etat.modele.xml, s.xml, 0);
+      var nSub=Object.keys(s.faits).reduce(function(a,k){ return a+s.faits[k]; },0);
+      etat.journal.push({txt:l.N_AFFAIRE+' : '+nSub+' substitution(s) sur '
+        +Object.keys(s.faits).length+' jeton(s), '+caps.length+' capture(s)'});
+      if(s.restants.length)
+        etat.journal.push({err:true, txt:l.N_AFFAIRE
+          +' : jeton(s) resté(s) sans valeur — '+s.restants.join(', ')});
+      if(ctrl.ecart!==0)
+        etat.journal.push({err:true, txt:l.N_AFFAIRE+' : écart de '+ctrl.ecart
+          +' paragraphe(s) avec le modèle'});
+      zip.file('word/document.xml', s.xml);
+      return docxRelations(zip)
+        .then(function(){ return zip.generateAsync({type:'uint8array'}); })
+        .then(function(bin){ zipLot.file(cfg.prefixe+l.N_AFFAIRE+'.docx', bin); });
+    });
+  }
+
+  function lancer(prog){
+    var choisies=etat.lignes.filter(function(l){ return etat.sel[l.N_AFFAIRE]; });
+    if(!choisies.length || !etat.modele) return;
+    etat.journal=[];
+    var zipLot=new JSZip(), i=0;
+    function suite(){
+      if(i>=choisies.length){
+        prog.textContent='Compression…';
+        return zipLot.generateAsync({type:'blob'}).then(function(blob){
+          var nom=cle+'_'+dISO()+'.zip';
+          var a=document.createElement('a');
+          a.href=URL.createObjectURL(blob); a.download=nom; a.click();
+          setTimeout(function(){ URL.revokeObjectURL(a.href); }, 4000);
+          GEN_HISTO.push({date:dISO(), q:USER_INI||'?', module:cle,
+            n:choisies.length, affaires:choisies.map(function(x){ return x.N_AFFAIRE; })});
+          if(GEN_HISTO.length>50) GEN_HISTO.splice(0, GEN_HISTO.length-50);
+          sbSave();
+          prog.textContent=choisies.length+' document(s) — '+nom;
+          showToast(choisies.length+' document(s) générés');
+          dessiner();
+        });
+      }
+      var l=choisies[i]; i++;
+      prog.textContent='Génération '+i+' / '+choisies.length+' — '+l.N_AFFAIRE;
+      return genererUn(zipLot, l).then(suite).catch(function(e){
+        etat.journal.push({err:true, txt:l.N_AFFAIRE+' : '+(e.message||e)});
+        return suite();
+      });
+    }
+    prog.textContent='Préparation…';
+    suite();
+  }
+
+  // Chargement du modèle rangé à côté de l'application, puis premier rendu
+  dessiner();
+  if(!etat.modele && cfg.fichier){
+    libsGen()
+      .then(function(){ return fetch(cfg.fichier, {cache:'no-store'}); })
+      .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.arrayBuffer(); })
+      .then(function(buf){
+        return docxOuvrir(buf).then(function(m){
+          etat.modele={brut:buf, zip:m.zip, xml:m.xml};
+          etat.nomModele=cfg.fichier.replace(/^.*\//,'')+' (dépôt)';
+          dessiner();
+        });
+      })
+      .catch(function(){ /* absent du dépôt : l'utilisateur le déposera */ });
+  }
+}
+
+
 
 // ══ MAIL TOOLS ══════════════════════════════════════════════
 
@@ -18653,6 +19433,8 @@ function rBO(){
   if(BO_DOC==='PMEO'){renderPMEO(el,BO_AFF);return;}
   if(BO_DOC==='DMR_EXT'){renderDMR(el,BO_AFF,'EXT');return;}
   if(BO_DOC==='DMR_INT'){renderDMR(el,BO_AFF,'INT');return;}
+  // Les trois modules IRVE passent par le moteur de génération en lot
+  if(GEN_MODELES[BO_DOC]){renderGenModule(el,BO_DOC);return;}
   if(BO_DOC==='REGARD'){
     var devBan=document.createElement('div');
     devBan.style.cssText='background:#FFF3CD;border:1px solid #FFCA2C;border-radius:7px;padding:6px 10px;font-size:10px;font-weight:700;color:#856404;margin-bottom:8px;text-align:center';
@@ -20080,7 +20862,7 @@ window.addEventListener('beforeunload', function(e){
 // On ne recharge jamais de force, une saisie en cours serait perdue :
 // on propose, la personne choisit son moment.
 // ══════════════════════════════════════════════════════════════
-var APP_VERSION='2026-09-07-1';
+var APP_VERSION='2026-09-07-2';
 var MAJ_VUE=false;
 function bandeauMaj(v){
   if(MAJ_VUE || document.getElementById('maj-banner')) return;
