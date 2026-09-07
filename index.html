@@ -1167,7 +1167,7 @@ function sbHeaders(){
 // Serialize full app state to JSON
 function serializeState(){
   return JSON.stringify({
-    DATA:DATA,AVC:AVC,DXP:DXP,COMMENTS:COMMENTS,ENGAGE_HIST:ENGAGE_HIST,PERIM:PERIM,CHARGE_CAP:CHARGE_CAP,CAP_SVC:CAP_SVC,DUREE_SVC:DUREE_SVC,UO_PARAMS:UO_PARAMS,CAP_HEURES:CAP_HEURES,IRVE_TACHES:IRVE_TACHES,TACHES_PREV:TACHES_PREV,MARCHE_MONTANT:MARCHE_MONTANT,AFFECT_PREV:AFFECT_PREV,FACTU_HIST:FACTU_HIST,REF_MDP:REF_MDP,UO_PRIX:UO_PRIX,IRVE_PRIX:IRVE_PRIX,TACHE_MONTANT:TACHE_MONTANT,COUT_MENSUEL:COUT_MENSUEL,MECA_PRIX:MECA_UOS.map(function(u){return u.prix;}),AFFECT_FIN:AFFECT_FIN,TAUX_ACTIVITE:TAUX_ACTIVITE,SVC_CUR:SVC_CUR,TIME_LOG:TIME_LOG,TJM:TJM,HISTO_SEM:HISTO_SEM,SKILLS:SKILLS,ECARTS:ECARTS,COMP_REFS:COMP_REFS,FORMATIONS:FORMATIONS,IDEES:IDEES,COMP_REQ_PAR_ENTITE:COMP_REQ_PAR_ENTITE,CONC_ACTIONS:CONC_ACTIONS,CONC_AJOUTS:CONC_AJOUTS,MIGR:MIGR,GEN_PARAMS:GEN_PARAMS,GEN_HISTO:GEN_HISTO,TACHES_PREV_CP:TACHES_PREV_CP,CONC_RESEAU:CONC_RESEAU,
+    DATA:DATA,AVC:AVC,DXP:DXP,COMMENTS:COMMENTS,ENGAGE_HIST:ENGAGE_HIST,PERIM:PERIM,CHARGE_CAP:CHARGE_CAP,CAP_SVC:CAP_SVC,DUREE_SVC:DUREE_SVC,UO_PARAMS:UO_PARAMS,CAP_HEURES:CAP_HEURES,IRVE_TACHES:IRVE_TACHES,TACHES_PREV:TACHES_PREV,MARCHE_MONTANT:MARCHE_MONTANT,AFFECT_PREV:AFFECT_PREV,FACTU_HIST:FACTU_HIST,REF_MDP:REF_MDP,UO_PRIX:UO_PRIX,IRVE_PRIX:IRVE_PRIX,TACHE_MONTANT:TACHE_MONTANT,COUT_MENSUEL:COUT_MENSUEL,MECA_PRIX:MECA_UOS.map(function(u){return u.prix;}),AFFECT_FIN:AFFECT_FIN,TAUX_ACTIVITE:TAUX_ACTIVITE,SVC_CUR:SVC_CUR,TIME_LOG:TIME_LOG,TJM:TJM,HISTO_SEM:HISTO_SEM,SKILLS:SKILLS,ECARTS:ECARTS,COMP_REFS:COMP_REFS,FORMATIONS:FORMATIONS,IDEES:IDEES,COMP_REQ_PAR_ENTITE:COMP_REQ_PAR_ENTITE,CONC_ACTIONS:CONC_ACTIONS,CONC_AJOUTS:CONC_AJOUTS,MIGR:MIGR,AFFECT_MOIS:AFFECT_MOIS,GEN_PARAMS:GEN_PARAMS,GEN_HISTO:GEN_HISTO,TACHES_PREV_CP:TACHES_PREV_CP,CONC_RESEAU:CONC_RESEAU,
     LINKS_DATA:LINKS_DATA,
     MAIL_DATA:MAIL_DATA,
     HISTORY:HISTORY,
@@ -1248,6 +1248,8 @@ function applyState(json){
     if(s.CONC_AJOUTS){ Object.keys(CONC_AJOUTS).forEach(function(k){delete CONC_AJOUTS[k];});
       Object.keys(s.CONC_AJOUTS).forEach(function(k){CONC_AJOUTS[k]=s.CONC_AJOUTS[k];}); }
     if(s.MIGR) Object.keys(s.MIGR).forEach(function(k){MIGR[k]=s.MIGR[k];});
+    if(s.AFFECT_MOIS){ Object.keys(AFFECT_MOIS).forEach(function(k){delete AFFECT_MOIS[k];});
+      Object.keys(s.AFFECT_MOIS).forEach(function(k){AFFECT_MOIS[k]=s.AFFECT_MOIS[k];}); }
     if(s.GEN_PARAMS) Object.keys(s.GEN_PARAMS).forEach(function(k){
       GEN_PARAMS[k]=Object.assign(GEN_PARAMS[k]||{}, s.GEN_PARAMS[k]); });
     if(Array.isArray(s.GEN_HISTO)){ GEN_HISTO.length=0;
@@ -1891,9 +1893,20 @@ var SVC_CUR = (function(){ try{ return localStorage.getItem('radar_svc')||'ARMA'
 // dossier ni UO. Mélangées à l'IRVE dans le prévisionnel, on ne voyait plus
 // ce qui venait des dossiers et ce qui venait du back-office. Elles ont donc
 // leur propre ligne, qui n'est pas un périmètre à part entière.
+// Vert plus clair que l'IRVE : les deux se lisent ensemble dans la pile, et
+// on distingue quand même le back-office des dossiers.
 var SVC_BO = {k:'IRVE_BO', l:'IRVE back-office', court:'IRVE BO',
-              fg:'#7C3AED', bg:'#EDE9FE', bo:true};
-function seriesPrev(){ return SERVICES.concat([SVC_BO]); }
+              fg:'#10B981', bg:'#ECFDF5', bo:true};
+// IRVE BO se range JUSTE APRÈS l'IRVE, pas en fin de liste.
+function seriesPrev(){
+  var out=[];
+  SERVICES.forEach(function(s){
+    out.push(s);
+    if(s.k==='IRVE') out.push(SVC_BO);
+  });
+  if(out.indexOf(SVC_BO)<0) out.push(SVC_BO);
+  return out;
+}
 function serieInfo(k){ return k===SVC_BO.k ? SVC_BO : svcInfo(k); }
 
 function svcOf(cp){
@@ -1930,13 +1943,16 @@ function setService(k){
   AG_PHASE_FILTER='all';   // le filtre de phase est propre à chaque service
   try{ localStorage.setItem('radar_svc',k); }catch(e){}
   var list=cpsOfSvc(k);
+  SVC_VIDE=false;
   if(list.length && list.indexOf(CCP)<0){
-    // On change de perimetre, pas de personne. Le portefeuille suit donc le
-    // charge de projet affiche. Sans cela, passer de ARMA a IRVE depuis le
-    // profil d'Alexis basculait sur le premier portefeuille declare, Paul.
+    // On change de perimetre, PAS de personne. Le portefeuille suit donc le
+    // charge de projet affiche. Et quand cette personne n'a rien sur le
+    // perimetre demande, on reste sur elle avec une liste vide : basculer sur
+    // quelqu'un d'autre etait le pire des deux choix.
     var ini=(DATA[CCP]||{}).ini||'';
     var sien=list.filter(function(cp){ return (DATA[cp]||{}).ini===ini; });
-    CCP = sien.length ? sien[0] : list[0];
+    if(sien.length) CCP=sien[0];
+    else SVC_VIDE=true;          // on garde CCP, la vue sera vide
   }
   CP_SEL=null;
   buildTabs(); renderAll();
@@ -1959,8 +1975,7 @@ function rSvcBar(){
   // du perimetre courant : sur RATP, ou il n'y en a qu'un, elle etait fausse et
   // les compteurs repartaient sur TOUS les portefeuilles, d'ou ARMA 96 alors
   // qu'Alexis n'en porte que 16.
-  var vus=selCps();
-  var iniSel = (vus.length===1) ? ((DATA[vus[0]]||{}).ini||null) : null;
+  var iniSel = iniAffiche();
   SERVICES.forEach(function(s){
     var liste=cpsOfSvc(s.k);
     var retenus = iniSel
@@ -2395,14 +2410,29 @@ function agRenderLegendIrve(affs){
 // SÉLECTION MULTIPLE DE PORTEFEUILLES (onglet Affaires)
 // ══════════════════════════════════════════════════════════════
 var CP_SEL = null;   // null => portefeuille courant seul
+// Vrai quand la personne affichée n'a aucun portefeuille sur le périmètre
+// choisi. On reste sur elle, la vue est simplement vide.
+var SVC_VIDE = false;
 
 function selCps(){
   var list=cpsOfSvc(SVC_CUR);
+  // La personne affichée n'a rien sur ce périmètre : on montre une liste
+  // vide plutôt que de basculer sur quelqu'un d'autre sans prévenir.
+  if(SVC_VIDE && list.indexOf(CCP)<0) return [];
   if(!CP_SEL || !CP_SEL.length) return list.indexOf(CCP)>=0?[CCP]:(list.length?[list[0]]:[]);
   var ok=CP_SEL.filter(function(cp){ return list.indexOf(cp)>=0; });
   return ok.length?ok:(list.length?[list[0]]:[]);
 }
 function isMulti(){ return selCps().length>1; }
+// La personne actuellement affichée, même quand elle n'a aucun portefeuille
+// sur le périmètre choisi : les compteurs et les KPI doivent rester sur elle
+// plutôt que de repartir sur tout le monde.
+function iniAffiche(){
+  var vus=selCps();
+  if(vus.length===1) return (DATA[vus[0]]||{}).ini||null;
+  if(SVC_VIDE && DATA[CCP]) return DATA[CCP].ini||null;
+  return null;
+}
 
 // Affaires des portefeuilles sélectionnés, avec leur portefeuille d'origine
 function selAffaires(){
@@ -2454,7 +2484,7 @@ function rDtCpSel(){
     }
     b.addEventListener('click',function(){
       if(cpIci){
-        CP_SEL=[cpIci]; CCP=cpIci;
+        CP_SEL=[cpIci]; CCP=cpIci; SVC_VIDE=false;
         buildTabs(); rDtCpSel();
         try{ rSvcBar(); }catch(e){}
         // Le TDB suit la même personne
@@ -3473,9 +3503,77 @@ var SYNC_DEVICE = (function(){
 
 function syncIndic(txt,color,title){
   var i=document.getElementById('sync-indicator');
-  if(!i) return;
-  i.textContent=txt; i.style.color=color; i.title=title||'';
+  if(i){ i.textContent=txt; i.style.color=color; i.title=title||''; }
+  try{ majBadgeSync(); }catch(e){}
 }
+
+// ══════════════════════════════════════════════════════════════
+// BADGE D'ENREGISTREMENT
+// Le témoin d'origine était un caractère de huit pixels dans un coin :
+// personne ne le regardait, et des saisies sont parties à la poubelle sans
+// que quiconque s'en aperçoive. Celui-ci dit en toutes lettres si le travail
+// est sur le serveur, et se met en rouge tant qu'il n'y est pas.
+// ══════════════════════════════════════════════════════════════
+var SYNC_DERNIER=0;        // horodatage de la dernière écriture réussie
+var BADGE_SYNC=null;
+function badgeSync(){
+  if(BADGE_SYNC && BADGE_SYNC.parentNode) return BADGE_SYNC;
+  var b=document.createElement('div');
+  b.id='badge-sync';
+  b.style.cssText='position:fixed;right:10px;bottom:10px;z-index:9100;display:inline-flex;'
+    +'align-items:center;gap:6px;padding:5px 10px;border-radius:999px;font-size:10.5px;'
+    +'font-weight:800;font-family:inherit;cursor:pointer;border:1.5px solid;'
+    +'box-shadow:0 2px 10px rgba(0,0,0,.14);transition:background .2s,color .2s';
+  b.addEventListener('click',function(){
+    if(syncModifie() || SYNC_ECHEC){ SYNC_REV++; sbSaveNow(); showToast('Enregistrement lancé'); }
+    else etatSyncModal();
+  });
+  document.body.appendChild(b);
+  BADGE_SYNC=b;
+  return b;
+}
+function majBadgeSync(){
+  var b=badgeSync();
+  var enAttente=(typeof syncModifie==='function') ? syncModifie() : false;
+  var quand = SYNC_DERNIER ? new Date(SYNC_DERNIER).toLocaleTimeString('fr').slice(0,5) : null;
+  var etat, fond, trait, texte, titre;
+  if(SYNC_ECHEC){
+    etat='✗'; fond='#FEE2E2'; trait='#B91C1C'; texte='NON enregistré';
+    titre='Le serveur a refusé vos dernières saisies.\nCliquer pour réessayer.\n'
+      +'Si cela persiste, exportez vos données depuis Référent puis Administration.';
+  } else if(!SB_TOKEN){
+    etat='…'; fond='var(--s2)'; trait='var(--b2)'; texte='hors session';
+    titre='Session non ouverte : rien ne part sur le serveur.';
+  } else if(SYNC_BUSY){
+    etat='⟳'; fond='#FEF3C7'; trait='#B45309'; texte='enregistrement…';
+    titre='Écriture en cours.';
+  } else if(enAttente){
+    etat='●'; fond='#FEF3C7'; trait='#B45309'; texte='à enregistrer';
+    titre='Des saisies attendent le serveur.\nCliquer pour les envoyer tout de suite.';
+  } else {
+    etat='✓'; fond='#D1FAE5'; trait='#047857';
+    texte='enregistré'+(quand?' '+quand:'');
+    titre='Tout est sur le serveur'+(quand?', dernière écriture à '+quand:'')+'.\n'
+      +'Cliquer pour voir le détail.';
+  }
+  b.style.background=fond; b.style.color=trait; b.style.borderColor=trait;
+  b.textContent=etat+' '+texte;
+  b.title=titre;
+}
+// Détail, pour comprendre sans ouvrir la console
+function etatSyncModal(){
+  var l=[];
+  l.push('Session ouverte : '+(SB_TOKEN?'oui':'non'));
+  l.push('Dernière écriture réussie : '+(SYNC_DERNIER
+    ? new Date(SYNC_DERNIER).toLocaleString('fr') : 'aucune depuis l’ouverture'));
+  l.push('Saisies en attente : '+(syncModifie()?'oui':'non'));
+  l.push('Dernière écriture refusée : '+(SYNC_ECHEC?'oui':'non'));
+  l.push('Lecture serveur aboutie : '+(SYNC_PRET?'oui':'non'));
+  var att=null; try{ att=localStorage.getItem(LS_ATT); }catch(e){}
+  l.push('Marqueur d’attente sur ce poste : '+(att?('posé le '+new Date(att).toLocaleString('fr')):'aucun'));
+  uiAlert('État de l’enregistrement', l.join('\n'));
+}
+setInterval(function(){ try{ majBadgeSync(); }catch(e){} }, 5000);
 
 // Index des affaires d'un état : { "CP|code|no": affaireJSON }
 function idxAffaires(state){
@@ -3726,6 +3824,7 @@ function sbLoad(){
         try{
           var msg=[], bascule=null;
           try{ bascule=migrerIrveVersPaul(); }catch(e2){ console.warn('irveVersPaul',e2); }
+          try{ migrerAffectations(); }catch(e2){ console.warn('affectMois',e2); }
           var nA=annulerAout26(), nC=0;
           try{ nC=importerActionsCommentaires(); }catch(e2){ console.warn('actionsCom',e2); }
           if(bascule) msg.push(bascule.doublons+' doublons IRVE retirés du portefeuille d’Alexis'
@@ -3787,6 +3886,7 @@ function sbSave(){
   // pas du travail a proteger. Sans cela la premiere lecture serveur fusionnait
   // au lieu de reprendre, et les donnees livrees ecrasaient les vraies.
   if(!SB_TOKEN) SYNC_REV_OK=SYNC_REV; else poserAttente();
+  try{ majBadgeSync(); }catch(e){}
   try{ lsSaveNow(); }catch(e){}          // filet de sécurité local
   try{ majFactu(); }catch(e){}           // la facturation suit l'avancement
   if(!SYNC_ENABLED){ SYNC_REV_OK=SYNC_REV; return; }
@@ -3844,6 +3944,7 @@ function ecrireServeur(rev, essai){
         if(rev>SYNC_REV_OK) SYNC_REV_OK=rev;   // ce qui attendait est parti
         SYNC_ECHEC=false;
         SYNC_PRET=true;
+        SYNC_DERNIER=Date.now();
         if(!syncModifie()) leverAttente();
         try{ lsSaveNow(); }catch(e){}
         alerteNonEnregistre(false);
@@ -5709,90 +5810,19 @@ function rIrveTaches(){
   bar.appendChild(exp);
   body.appendChild(bar);
 
-  // ── Tâches attendues sur les mois à venir ──
-  // Elles nourrissent la facturation prévisionnelle IRVE et la charge,
-  // à raison d'une heure par tâche.
-  var tp=document.createElement('div');
-  tp.style.cssText='margin:0 12px 10px;border:1.5px solid #7C3AED33;border-radius:11px;overflow:hidden';
-  var tph=document.createElement('div');
-  tph.style.cssText='padding:7px 11px;background:#EDE9FE;color:#7C3AED;font-size:10px;font-weight:800;'
-    +'text-transform:uppercase;letter-spacing:.04em';
-  tph.textContent='Tâches attendues sur les mois à venir';
-  tp.appendChild(tph);
-  var tpi=document.createElement('div');
-  tpi.style.cssText='font-size:9.5px;color:var(--t3);padding:7px 11px 2px;line-height:1.5';
-  tpi.innerHTML='Nombre de tâches prévues chaque mois. Chacune vaut <b>'+fmtEur(tacheMontant())
-    +'</b> en facturation et <b>'+TACHE_HEURES+' h</b> de charge pour les chargés de projet.';
-  tp.appendChild(tpi);
-  var tpg=document.createElement('div');
-  tpg.style.cssText='display:grid;grid-template-columns:repeat(auto-fit,minmax(74px,1fr));gap:6px;padding:8px 11px';
-  for(var mi=0; mi<PREV_MOIS; mi++){
-    (function(i){
-      var iso=moisISO(i);
-      var c=document.createElement('div');
-      c.style.cssText='border:1px solid var(--b);border-radius:8px;padding:5px 7px;background:var(--s)';
-      var lb=document.createElement('div');
-      lb.style.cssText='font-size:8.5px;font-weight:800;color:var(--t3);text-transform:uppercase';
-      lb.textContent=moisLabel(i);
-      var inp=document.createElement('input');
-      inp.type='number'; inp.min='0'; inp.step='1';
-      inp.value=tachesPrevMois(iso)||'';
-      inp.placeholder='0';
-      inp.style.cssText='width:100%;border:none;border-bottom:1.5px solid var(--b2);background:transparent;'
-        +'font-size:15px;font-weight:900;color:#7C3AED;font-family:inherit;padding:2px 0;text-align:center';
-      inp.title=moisLabel(i)+' — nombre de tâches back-office attendues';
-      inp.addEventListener('change',function(){
-        setTachesPrev(iso, inp.value);
-        inp.value=tachesPrevMois(iso)||'';
-        sbSave();
-        try{ rPrevFactu(); rPrevCharge(); }catch(e){}
-        majTotTaches();
-      });
-      // Qui prendra ces tâches. La charge et la facturation suivent alors le
-      // portefeuille de chacun au lieu de rester sur le périmètre en général.
-      // Un mois peut être partagé : 8 pour Paul, 4 pour Souad.
-      var sc=document.createElement('button');
-      sc.style.cssText='width:100%;border:1px dashed var(--b2);background:transparent;'
-        +'border-radius:5px;font-size:8.5px;font-weight:800;font-family:inherit;cursor:pointer;'
-        +'padding:2px 0;margin-top:3px;color:var(--t3)';
-      function majRepart(){
-        var r=tachesPrevRepart(iso), qui=Object.keys(r).filter(function(k){ return r[k]; });
-        var reste=tachesPrevReste(iso);
-        if(!qui.length){ sc.textContent='non attribué'; sc.style.color='var(--t3)';
-                         sc.style.borderStyle='dashed'; }
-        else {
-          sc.textContent=qui.map(function(k){ return k+' '+r[k]; }).join(' · ')
-            +(reste>0?' · reste '+reste:'');
-          sc.style.color='#7C3AED'; sc.style.borderStyle='solid';
-        }
-        sc.title='Qui prendra les '+tachesPrevMois(iso)+' tâche(s) de '+moisLabel(i)
-          +'\n'+(qui.length?qui.map(function(k){ return k+' : '+r[k]; }).join('\n'):'Personne pour l’instant')
-          +(reste>0?('\nNon attribué : '+reste):'')
-          +(reste<0?('\nATTENTION : '+(-reste)+' de plus que le total du mois'):'')
-          +'\nCliquer pour répartir';
-        if(reste<0){ sc.style.color='var(--red)'; sc.style.borderColor='var(--red)'; }
-        else sc.style.borderColor=qui.length?'#7C3AED':'var(--b2)';
-      }
-      majRepart();
-      sc.addEventListener('click',function(){ repartirTachesModal(iso, function(){
-        majRepart(); majTotTaches();
-        try{ rPrevFactu(); rPrevCharge(); }catch(e){}
-      }); });
-      c.appendChild(lb); c.appendChild(inp); c.appendChild(sc); tpg.appendChild(c);
-    })(mi);
-  }
-  tp.appendChild(tpg);
-  var tpt=document.createElement('div');
-  tpt.style.cssText='padding:2px 11px 9px;font-size:10.5px;font-weight:800;color:#7C3AED';
-  function majTotTaches(){
-    var n=0;
-    for(var i=0;i<PREV_MOIS;i++) n+=tachesPrevMois(moisISO(i));
-    tpt.textContent=n+' tâche(s) attendue(s) sur '+PREV_MOIS+' mois — '
-      +fmtEur(n*tacheMontant())+' et '+(n*TACHE_HEURES)+' h de charge';
-  }
-  majTotTaches();
-  tp.appendChild(tpt);
-  body.appendChild(tp);
+  // Les tâches attendues sur les mois à venir se saisissent désormais dans
+  // Charge prévisionnelle, bouton « Affectations prévues » : elles y sont
+  // rangées avec les affaires attendues des autres périmètres, et se
+  // répartissent entre les personnes de la même façon. Le bloc qui vivait ici
+  // faisait double emploi.
+  var rv=document.createElement('div');
+  rv.style.cssText='margin:8px 11px 10px;padding:8px 11px;border-radius:9px;background:var(--s2);'
+    +'border:1px dashed var(--b2);font-size:10px;color:var(--t3);line-height:1.5;cursor:pointer';
+  rv.innerHTML='Les tâches attendues sur les mois à venir se saisissent dans '
+    +'<b>Charge prévisionnelle</b>, bouton <b>Affectations prévues</b>, entité <b>IRVE BO</b>. '
+    +'Cliquer pour l’ouvrir.';
+  rv.addEventListener('click',function(){ AFFECT_SVC=SVC_BO.k; affectModal(); });
+  body.appendChild(rv);
 
   var wrap=document.createElement('div');
   wrap.id='taches-bo-scroll';   // identifiant stable : sansBouger le retrouve
@@ -8373,6 +8403,192 @@ var AFFECT_PREV = {ARMA:0, IRVE:0, MECA:0};
 var AFFECT_FIN  = {ARMA:'', IRVE:'', MECA:''};   // date jusqu'à laquelle le rythme s'applique
 var PREV_AVEC_AFFECT = true;
 
+// ══════════════════════════════════════════════════════════════
+// AFFECTATIONS PRÉVUES, MOIS PAR MOIS ET ENTITÉ PAR ENTITÉ
+//
+// L'ancien modèle ne portait qu'un rythme : « 3 nouvelles affaires ARMA par
+// mois », le même de janvier à décembre, sans dire qui les prendrait. On
+// saisit désormais un nombre par mois et par entité, et sa répartition entre
+// les personnes — automatique selon la place qu'il leur reste, ou à la main.
+//
+// L'IRVE back-office est une entité à part entière ici : ses « affaires » sont
+// des tâches. Le module qui les saisissait dans Facturation IRVE BO est donc
+// remplacé par celui-ci.
+// ══════════════════════════════════════════════════════════════
+var AFFECT_MOIS = {};      // { '2026-10': { ARMA:{n:3, rep:{MT:2}}, ... } }
+
+function affectEntites(){ return seriesPrev(); }
+// Le petit symbole posé sur chaque mois des graphiques : dit d'un coup d'œil
+// si l'affectation de ce mois est renseignée et attribuée.
+function pastilleAffect(i){
+  var e=affectComplet(moisISO(i));
+  if(e==='ok')      return '<span style="color:#047857">●</span>';
+  if(e==='partiel') return '<span style="color:#B45309">◐</span>';
+  return '<span style="color:var(--b2)">○</span>';
+}
+function aideAffect(i){
+  var iso=moisISO(i), e=affectComplet(iso), l=[];
+  affectEntites().forEach(function(s){
+    var a=affectMois(iso, s.k);
+    if(!a.n) return;
+    var att=affectAttribue(iso, s.k);
+    l.push(s.court+' : '+a.n+(Object.keys(a.rep).length
+      ? (' dont '+att+' attribué'+(att===a.n?'s':'s, '+(a.n-att)+' sans nom'))
+      : ' répartis automatiquement'));
+  });
+  return moisLabel(i)+'\n'
+    +(e==='vide' ? 'Aucune affectation prévue sur ce mois.'
+      : (e==='ok' ? 'Affectations renseignées et attribuées.'
+                  : 'Affectations renseignées mais pas entièrement attribuées.'))
+    +(l.length?('\n'+l.join('\n')):'')
+    +'\nSe saisit dans Affectations prévues.';
+}
+function affectMois(iso, svc){
+  var m=AFFECT_MOIS[iso];
+  var e=m && m[svc];
+  return {n:(e&&+e.n)||0, rep:(e&&e.rep&&typeof e.rep==='object')?e.rep:{}};
+}
+function setAffectN(iso, svc, n){
+  n=Math.max(0, +n||0);
+  if(!AFFECT_MOIS[iso]) AFFECT_MOIS[iso]={};
+  if(!AFFECT_MOIS[iso][svc]) AFFECT_MOIS[iso][svc]={n:0, rep:{}};
+  AFFECT_MOIS[iso][svc].n=n;
+  nettoyerAffect(iso, svc);
+}
+function setAffectPart(iso, svc, ini, v){
+  v=Math.max(0, +v||0);
+  if(!AFFECT_MOIS[iso]) AFFECT_MOIS[iso]={};
+  if(!AFFECT_MOIS[iso][svc]) AFFECT_MOIS[iso][svc]={n:0, rep:{}};
+  var e=AFFECT_MOIS[iso][svc];
+  if(!e.rep) e.rep={};
+  if(v) e.rep[ini]=v; else delete e.rep[ini];
+  nettoyerAffect(iso, svc);
+}
+function viderAffectRep(iso, svc){
+  if(AFFECT_MOIS[iso] && AFFECT_MOIS[iso][svc]) AFFECT_MOIS[iso][svc].rep={};
+  nettoyerAffect(iso, svc);
+}
+function nettoyerAffect(iso, svc){
+  var m=AFFECT_MOIS[iso]; if(!m) return;
+  var e=m[svc];
+  if(e && !e.n && (!e.rep || !Object.keys(e.rep).length)) delete m[svc];
+  if(!Object.keys(m).length) delete AFFECT_MOIS[iso];
+}
+function affectAttribue(iso, svc){
+  var rep=affectMois(iso,svc).rep, n=0;
+  Object.keys(rep).forEach(function(k){ n+=(+rep[k]||0); });
+  return n;
+}
+function affectReste(iso, svc){ return affectMois(iso,svc).n-affectAttribue(iso,svc); }
+
+// Un mois est complet quand chaque entité qui attend quelque chose sait à qui
+// le donner. C'est ce que dit le symbole posé sur les graphiques.
+function affectComplet(iso){
+  var vu=false, ok=true;
+  affectEntites().forEach(function(s){
+    var a=affectMois(iso, s.k);
+    if(!a.n) return;
+    vu=true;
+    // Répartition vide : c'est l'automatique qui tient tout, donc complet.
+    if(!Object.keys(a.rep).length) return;
+    if(affectAttribue(iso,s.k)!==a.n) ok=false;
+  });
+  return vu ? (ok?'ok':'partiel') : 'vide';
+}
+
+// ── Répartition automatique ───────────────────────────────────
+// On donne davantage à qui a le plus de place. La place, c'est la capacité
+// mensuelle moins la charge déjà projetée ce mois-là. Quand plus personne
+// n'a de place, on partage en parts égales.
+var CHARGE_CACHE=null, CHARGE_CACHE_REV=-1;
+function chargeParPersonne(nMois){
+  if(CHARGE_CACHE && CHARGE_CACHE_REV===SYNC_REV && CHARGE_CACHE.n===nMois)
+    return CHARGE_CACHE.m;
+  var m={};
+  personnes().forEach(function(p){
+    var arr=new Array(nMois).fill(0);
+    p.cps.forEach(function(cp){
+      if(!(gAff(cp)||[]).length) return;
+      var pts=prevCharge(cp, nMois);
+      for(var i=0;i<nMois;i++) arr[i]+=(pts[i].h||0);
+    });
+    m[p.ini]=arr;
+  });
+  CHARGE_CACHE={m:m, n:nMois}; CHARGE_CACHE_REV=SYNC_REV;
+  return m;
+}
+function affectAuto(iso, svc){
+  var a=affectMois(iso, svc);
+  var out={};
+  if(!a.n) return out;
+  var i=moisIndex(iso+'-01'); if(i===null||i<0) i=0;
+  var nM=Math.max(PREV_MOIS, i+1);
+  var ch=chargeParPersonne(nM);
+  var gens=personnes();
+  // Le poids, c'est la place qui reste, PLUS un socle. Sans ce socle, une
+  // équipe saturée où une seule personne a douze heures de libre recevait
+  // tout sur cette personne : mathématiquement juste, humainement absurde.
+  var SOCLE=CAP_HEURES*0.15;
+  var place=gens.map(function(p){
+    return Math.max(0, CAP_HEURES-((ch[p.ini]||[])[i]||0))+SOCLE;
+  });
+  var somme=place.reduce(function(s,x){ return s+x; },0);
+  var parts=gens.map(function(p,ix){
+    return somme>0 ? a.n*place[ix]/somme : a.n/gens.length;
+  });
+  // Arrondi en conservant le total : on donne les unités entières, puis les
+  // restes aux plus fortes décimales.
+  var ent=parts.map(function(x){ return Math.floor(x); });
+  var reste=a.n-ent.reduce(function(s,x){ return s+x; },0);
+  var ordre=parts.map(function(x,ix){ return {ix:ix, d:x-Math.floor(x)}; })
+                 .sort(function(x,y){ return y.d-x.d; });
+  for(var k=0;k<reste;k++) ent[ordre[k%ordre.length].ix]++;
+  gens.forEach(function(p,ix){ if(ent[ix]) out[p.ini]=ent[ix]; });
+  return out;
+}
+// Part effective d'une personne : la saisie manuelle si elle existe, sinon
+// la répartition automatique.
+function affectRepEff(iso, svc){
+  var a=affectMois(iso, svc);
+  if(!a.n) return {};
+  return Object.keys(a.rep).length ? a.rep : affectAuto(iso, svc);
+}
+function affectPartEff(iso, svc, ini){ return +(affectRepEff(iso,svc)[ini]||0)||0; }
+
+// ── Reprise de l'ancien modèle, une seule fois ────────────────
+// Le rythme unique par périmètre devient un nombre sur chaque mois, et les
+// tâches back-office attendues rejoignent l'entité IRVE BO.
+function migrerAffectations(){
+  if(MIGR.affectMois) return 0;
+  var n=0;
+  for(var i=0;i<PREV_MOIS;i++){
+    var iso=moisISO(i);
+    SERVICES.forEach(function(s){
+      var taux=+(AFFECT_PREV[s.k]||0);
+      if(!taux) return;
+      var fin=AFFECT_FIN[s.k];
+      if(fin){
+        var df=new Date(fin+(fin.length===7?'-01':''));
+        var lim=(df.getFullYear()-new Date().getFullYear())*12
+               +(df.getMonth()-new Date().getMonth());
+        if(i>lim) return;
+      }
+      if(!affectMois(iso, s.k).n){ setAffectN(iso, s.k, taux); n++; }
+    });
+    // Tâches back-office : nombre et répartition déjà saisis ailleurs
+    var t=tachesPrevMois(iso);
+    if(t && !affectMois(iso, SVC_BO.k).n){
+      setAffectN(iso, SVC_BO.k, t);
+      var rep=tachesPrevRepart(iso);
+      Object.keys(rep).forEach(function(k){ setAffectPart(iso, SVC_BO.k, k, rep[k]); });
+      n++;
+    }
+  }
+  MIGR.affectMois=true;
+  return n;
+}
+
+
 // Charge d'une affaire type d'un périmètre : heures et durée totales
 function affaireType(svc){
   var liste=UO_CAT[svc]||[];
@@ -8385,85 +8601,221 @@ function affaireType(svc){
   });
   return {h:h, d:d||1};
 }
-// Heures ajoutées par les affectations prévues, mois par mois
-function heuresAffectation(svc, nMois){
+// Heures ajoutées par les affectations prévues, mois par mois.
+// ini renseigné : la part de cette personne seulement.
+function heuresAffectation(svc, nMois, ini){
   var out=new Array(nMois).fill(0);
-  var n=AFFECT_PREV[svc]||0;
-  if(!n) return out;
+  if(svc===SVC_BO.k){
+    // Une tâche back-office pèse une heure, le mois où elle est attendue.
+    for(var b=0;b<nMois;b++){
+      var isoB=moisISO(b);
+      var nb=(ini===undefined||ini===null) ? affectMois(isoB,svc).n
+                                           : affectPartEff(isoB,svc,ini);
+      out[b]+=nb*TACHE_HEURES;
+    }
+    return out;
+  }
   var t=affaireType(svc);
   if(!t.h) return out;
   var dur=Math.max(1, Math.round(t.d));
   var parMois=t.h/dur;
-  // Limite : le rythme d'affectation s'arrête à la date indiquée
-  var maxDeb=nMois;
-  var fin=AFFECT_FIN[svc];
-  if(fin){
-    var df=new Date(fin+(fin.length===7?'-01':'')), now=new Date();
-    maxDeb=(df.getFullYear()-now.getFullYear())*12+(df.getMonth()-now.getMonth())+1;
-    maxDeb=Math.max(0, Math.min(nMois, maxDeb));
-  }
-  // Chaque mois, n nouvelles affaires démarrent et s'étalent sur leur durée
-  for(var debut=1; debut<maxDeb; debut++){
+  // Chaque mois, les affaires attendues démarrent et s'étalent sur leur durée
+  for(var debut=0; debut<nMois; debut++){
+    var iso=moisISO(debut);
+    var n=(ini===undefined||ini===null) ? affectMois(iso,svc).n
+                                        : affectPartEff(iso,svc,ini);
+    if(!n) continue;
     for(var m=debut; m<debut+dur && m<nMois; m++) out[m]+=n*parMois;
   }
   return out;
 }
 
 
+// Saisie des affectations prévues : un nombre par mois et par entité, et la
+// répartition entre les personnes. Vide, la répartition se fait toute seule
+// selon la place qui reste à chacun ce mois-là.
+var AFFECT_SVC='ARMA';    // entité affichée dans la fenêtre
 function affectModal(){
-  var ST='width:70px;border:1.5px solid var(--b2);border-radius:7px;padding:5px;font-size:12px;'
-    +'font-weight:700;text-align:center;background:var(--bg);color:var(--t);font-family:inherit';
   var ov=document.createElement('div');
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9300;display:flex;'
     +'align-items:center;justify-content:center;padding:16px';
   var box=document.createElement('div');
-  box.style.cssText='background:var(--s);border-radius:14px;max-width:400px;width:100%;overflow:auto;max-height:90vh';
-  box.innerHTML='<div style="padding:13px 16px 4px;font-size:13px;font-weight:800">Affectations pr\u00e9visionnelles</div>'
-    +'<div style="padding:0 16px 10px;font-size:11px;color:var(--t3);line-height:1.5">Nombre de nouvelles affaires '
-    +'attendues chaque mois par p\u00e9rim\u00e8tre. Elles s\u2019ajoutent \u00e0 la projection de charge.</div>';
-  var f=document.createElement('div'); f.style.cssText='padding:0 16px 8px';
-  SERVICES.forEach(function(s){
-    var t=affaireType(s.k);
-    var l=document.createElement('div');
-    l.style.cssText='display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--b);'
-      +'border-radius:9px;margin-bottom:7px';
-    var nm=document.createElement('div'); nm.style.cssText='flex:1';
-    nm.innerHTML='<div style="font-size:11.5px;font-weight:700;color:'+s.fg+'">'+s.l+'</div>'
-      +'<div style="font-size:9px;color:var(--t3)">'+Math.round(t.h*10)/10+' h par affaire sur '
-      +Math.round(t.d*10)/10+' mois</div>';
-    var i=document.createElement('input');
-    i.type='number'; i.min='0'; i.step='0.5'; i.value=AFFECT_PREV[s.k]||''; i.placeholder='0';
-    i.style.cssText=ST;
-    i.addEventListener('change',function(){
-      var v=parseFloat(String(i.value).replace(',','.'));
-      AFFECT_PREV[s.k]= isNaN(v)?0:v; sbSave();
+  box.style.cssText='background:var(--s);border-radius:14px;max-width:620px;width:100%;'
+    +'max-height:90vh;display:flex;flex-direction:column;overflow:hidden';
+  var hdr=document.createElement('div');
+  hdr.style.cssText='padding:13px 16px 6px;flex-shrink:0';
+  var corps=document.createElement('div');
+  corps.style.cssText='overflow-y:auto;flex:1;padding:0 16px';
+  var pied=document.createElement('div');
+  pied.style.cssText='display:flex;justify-content:space-between;gap:8px;padding:8px 16px 14px;'
+    +'border-top:1px solid var(--b);flex-shrink:0;flex-wrap:wrap';
+
+  function fermer(){
+    if(ov.parentNode) document.body.removeChild(ov);
+    try{ rPrevCharge(); rPrevFactu(); }catch(e){}
+  }
+
+  function dessiner(){
+    var s=serieInfo(AFFECT_SVC);
+    hdr.innerHTML='<div style="font-size:13px;font-weight:800">Affectations prévues</div>'
+      +'<div style="font-size:10.5px;color:var(--t3);line-height:1.5;margin-top:2px">'
+      +'Ce qui est attendu en plus des affaires déjà attribuées, mois par mois. '
+      +'La répartition vide se fait toute seule, au prorata de la place qui reste '
+      +'à chacun ce mois-là. Un chiffre saisi la remplace.</div>';
+    // Choix de l'entité
+    var bar=document.createElement('div');
+    bar.style.cssText='display:flex;gap:5px;flex-wrap:wrap;padding:8px 0 6px';
+    affectEntites().forEach(function(x){
+      var on=(AFFECT_SVC===x.k);
+      var b=document.createElement('button');
+      b.style.cssText='border:1.5px solid '+(on?x.fg:'var(--b2)')+';background:'+(on?x.bg:'var(--s)')
+        +';color:'+(on?x.fg:'var(--t3)')+';border-radius:8px;padding:4px 11px;font-size:10.5px;'
+        +'font-weight:800;cursor:pointer;font-family:inherit';
+      var tot=0;
+      for(var i=0;i<PREV_MOIS;i++) tot+=affectMois(moisISO(i), x.k).n;
+      b.textContent=x.court+(tot?' · '+Math.round(tot*10)/10:'');
+      b.addEventListener('click',function(){ AFFECT_SVC=x.k; dessiner(); });
+      bar.appendChild(b);
     });
-    var u=document.createElement('span'); u.style.cssText='font-size:10px;color:var(--t3)';
-    u.textContent='/mois';
-    var jq=document.createElement('span'); jq.style.cssText='font-size:10px;color:var(--t3)';
-    jq.textContent="jusqu'\u00e0";
-    var id=document.createElement('input');
-    id.type='date'; id.value=AFFECT_FIN[s.k]||'';
-    id.style.cssText='width:132px;border:1.5px solid var(--b2);border-radius:7px;padding:4px;'
-      +'font-size:11px;background:var(--bg);color:var(--t);font-family:inherit';
-    id.title='Mois jusqu\u2019auquel ce rythme s\u2019applique (vide = sans limite)';
-    id.addEventListener('change',function(){ AFFECT_FIN[s.k]=id.value||''; sbSave(); });
-    l.appendChild(nm); l.appendChild(i); l.appendChild(u);
-    l.appendChild(jq); l.appendChild(id);
-    l.style.flexWrap='wrap';
-    f.appendChild(l);
+    hdr.appendChild(bar);
+
+    corps.innerHTML='';
+    var unite = (AFFECT_SVC===SVC_BO.k) ? 'tâche(s)' : 'affaire(s)';
+    var t = (AFFECT_SVC===SVC_BO.k) ? null : affaireType(AFFECT_SVC);
+    if(t){
+      var aide=document.createElement('div');
+      aide.style.cssText='font-size:9.5px;color:var(--t3);padding:2px 0 6px';
+      aide.textContent='Une affaire '+s.court+' pèse '+Math.round(t.h*10)/10
+        +' h sur '+Math.round(t.d*10)/10+' mois.';
+      corps.appendChild(aide);
+    }
+
+    var gens=personnes();
+    var tbl=document.createElement('table');
+    tbl.style.cssText='width:100%;border-collapse:collapse;font-size:10.5px';
+    var th=document.createElement('thead'), trh=document.createElement('tr');
+    var e0=document.createElement('th');
+    e0.style.cssText='text-align:left;padding:3px 5px;font-size:8.5px;font-weight:800;'
+      +'text-transform:uppercase;color:var(--t3);border-bottom:1.5px solid var(--b)';
+    e0.textContent='Mois'; trh.appendChild(e0);
+    var e1=document.createElement('th');
+    e1.style.cssText='padding:3px 5px;font-size:8.5px;font-weight:800;text-transform:uppercase;'
+      +'color:'+s.fg+';border-bottom:1.5px solid var(--b)';
+    e1.textContent='Attendu'; trh.appendChild(e1);
+    gens.forEach(function(p){
+      var x=document.createElement('th');
+      x.style.cssText='padding:3px 5px;font-size:8.5px;font-weight:800;color:var(--t3);'
+        +'border-bottom:1.5px solid var(--b)';
+      x.textContent=p.ini; x.title=p.nom;
+      trh.appendChild(x);
+    });
+    var e2=document.createElement('th');
+    e2.style.cssText='padding:3px 5px;font-size:8.5px;font-weight:800;color:var(--t3);'
+      +'border-bottom:1.5px solid var(--b)';
+    e2.textContent='Reste'; trh.appendChild(e2);
+    th.appendChild(trh); tbl.appendChild(th);
+    var tb=document.createElement('tbody');
+
+    for(var mi=0; mi<PREV_MOIS; mi++){
+      (function(i){
+        var iso=moisISO(i);
+        var r=document.createElement('tr');
+        r.style.borderBottom='1px solid var(--b)';
+        var c0=document.createElement('td');
+        c0.style.cssText='padding:3px 5px;font-weight:800;color:var(--t2);white-space:nowrap';
+        c0.textContent=moisLabel(i);
+        r.appendChild(c0);
+
+        var c1=document.createElement('td'); c1.style.cssText='padding:2px 4px;text-align:center';
+        var iN=document.createElement('input');
+        iN.type='number'; iN.min='0'; iN.step=(AFFECT_SVC===SVC_BO.k?'1':'0.5');
+        iN.value=affectMois(iso,AFFECT_SVC).n||'';
+        iN.placeholder='0';
+        iN.style.cssText='width:62px;border:1.5px solid '+s.fg+'55;border-radius:6px;padding:3px;'
+          +'font-size:12px;font-weight:800;text-align:center;background:var(--bg);color:'+s.fg
+          +';font-family:inherit';
+        iN.title=unite+' attendu(e)s en '+moisLabel(i);
+        c1.appendChild(iN); r.appendChild(c1);
+
+        var cases=[], cReste;
+        function majLigne(){
+          var a=affectMois(iso, AFFECT_SVC);
+          var manuel=Object.keys(a.rep).length>0;
+          var eff=affectRepEff(iso, AFFECT_SVC);
+          cases.forEach(function(x){
+            var v=manuel ? (a.rep[x.ini]||0) : (eff[x.ini]||0);
+            x.inp.value = v || '';
+            x.inp.style.color = manuel ? '#7C3AED' : 'var(--t3)';
+            x.inp.style.fontStyle = manuel ? 'normal' : 'italic';
+            x.inp.title = manuel ? 'Saisi à la main'
+              : (v?('Réparti automatiquement : '+v+' '+unite):'Réparti automatiquement');
+          });
+          var reste=manuel ? (a.n-affectAttribue(iso,AFFECT_SVC)) : 0;
+          cReste.textContent = a.n ? (manuel?(Math.round(reste*10)/10):'auto') : '—';
+          cReste.style.color = !a.n ? 'var(--b2)'
+            : (!manuel ? 'var(--t3)' : (Math.abs(reste)<0.001 ? '#047857'
+              : (reste<0 ? 'var(--red)' : '#B45309')));
+        }
+        gens.forEach(function(p){
+          var c=document.createElement('td'); c.style.cssText='padding:2px 3px;text-align:center';
+          var ip=document.createElement('input');
+          ip.type='number'; ip.min='0'; ip.step=(AFFECT_SVC===SVC_BO.k?'1':'0.5');
+          ip.placeholder='—';
+          ip.style.cssText='width:46px;border:1px solid var(--b2);border-radius:5px;padding:2px;'
+            +'font-size:11px;font-weight:700;text-align:center;background:transparent;'
+            +'color:var(--t3);font-family:inherit';
+          ip.addEventListener('change',function(){
+            setAffectPart(iso, AFFECT_SVC, p.ini, ip.value);
+            sbSave(); majLigne();
+          });
+          cases.push({ini:p.ini, inp:ip});
+          c.appendChild(ip); r.appendChild(c);
+        });
+        cReste=document.createElement('td');
+        cReste.style.cssText='padding:3px 5px;text-align:center;font-weight:800;font-size:10px';
+        r.appendChild(cReste);
+        iN.addEventListener('change',function(){
+          setAffectN(iso, AFFECT_SVC, String(iN.value).replace(',','.'));
+          iN.value=affectMois(iso,AFFECT_SVC).n||'';
+          sbSave(); majLigne();
+        });
+        majLigne();
+        tb.appendChild(r);
+      })(mi);
+    }
+    tbl.appendChild(tb); corps.appendChild(tbl);
+
+    var lg=document.createElement('div');
+    lg.style.cssText='font-size:9.5px;color:var(--t3);padding:8px 0 10px;line-height:1.5';
+    lg.innerHTML='Un chiffre <i style="color:var(--t3)">en italique gris</i> est réparti tout seul. '
+      +'Un chiffre <b style="color:#7C3AED">en violet</b> a été saisi à la main : dès qu’un seul '
+      +'l’est sur la ligne, toute la ligne passe en manuel. La colonne Reste dit ce qui n’est '
+      +'attribué à personne.';
+    corps.appendChild(lg);
+  }
+
+  var bz=document.createElement('button');
+  bz.style.cssText='border:1px solid var(--b2);background:var(--s2);color:var(--t2);border-radius:8px;'
+    +'padding:7px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit';
+  bz.textContent='Répartir automatiquement ce périmètre';
+  bz.title='Efface les chiffres saisis à la main sur toute la colonne';
+  bz.addEventListener('click',function(){
+    for(var i=0;i<PREV_MOIS;i++) viderAffectRep(moisISO(i), AFFECT_SVC);
+    sbSave(); dessiner();
   });
-  box.appendChild(f);
-  var ft=document.createElement('div');
-  ft.style.cssText='display:flex;justify-content:flex-end;padding:4px 16px 14px';
   var ok=document.createElement('button');
   ok.style.cssText='border:none;background:var(--brand);color:#fff;border-radius:8px;padding:7px 16px;'
     +'font-size:12px;font-weight:700;cursor:pointer;font-family:inherit';
   ok.textContent='Appliquer';
-  ok.addEventListener('click',function(){ document.body.removeChild(ov); rPrevCharge(); });
-  ft.appendChild(ok); box.appendChild(ft);
+  ok.addEventListener('click',fermer);
+  pied.appendChild(bz); pied.appendChild(ok);
+
+  box.appendChild(hdr); box.appendChild(corps); box.appendChild(pied);
   ov.appendChild(box); document.body.appendChild(ov);
+  ov.addEventListener('click',function(e){ if(e.target===ov) fermer(); });
+  dessiner();
 }
+
 
 function rPrevCharge(){
   var host=document.getElementById('ref-prev'); if(!host) return;
@@ -8485,7 +8837,13 @@ function rPrevCharge(){
     +(PREV_AVEC_AFFECT?'var(--gl)':'var(--s)')+';color:'+(PREV_AVEC_AFFECT?'var(--green)':'var(--t3)')
     +';border-radius:7px;padding:5px 11px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit;margin-right:auto';
   tg.textContent=(PREV_AVEC_AFFECT?'\u2713 ':'')+'Avec affectations pr\u00e9visionnelles';
-  tg.addEventListener('click',function(){ PREV_AVEC_AFFECT=!PREV_AVEC_AFFECT; rPrevCharge(); });
+  tg.title=PREV_AVEC_AFFECT
+    ? 'Les dossiers à venir sont comptés. Cliquer pour ne garder que les affaires déjà attribuées.'
+    : 'Seules les affaires déjà attribuées sont comptées. Cliquer pour ajouter les dossiers à venir.';
+  tg.addEventListener('click',function(){
+    PREV_AVEC_AFFECT=!PREV_AVEC_AFFECT;
+    sansBouger(function(){ rPrevCharge(); try{ rPrevFactu(); }catch(e){} });
+  });
   bar2.appendChild(tg);
   var ba=document.createElement('button');
   ba.style.cssText='border:1px solid var(--teal);background:#CCFBF1;color:#0F766E;border-radius:7px;'
@@ -8521,11 +8879,16 @@ function rPrevCharge(){
       parCp.forEach(function(x){ n+=x.pts[i].n; hh+=(x.pts[i].h||0); });
       tot.push({k:parCp[0].pts[i].k, d:parCp[0].pts[i].d, n:n, h:Math.round(hh*10)/10});
     }
-    // Les tâches back-office à venir attribuées à cette personne pèsent
-    // sur SA charge, pas sur celle du périmètre en général.
-    var thP=heuresTachesPrev(PREV_MOIS, p.ini);
-    for(var it=0; it<PREV_MOIS; it++){
-      if(thP[it]) tot[it].h=Math.round((tot[it].h+thP[it])*10)/10;
+    // Les affectations attribuées à cette personne pèsent sur SA charge, pas
+    // sur celle du périmètre en général : dossiers à venir et tâches
+    // back-office comprises.
+    if(PREV_AVEC_AFFECT){
+      affectEntites().forEach(function(sv){
+        var ap=heuresAffectation(sv.k, PREV_MOIS, p.ini);
+        for(var it=0; it<PREV_MOIS; it++){
+          if(ap[it]) tot[it].h=Math.round((tot[it].h+ap[it])*10)/10;
+        }
+      });
     }
     series.push({perso:true, ini:p.ini, cp:mesCp[0], pts:tot});
     if(parCp.length>1) parCp.forEach(function(x){ series.push(x); });
@@ -8563,7 +8926,8 @@ function rPrevCharge(){
   });
   // Les tâches back-office pèsent une heure chacune et font leur propre
   // ligne, comme dans la facturation prévisionnelle.
-  parSvc[SVC_BO.k]=heuresTachesPrev(PREV_MOIS);
+  parSvc[SVC_BO.k]=PREV_AVEC_AFFECT
+    ? heuresAffectation(SVC_BO.k, PREV_MOIS) : new Array(PREV_MOIS).fill(0);
   var totals=[];
   for(var i=0;i<PREV_MOIS;i++){
     var n=0, hh=0;
@@ -8642,10 +9006,11 @@ function rPrevCharge(){
   });
   var labs=document.createElement('div');
   labs.style.cssText='display:flex;gap:3px;padding:0 12px 6px';
-  totals.forEach(function(t){
+  totals.forEach(function(t,i){
     var l=document.createElement('div');
     l.style.cssText='flex:1;text-align:center;font-size:7px;color:var(--t3);font-weight:700';
-    l.textContent=moisCourt(t.d).replace(' ','\u00a0');
+    l.innerHTML=pastilleAffect(i)+'<br>'+moisCourt(t.d).replace(' ','\u00a0');
+    l.title=aideAffect(i);
     labs.appendChild(l);
   });
   inner.appendChild(labs);
@@ -11732,11 +12097,20 @@ function deplacerUo(l, moisCible, suite){
   cibles.forEach(function(x){ setPrevUo(l.a, x.k, moisISO(Math.max(0, x.fin+delta))); });
   return cibles.length;
 }
-// Apport des affectations prévisionnelles, en euros
-function factuAffectation(svc, nMois){
+// Apport des affectations prévisionnelles, en euros.
+// ini renseigné : la part de cette personne seulement.
+function factuAffectation(svc, nMois, ini){
   var out=new Array(nMois).fill(0);
-  var n=AFFECT_PREV[svc]||0;
-  if(!n) return out;
+  if(svc===SVC_BO.k){
+    // Une tâche back-office se facture le mois où elle est attendue.
+    for(var b=0;b<nMois;b++){
+      var isoB=moisISO(b);
+      var nb=(ini===undefined||ini===null) ? affectMois(isoB,svc).n
+                                           : affectPartEff(isoB,svc,ini);
+      out[b]+=nb*tacheMontant();
+    }
+    return out;
+  }
   var liste=(UO_CAT[svc]||[]);
   if(svc==='IRVE') liste=liste.filter(function(u){ return u.k.indexOf('S_')===0; });
   var ca=0, d=0;
@@ -11751,12 +12125,11 @@ function factuAffectation(svc, nMois){
   // Même règle que les UO réelles : facturation en une fois à l'achèvement,
   // et le taux d'activité allonge le délai au lieu de rogner le montant.
   var dur=dureeEffective(Math.max(1, Math.round(d||1)), tauxDe(svc));
-  var maxDeb=nMois, fin=AFFECT_FIN[svc];
-  if(fin){
-    var df=new Date(fin+(fin.length===7?'-01':'')), now=new Date();
-    maxDeb=Math.max(0, Math.min(nMois,(df.getFullYear()-now.getFullYear())*12+(df.getMonth()-now.getMonth())+1));
-  }
-  for(var deb=1; deb<maxDeb; deb++){
+  for(var deb=0; deb<nMois; deb++){
+    var iso=moisISO(deb);
+    var n=(ini===undefined||ini===null) ? affectMois(iso,svc).n
+                                        : affectPartEff(iso,svc,ini);
+    if(!n) continue;
     var m=deb+dur-1;
     if(m<nMois) out[m]+=n*ca;
   }
@@ -11846,15 +12219,18 @@ function moisParPersonne(i, svc){
     });
   });
   // Tâches back-office attendues, réparties entre les personnes
-  if(!svc || svc===SVC_BO.k || svc==='IRVE'){
-    var iso=moisISO(i), rep=tachesPrevRepart(iso), reste=tachesPrevReste(iso);
+  if(PREV_AVEC_AFFECT && (!svc || svc===SVC_BO.k)){
+    var iso=moisISO(i), rep=affectRepEff(iso, SVC_BO.k);
+    var attribue=0;
     Object.keys(rep).forEach(function(ini){
       if(!rep[ini]) return;
+      attribue+=rep[ini];
       var p=personnes().filter(function(x){ return x.ini===ini; })[0];
       var c=case_(SVC_BO.k, ini, (p&&p.nom)||ini);
       c.uo['IRVE BO']=(c.uo['IRVE BO']||0)+rep[ini];
       c.eur+=rep[ini]*tacheMontant();
     });
+    var reste=affectMois(iso, SVC_BO.k).n-attribue;
     if(reste>0){
       var c2=case_(SVC_BO.k, '—', 'Non attribué');
       c2.uo['IRVE BO']=(c2.uo['IRVE BO']||0)+reste;
@@ -12113,6 +12489,32 @@ function rPrevFactu(){
   card.appendChild(hdr);
   var body=document.createElement('div'); card.appendChild(body);
 
+  // Le m\u00eame interrupteur que sur la charge : voir la facturation des seules
+  // affaires d\u00e9j\u00e0 attribu\u00e9es, ou celle qui compte aussi les dossiers \u00e0 venir.
+  var bar2=document.createElement('div');
+  bar2.style.cssText='display:flex;align-items:center;gap:7px;padding:8px 12px 0;flex-wrap:wrap';
+  var tgF=document.createElement('button');
+  tgF.style.cssText='border:1.5px solid '+(PREV_AVEC_AFFECT?'var(--green)':'var(--b2)')+';background:'
+    +(PREV_AVEC_AFFECT?'var(--gl)':'var(--s)')+';color:'+(PREV_AVEC_AFFECT?'var(--green)':'var(--t3)')
+    +';border-radius:7px;padding:5px 11px;font-size:10px;font-weight:700;cursor:pointer;'
+    +'font-family:inherit;margin-right:auto';
+  tgF.textContent=(PREV_AVEC_AFFECT?'\u2713 ':'')+'Avec affectations pr\u00e9visionnelles';
+  tgF.title=PREV_AVEC_AFFECT
+    ? 'Les dossiers \u00e0 venir sont compt\u00e9s. Cliquer pour ne garder que les affaires d\u00e9j\u00e0 attribu\u00e9es.'
+    : 'Seules les affaires d\u00e9j\u00e0 attribu\u00e9es sont compt\u00e9es. Cliquer pour ajouter les dossiers \u00e0 venir.';
+  tgF.addEventListener('click',function(){
+    PREV_AVEC_AFFECT=!PREV_AVEC_AFFECT;
+    sansBouger(function(){ rPrevFactu(); try{ rPrevCharge(); }catch(e){} });
+  });
+  bar2.appendChild(tgF);
+  var baF=document.createElement('button');
+  baF.style.cssText='border:1px solid var(--teal);background:#CCFBF1;color:#0F766E;border-radius:7px;'
+    +'padding:5px 11px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit';
+  baF.textContent='\ud83d\udcc8 Affectations pr\u00e9vues';
+  baF.addEventListener('click',affectModal);
+  bar2.appendChild(baF);
+  body.appendChild(bar2);
+
   var N=PREV_MOIS;
   var parSvc={}, total=new Array(N).fill(0);
   SERVICES.forEach(function(s){
@@ -12129,9 +12531,10 @@ function rPrevFactu(){
     for(var m3=0;m3<N;m3++) total[m3]+=arr[m3];
   });
   // Les tâches back-office attendues font leur propre ligne : ce ne sont pas
-  // des dossiers, les mêler à l'IRVE brouillait les deux.
+  // des dossiers, les mêler à l'IRVE brouillait les deux. Comme les autres
+  // affectations, elles ne comptent que si l'interrupteur est allumé.
   (function(){
-    var tp=factuTachesPrev(N);
+    var tp=PREV_AVEC_AFFECT ? factuAffectation(SVC_BO.k,N) : new Array(N).fill(0);
     parSvc[SVC_BO.k]=tp;
     for(var m=0;m<N;m++) total[m]+=tp[m];
   })();
@@ -12211,7 +12614,8 @@ function rPrevFactu(){
     var d=new Date(); d.setMonth(d.getMonth()+i);
     var l=document.createElement('div');
     l.style.cssText='flex:1;text-align:center;font-size:7px;color:var(--t3);font-weight:700';
-    l.textContent=moisCourt(d).replace(' ','\u00a0');
+    l.innerHTML=pastilleAffect(i)+'<br>'+moisCourt(d).replace(' ','\u00a0');
+    l.title=aideAffect(i);
     labs.appendChild(l);
   });
   inner.appendChild(labs);
@@ -12411,65 +12815,69 @@ function rSynthFactu(){
   var COL={'ARMA':svcInfo('ARMA'),'IRVE':svcInfo('IRVE'),
            'IRVE back-office':{fg:'#7C3AED',bg:'#EDE9FE'},'RATP':svcInfo('MECA')};
 
-  // Cartes par entité
-  var grid=document.createElement('div');
-  grid.style.cssText='display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;padding:10px 12px 4px';
+  // Le module tenait un écran entier en cartes. Mêmes chiffres, en tableau :
+  // une ligne par entité, une ligne de total, une ligne de valorisation.
+  var wrapS=document.createElement('div');
+  wrapS.style.cssText='overflow-x:auto;padding:8px 12px 4px';
+  var tS=document.createElement('table');
+  tS.style.cssText='width:100%;border-collapse:collapse;font-size:10.5px';
+  var thS=document.createElement('thead'); var trS=document.createElement('tr');
+  [['',''],['UO','r'],['À facturer','r'],['Valorisé du mois','r'],['Encours','r']]
+  .forEach(function(c){
+    var x=document.createElement('th');
+    x.style.cssText='text-align:'+(c[1]==='r'?'right':'left')+';padding:3px 6px;font-size:8.5px;'
+      +'font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--t3);'
+      +'border-bottom:1.5px solid var(--b)';
+    x.textContent=c[0]; trS.appendChild(x);
+  });
+  thS.appendChild(trS); tS.appendChild(thS);
+  var tbS=document.createElement('tbody');
+  function celS(txt, coul, gras, droite){
+    var c=document.createElement('td');
+    c.style.cssText='padding:4px 6px;text-align:'+(droite?'right':'left')
+      +';font-weight:'+(gras?'800':'600')+';color:'+(coul||'var(--t2)')+';white-space:nowrap';
+    c.textContent=txt; return c;
+  }
   s.blocs.forEach(function(b){
     var c=COL[b.name]||{fg:'var(--t2)',bg:'var(--s2)'};
     var vb=null; vs.blocs.forEach(function(x){ if(x.name===b.name) vb=x; });
     var dm=vm.parBloc[b.name];
-    var d=document.createElement('div');
-    d.style.cssText='border:1.5px solid '+c.fg+'33;background:'+c.bg+';border-radius:11px;padding:9px 11px';
-    var html='<div style="font-size:9.5px;font-weight:800;color:'+c.fg+';text-transform:uppercase">'+b.name+'</div>'
-      +'<div style="font-size:20px;font-weight:900;color:'+c.fg+';margin:3px 0 1px">'+fmtEur(b.total)+'</div>'
-      +'<div style="font-size:9.5px;color:'+c.fg+'cc">'+b.lignes+' UO \u00e0 facturer</div>';
-    if(vb){
-      html+='<div style="margin-top:6px;padding-top:6px;border-top:1px dashed '+c.fg+'44;'
-        +'font-size:9.5px;color:'+c.fg+'cc;line-height:1.6">'
-        +'<div>Valoris\u00e9 du mois <b style="color:'+c.fg+'">'
-        +(dm===null?'\u2014':fmtEur(Math.round(dm)))+'</b></div>'
-        +'<div>Encours <b style="color:'+c.fg+'">'+fmtEur(Math.round(vb.valo-vb.fact))+'</b></div>'
-        +'</div>';
-    }
-    d.innerHTML=html;
-    grid.appendChild(d);
+    var r=document.createElement('tr');
+    r.style.borderBottom='1px solid var(--b)';
+    var n=celS(b.name, c.fg, true, false);
+    n.innerHTML='<span style="display:inline-block;width:7px;height:7px;border-radius:2px;'
+      +'background:'+c.fg+';margin-right:5px"></span>'+b.name;
+    r.appendChild(n);
+    r.appendChild(celS(String(b.lignes), 'var(--t3)', false, true));
+    r.appendChild(celS(fmtEur(b.total), c.fg, true, true));
+    r.appendChild(celS(dm===null?'—':fmtEur(Math.round(dm)), 'var(--t2)', false, true));
+    r.appendChild(celS(vb?fmtEur(Math.round(vb.valo-vb.fact)):'—', 'var(--t2)', false, true));
+    tbS.appendChild(r);
   });
-  body.appendChild(grid);
+  var rT=document.createElement('tr');
+  rT.style.cssText='background:var(--gl)';
+  rT.appendChild(celS('TOTAL À FACTURER','var(--green)',true,false));
+  rT.appendChild(celS(String(s.uo),'var(--green)',true,true));
+  rT.appendChild(celS(fmtEur(s.total),'var(--green)',true,true));
+  rT.appendChild(celS(vm.total===null?'—':fmtEur(Math.round(vm.total)),'var(--green)',true,true));
+  rT.appendChild(celS(fmtEur(Math.round(vs.encours)),'var(--green)',true,true));
+  tbS.appendChild(rT);
+  tS.appendChild(tbS); wrapS.appendChild(tS); body.appendChild(wrapS);
 
-  var tot=document.createElement('div');
-  tot.style.cssText='margin:6px 12px 8px;padding:10px 12px;border-radius:10px;background:var(--gl);'
-    +'border:1.5px solid var(--green);display:flex;align-items:center;gap:8px;flex-wrap:wrap';
-  tot.innerHTML='<span style="font-size:11px;font-weight:800;color:var(--green);flex:1">TOTAL \u00c0 FACTURER</span>'
-    +'<span style="font-size:10px;color:var(--green)">'+s.uo+' UO</span>'
-    +'<span style="font-size:18px;font-weight:900;color:var(--green)">'+fmtEur(s.total)+'</span>';
-  body.appendChild(tot);
+  var vl=document.createElement('div');
+  vl.style.cssText='margin:0 12px 8px;padding:6px 10px;border-radius:9px;background:var(--bl);'
+    +'border:1px solid var(--bm);font-size:10px;color:var(--blue);display:flex;gap:14px;flex-wrap:wrap';
+  vl.innerHTML='<span>Valorisé total <b>'+fmtEur(Math.round(vs.valo))+'</b></span>'
+    +'<span>Déjà facturé <b>'+fmtEur(Math.round(vs.fact))+'</b></span>'
+    +'<span>Encours <b>'+fmtEur(Math.round(vs.encours))+'</b></span>'
+    +(vm.total===null
+      ? '<span style="color:var(--t3)">Le valorisé du mois demande un instantané enregistré en fin de mois.</span>'
+      : '<span>Valorisé du mois <b>'+fmtEur(Math.round(vm.total))+'</b></span>');
+  vl.title='Valorisé = prix de l’UO multiplié par son avancement. '
+    +'Encours = valorisé total moins ce qui est déjà facturé.'
+    +(vm.ref?('\nDernier instantané : '+vm.ref.date):'');
+  body.appendChild(vl);
 
-  // Valorisation : ce qui est produit, et ce qui est produit sans etre facture
-  var vtot=document.createElement('div');
-  vtot.style.cssText='margin:0 12px 10px;padding:10px 12px;border-radius:10px;background:var(--bl);'
-    +'border:1.5px solid var(--bm);display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:8px';
-  function blocValo(lib,val,aide){
-    return '<div title="'+aide+'"><div style="font-size:9.5px;font-weight:800;color:var(--blue);'
-      +'text-transform:uppercase;letter-spacing:.04em">'+lib+'</div>'
-      +'<div style="font-size:17px;font-weight:900;color:var(--blue);margin-top:2px">'+val+'</div></div>';
-  }
-  vtot.innerHTML=
-     blocValo('Valorisé du mois', vm.total===null?'—':fmtEur(Math.round(vm.total)),
-              vm.ref?('Produit depuis l’instantané du '+vm.ref.date):'Aucun instantané enregistré')
-    +blocValo('Valorisé total', fmtEur(Math.round(vs.valo)),
-              'Prix de l’UO multiplié par son avancement')
-    +blocValo('Déjà facturé', fmtEur(Math.round(vs.fact)),
-              'Part des UO déjà facturée')
-    +blocValo('Encours', fmtEur(Math.round(vs.encours)),
-              'Valorisé total moins déjà facturé');
-  body.appendChild(vtot);
-  if(vm.total===null){
-    var avv=document.createElement('div');
-    avv.style.cssText='margin:-4px 12px 10px;font-size:9.5px;color:var(--t3);line-height:1.5';
-    avv.textContent='Le valorisé du mois se mesure par rapport au dernier instantané enregistré. '
-      +'Enregistre la synthèse en fin de mois pour l’obtenir.';
-    body.appendChild(avv);
-  }
 
   // Actions
   // Exports par périmètre
@@ -12477,8 +12885,18 @@ function rSynthFactu(){
   lbl.style.cssText='font-size:9.5px;font-weight:700;color:var(--t3);padding:2px 12px 4px;'
     +'text-transform:uppercase;letter-spacing:.05em';
   lbl.textContent='Exports par p\u00e9rim\u00e8tre';
-  body.appendChild(blocParConsultant(s, COL));
-  body.appendChild(lbl);
+  // D\u00e9tail par consultant et exports : repli\u00e9s. Ils ne servent qu'au moment
+  // de sortir un fichier, et occupaient la moiti\u00e9 du module.
+  var det=document.createElement('details');
+  det.style.cssText='border-top:1px solid var(--b);margin-top:2px';
+  var som=document.createElement('summary');
+  som.style.cssText='padding:7px 12px;font-size:10px;font-weight:800;cursor:pointer;color:var(--t3);'
+    +'text-transform:uppercase;letter-spacing:.05em';
+  som.textContent='D\u00e9tail par consultant et exports';
+  det.appendChild(som);
+  det.appendChild(blocParConsultant(s, COL));
+  det.appendChild(lbl);
+  body.appendChild(det);
   var ex=document.createElement('div');
   ex.style.cssText='display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:7px;padding:0 12px 10px';
   var ORDRE_EXPORT=['ARMA','IRVE','__BO__','MECA'];
@@ -12517,7 +12935,7 @@ function rSynthFactu(){
     g.appendChild(b1); g.appendChild(b2); c.appendChild(g);
     ex.appendChild(c);
   });
-  body.appendChild(ex);
+  det.appendChild(ex);
 
   var bar=document.createElement('div');
   bar.style.cssText='display:flex;gap:7px;padding:0 12px 10px;flex-wrap:wrap';
@@ -15586,9 +16004,12 @@ function carteKpi(nom, coul){
 // l'onglet Affaires. Plus de filtre propre au TDB : deux sélecteurs pour
 // la même chose se contredisaient.
 function kpiIniCourant(){
-  var vus=selCps(), liste=cpsOfSvc(SVC_CUR);
-  if(vus.length===1 && vus.length<liste.length) return (DATA[vus[0]]||{}).ini||null;
-  return null;
+  // La condition portait aussi sur le nombre de portefeuilles du périmètre.
+  // Sur RATP, qui n'en compte qu'un, elle était fausse : les KPI restaient
+  // sur « tous les chargés de projet » et ne bougeaient pas quand on changeait
+  // de personne. Un seul portefeuille affiché suffit. Même correction que
+  // celle faite sur la barre des périmètres.
+  return iniAffiche();
 }
 function rKpiOps(){
   var host=kpiHote(); if(!host) return;
@@ -18812,9 +19233,25 @@ var GEN_MODELES = {
        prefixe:'FDO_-_', feuille:null, champs:[], aps:false}
 };
 
+// Champs de la saisie directe du PPS. Les autres jetons viennent des
+// paramètres du module ou se calculent (validité, mise en oeuvre).
+var SAISIE_PPS = [
+  {k:'N_AFFAIRE', l:'N° d’affaire', req:true, ph:'RAC-IFE-25-...'},
+  {k:'COMMUNE', l:'Commune', req:true, ph:'Paris 15e'},
+  {k:'ADRESSE', l:'Adresse du chantier', req:true, ph:'12 rue …'},
+  {k:'ENTREPRISE', l:'Entreprise réalisatrice', req:true, ph:'SPIE'},
+  {k:'N_COMMANDE', l:'N° de commande', req:true, ph:'4512345'},
+  {k:'N_ECC', l:'N° ECC', ph:''},
+  {k:'DATE_DEBUT', l:'Début des travaux', req:true, type:'date'},
+  {k:'DATE_FIN', l:'Fin des travaux', type:'date'},
+  {k:'CHARGE_AFFAIRES', l:'Chargé d’affaires Enedis', req:true},
+  {k:'MAITRE_OEUVRE', l:'Maître d’œuvre', ph:'Astridsen'},
+  {k:'PARTICIPANT_INSPECTION', l:'Participant à l’inspection'},
+  {k:'FONCTION_PARTICIPANT', l:'Fonction du participant'}
+];
 function genEtat(cle){
   if(!GEN_ETAT[cle]) GEN_ETAT[cle]={lignes:[], captures:{}, modele:null,
-                                    nomModele:'', journal:[], sel:{}};
+                                    nomModele:'', journal:[], sel:{}, saisie:{}};
   return GEN_ETAT[cle];
 }
 function genParams(cle){
@@ -18944,7 +19381,166 @@ function renderGenModule(el, cle){
           :''), souci?'#B91C1C':'#047857', souci?'#FEE2E2':'#D1FAE5'));
     }
 
-    zone.appendChild(boiteDepot('📄 Modèle Word (.docx)',
+    // ── Saisie directe, une affaire ───────────────────────────
+    // Le modèle est déjà dans le dépôt et les champs sont peu nombreux :
+    // déposer un tableur pour une seule affaire n'avait pas de sens.
+    if(etat.modele){
+      var sd=document.createElement('div');
+      sd.style.cssText='border:1.5px solid var(--b);border-radius:10px;padding:9px 11px;'
+        +'margin-bottom:8px;background:var(--s)';
+      var sdt=document.createElement('div');
+      sdt.style.cssText='font-size:11px;font-weight:800;color:var(--t2);margin-bottom:2px';
+      sdt.textContent='✍ Saisie directe';
+      var sda=document.createElement('div');
+      sda.style.cssText='font-size:9.5px;color:var(--t3);margin-bottom:7px';
+      sda.textContent='Remplis les champs, dépose la capture, et édite le document.';
+      sd.appendChild(sdt); sd.appendChild(sda);
+
+      // Reprise depuis une affaire de l'application
+      var selA=document.createElement('select');
+      selA.style.cssText='width:100%;border:1px solid var(--b2);border-radius:7px;padding:5px 8px;'
+        +'font-size:11px;background:var(--bg);color:var(--t);font-family:inherit;margin-bottom:7px';
+      selA.innerHTML='<option value="">— reprendre une affaire de RADAR —</option>';
+      Object.keys(DATA).forEach(function(cp){
+        (gAff(cp)||[]).forEach(function(a){
+          var o=document.createElement('option');
+          o.value=cp+'||'+a.code;
+          o.textContent=a.code+' — '+String(a.addr||'').slice(0,34);
+          selA.appendChild(o);
+        });
+      });
+      selA.addEventListener('change',function(){
+        if(!selA.value) return;
+        var pp=selA.value.split('||');
+        var a=(gAff(pp[0])||[]).filter(function(x){ return x.code===pp[1]; })[0];
+        if(!a) return;
+        etat.saisie.N_AFFAIRE=a.no||a.code||'';
+        etat.saisie.ADRESSE=a.addr||'';
+        var cm=String(a.addr||'').match(/\b(\d{5})\b/);
+        if(cm) etat.saisie.COMMUNE=etat.saisie.COMMUNE||cm[1];
+        etat.saisie.CHARGE_AFFAIRES=(DATA[pp[0]]||{}).name||'';
+        dessiner();
+      });
+      sd.appendChild(selA);
+
+      var gr=document.createElement('div');
+      gr.style.cssText='display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:7px';
+      SAISIE_PPS.forEach(function(c){
+        var d=document.createElement('div');
+        var l=document.createElement('div');
+        l.style.cssText='font-size:9px;font-weight:700;color:var(--t3);margin-bottom:2px';
+        l.textContent=c.l+(c.req?' *':'');
+        var i=document.createElement('input');
+        i.type=c.type||'text';
+        i.value=etat.saisie[c.k]||'';
+        i.placeholder=c.ph||'';
+        i.style.cssText='width:100%;border:1.5px solid '+(c.req && !etat.saisie[c.k]
+            ? 'var(--amber)':'var(--b2)')
+          +';border-radius:6px;padding:4px 7px;font-size:11px;background:var(--bg);color:var(--t);'
+          +'font-family:inherit;box-sizing:border-box';
+        i.addEventListener('change',function(){
+          etat.saisie[c.k]=i.value.trim();
+          i.style.borderColor=(c.req && !etat.saisie[c.k])?'var(--amber)':'var(--b2)';
+          majEdit();
+        });
+        d.appendChild(l); d.appendChild(i); gr.appendChild(d);
+      });
+      sd.appendChild(gr);
+
+      // Capture de cette affaire
+      var lc=document.createElement('label');
+      lc.style.cssText='display:block;border:1.5px dashed var(--b2);border-radius:9px;padding:7px 10px;'
+        +'margin-top:8px;cursor:pointer;font-size:10px;font-weight:700;color:var(--t3)';
+      var capDirecte=etat.saisie.__caps||[];
+      lc.textContent=capDirecte.length
+        ? ('🖼 '+capDirecte.length+' capture(s) chargée(s) — cliquer pour remplacer')
+        : '🖼 Déposer la capture APS (.png)';
+      var ic=document.createElement('input');
+      ic.type='file'; ic.accept='.png'; ic.multiple=true; ic.style.display='none';
+      ic.addEventListener('change',function(){
+        var fs=[].slice.call(ic.files);
+        Promise.all(fs.map(function(f){
+          return lireFichier(f).then(function(buf){
+            return {nom:f.name, buffer:buf, taille:pngTaille(buf)};
+          });
+        })).then(function(arr){
+          etat.saisie.__caps=arr.filter(function(x){ return x.taille; });
+          dessiner();
+        });
+      });
+      lc.appendChild(ic);
+      lc.addEventListener('dragover',function(e){ e.preventDefault(); });
+      lc.addEventListener('drop',function(e){
+        e.preventDefault();
+        var fs=[].slice.call(e.dataTransfer.files);
+        Promise.all(fs.map(function(f){
+          return lireFichier(f).then(function(buf){
+            return {nom:f.name, buffer:buf, taille:pngTaille(buf)};
+          });
+        })).then(function(arr){
+          etat.saisie.__caps=arr.filter(function(x){ return x.taille; });
+          dessiner();
+        });
+      });
+      sd.appendChild(lc);
+
+      var bEdit=document.createElement('button');
+      bEdit.style.cssText='margin-top:9px;border:none;background:var(--brand);color:#fff;'
+        +'border-radius:9px;padding:8px 16px;font-size:12px;font-weight:800;cursor:pointer;'
+        +'font-family:inherit';
+      var infoE=document.createElement('span');
+      infoE.style.cssText='font-size:9.5px;color:var(--t3);margin-left:9px';
+      function majEdit(){
+        var manque=SAISIE_PPS.filter(function(c){ return c.req && !etat.saisie[c.k]; })
+                             .map(function(c){ return c.l; });
+        if(cfg.aps && !(etat.saisie.__caps||[]).length) manque.push('capture APS');
+        bEdit.disabled=manque.length>0;
+        bEdit.style.opacity=manque.length?'.5':'1';
+        bEdit.style.cursor=manque.length?'not-allowed':'pointer';
+        bEdit.textContent='📄 Éditer le document';
+        infoE.textContent=manque.length ? ('Il manque : '+manque.join(', ')) : '';
+      }
+      bEdit.addEventListener('click',function(){
+        var ligne={};
+        SAISIE_PPS.forEach(function(c){ ligne[c.k]=etat.saisie[c.k]||''; });
+        var caps=etat.saisie.__caps||[];
+        etat.journal=[];
+        infoE.textContent='Génération…';
+        var zipLot=new JSZip();
+        etat.captures[ligne.N_AFFAIRE]=caps;
+        genererUn(zipLot, ligne).then(function(){
+          return zipLot.file(cfg.prefixe+ligne.N_AFFAIRE+'.docx').async('blob');
+        }).then(function(blob){
+          var a=document.createElement('a');
+          a.href=URL.createObjectURL(blob);
+          a.download=cfg.prefixe+ligne.N_AFFAIRE+'.docx';
+          a.click();
+          setTimeout(function(){ URL.revokeObjectURL(a.href); }, 4000);
+          GEN_HISTO.push({date:dISO(), q:USER_INI||'?', module:cle, n:1,
+                          affaires:[ligne.N_AFFAIRE]});
+          sbSave();
+          infoE.textContent='Document édité.';
+          showToast('Document édité');
+          dessiner();
+        }).catch(function(e){
+          etat.journal.push({err:true, txt:ligne.N_AFFAIRE+' : '+(e.message||e)});
+          infoE.textContent='Échec : '+(e.message||e);
+          dessiner();
+        });
+      });
+      majEdit();
+      sd.appendChild(bEdit); sd.appendChild(infoE);
+      zone.appendChild(sd);
+    }
+
+    var plus=document.createElement('details');
+    plus.style.cssText='border:1px solid var(--b);border-radius:9px;margin-bottom:8px;background:var(--s)';
+    var plusS=document.createElement('summary');
+    plusS.style.cssText='padding:7px 11px;font-size:10px;font-weight:800;cursor:pointer;color:var(--t3)';
+    plusS.textContent='Traitement en lot et remplacement du modèle';
+    plus.appendChild(plusS);
+    zone.appendChild(plus);
+    plus.appendChild(boiteDepot('📄 Modèle Word (.docx)',
       etat.nomModele||'Facultatif si le modèle est déjà dans le dépôt', '.docx', false,
       function(fs){
         if(!fs.length) return;
@@ -18956,7 +19552,7 @@ function renderGenModule(el, cle){
         }).catch(function(e){ uiAlert('Modèle illisible', String(e.message||e)); });
       }));
 
-    zone.appendChild(boiteDepot('📊 Tableur de suivi (.xlsx)',
+    plus.appendChild(boiteDepot('📊 Tableur de suivi (.xlsx)',
       etat.lignes.length ? (etat.lignes.length+' affaire(s) lue(s)')
         : 'Feuille « '+(cfg.feuille||'première feuille')+' », libellés en colonne A, une colonne par affaire',
       '.xlsx,.xls', false,
@@ -18974,7 +19570,7 @@ function renderGenModule(el, cle){
 
     if(cfg.aps){
       var nAps=Object.keys(etat.captures).reduce(function(s,k){ return s+etat.captures[k].length; },0);
-      zone.appendChild(boiteDepot('🖼 Captures APS (.png)',
+      plus.appendChild(boiteDepot('🖼 Captures APS (.png)',
         nAps ? (nAps+' capture(s) pour '+Object.keys(etat.captures).length+' affaire(s)')
              : 'Nommées {N° affaire}.png, suffixe libre quand il y en a plusieurs',
         '.png', true,
@@ -21253,7 +21849,7 @@ window.addEventListener('beforeunload', function(e){
 // On ne recharge jamais de force, une saisie en cours serait perdue :
 // on propose, la personne choisit son moment.
 // ══════════════════════════════════════════════════════════════
-var APP_VERSION='2026-09-07-4';
+var APP_VERSION='2026-09-07-5';
 var MAJ_VUE=false;
 function bandeauMaj(v){
   if(MAJ_VUE || document.getElementById('maj-banner')) return;
