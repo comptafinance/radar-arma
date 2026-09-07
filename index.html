@@ -18163,9 +18163,34 @@ function libsGen(){
 function docxOuvrir(buffer){
   return JSZip.loadAsync(buffer).then(function(zip){
     return zip.file('word/document.xml').async('string').then(function(xml){
-      return {zip:zip, xml:xml};
+      var fr=zip.file('word/_rels/document.xml.rels');
+      if(!fr) return {zip:zip, xml:xml, rels:'', ridAps:''};
+      return fr.async('string').then(function(rels){
+        return {zip:zip, xml:xml, rels:rels, ridAps:docxRidDe(rels, APS_MEDIA)};
+      });
     });
   });
+}
+// Le fichier image que la capture APS vient écraser, et la relation qui le
+// désigne. On résout l'identifiant plutôt que de le coder en dur : il change
+// d'un modèle à l'autre.
+var APS_MEDIA='media/image4.png';
+function docxRidDe(rels, cible){
+  var re=new RegExp('Id="([^"]+)"[^>]*Target="'+cible.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'"');
+  var m=String(rels||'').match(re);
+  if(m) return m[1];
+  re=new RegExp('Target="'+cible.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'"[^>]*Id="([^"]+)"');
+  m=String(rels||'').match(re);
+  return m?m[1]:'';
+}
+// La forme VML qui porte cette relation, où qu'elle soit dans le document.
+// Ce modèle compte SEIZE <v:shape> et la capture APS est la quatrième :
+// prendre la première redimensionnait le logo de l'en-tête.
+function docxFormeDe(xml, rid){
+  if(!rid) return null;
+  var re=new RegExp('<v:shape(?:(?!<\\/v:shape>)[\\s\\S])*?r:id="'+rid+'"(?:(?!<\\/v:shape>)[\\s\\S])*?<\\/v:shape>');
+  var m=String(xml).match(re);
+  return m?m[0]:null;
 }
 // Jetons {{NOM}} présents, avec leur nombre d'occurrences
 function docxJetons(xml){
@@ -18195,16 +18220,23 @@ function xmlEchap(s){
 // Le modèle fourni est déjà corrigé. On ne corrige donc pas d'office : on
 // détecte, on alerte, et la correction reste une option. Le jour où Enedis
 // livre une nouvelle version brute, elle sera là.
+// Les runs qui portent à la fois une case Wingdings et du texte
+function docxRunsMeles(xml){
+  return (String(xml||'').match(/<w:r>(?:(?!<\/w:r>)[\s\S])*?<\/w:r>/g)||[])
+    .filter(function(r){
+      return /<w:sym[^>]*Wingdings/.test(r) && /<w:t[ >]/.test(r);
+    });
+}
 function docxDefauts(xml){
   var d=[];
   if(!xml) return d;
   var nTbl=(xml.match(/<w:tblpPr[^>]*w:vertAnchor="page"/g)||[]).length;
   if(nTbl) d.push({k:'flottant', n:nTbl,
     l:nTbl+' tableau(x) d’en-tête ancré(s) à la page — ils chevauchent le tableau suivant (pages 5 et 12)'});
-  // Le symbole ET le libellé doivent être dans le MÊME run. Sans le garde
-  // sur </w:r>, la sonde franchissait la frontière et signalait comme
-  // défectueux un document qui venait justement d'être corrigé.
-  var nSym=(xml.match(/<w:r>(?:(?!<\/w:r>)[\s\S])*?<w:sym w:font="Wingdings"(?:(?!<\/w:r>)[\s\S])*?<w:t[^>]*>/g)||[]).length;
+  // Le symbole ET le libellé dans le MÊME run, DANS N'IMPORTE QUEL ORDRE.
+  // Le modèle réel écrit le libellé puis les tabulations puis la case :
+  // une sonde qui attendait la case en premier ne voyait rien.
+  var nSym=docxRunsMeles(xml).length;
   if(nSym) d.push({k:'wingdings', n:nSym,
     l:nSym+' run(s) mêlant une case Wingdings et son libellé — le texte s’affiche en symboles (pages 3 et 10)'});
   return d;
@@ -18216,16 +18248,25 @@ function docxCorriger(xml, opts){
     xml=xml.replace(/<w:tblpPr[^>]*w:vertAnchor="page"[^>]*\/>/g, function(){ n.flottant++; return ''; });
   }
   if(opts.wingdings!==false){
-    // Un run qui porte à la fois le symbole et le texte est scindé en deux
-    // runs partageant le même <w:rPr>.
+    // Chaque case Wingdings part dans son propre run. L'ordre du document est
+    // conservé, et tous les runs gardent le <w:rPr> d'origine : la seule
+    // chose qui change est que la police symbole ne déborde plus sur le
+    // libellé. Le modèle réel écrit le libellé PUIS la case, donc on ne peut
+    // pas supposer un ordre : on découpe sur les symboles, c'est tout.
     xml=xml.replace(/<w:r>((?:(?!<\/w:r>)[\s\S])*?)<\/w:r>/g, function(tout, corps){
-      if(corps.indexOf('<w:sym w:font="Wingdings"')<0) return tout;
-      if(corps.indexOf('<w:t')<0) return tout;
+      if(!/<w:sym[^>]*Wingdings/.test(corps) || !/<w:t[ >]/.test(corps)) return tout;
       var rpr=(corps.match(/<w:rPr>[\s\S]*?<\/w:rPr>/)||[''])[0];
-      var sym=(corps.match(/<w:sym[^>]*\/>/)||[''])[0];
-      var txt=corps.substring(corps.indexOf('<w:t'));
+      var reste=rpr?corps.substring(corps.indexOf(rpr)+rpr.length):corps;
+      var bouts=[], pos=0, re=/<w:sym[^>]*\/>/g, m;
+      while((m=re.exec(reste))){
+        if(m.index>pos) bouts.push(reste.substring(pos, m.index));
+        bouts.push(m[0]);
+        pos=m.index+m[0].length;
+      }
+      if(pos<reste.length) bouts.push(reste.substring(pos));
       n.wingdings++;
-      return '<w:r>'+rpr+sym+'</w:r><w:r>'+rpr+txt+'</w:r>';
+      return bouts.filter(function(b){ return b.trim(); })
+                  .map(function(b){ return '<w:r>'+rpr+b+'</w:r>'; }).join('');
     });
   }
   return {xml:xml, n:n};
@@ -18259,29 +18300,33 @@ function apsDimensions(tailles, parPage){
 }
 
 // Écrase l'image de remplacement et empile les suivantes dans le même cadre.
-function docxImages(zip, xml, images, parPage){
+function docxImages(zip, xml, images, parPage, ridAps){
   if(!images || !images.length) return xml;
+  var base=docxFormeDe(xml, ridAps);
+  if(!base) throw new Error('cadre de la capture APS introuvable dans le modèle');
   var dims=apsDimensions(images.map(function(i){ return i.taille; }), parPage);
-  // La première remplace word/media/image4.png
-  zip.file('word/media/image4.png', images[0].buffer);
-  var forme=xml.match(/<v:shape[^>]*>[\s\S]*?<\/v:shape>/);
-  if(!forme) return xml;
-  var base=forme[0];
+  // La première écrase l'image de remplacement du modèle
+  zip.file('word/'+APS_MEDIA, images[0].buffer);
   function dimensionner(s, d){
     return s.replace(/width:[0-9.]+pt/,'width:'+d.w+'pt')
             .replace(/height:[0-9.]+pt/,'height:'+d.h+'pt');
   }
   var sortie=dimensionner(base, dims[0]);
-  // Les suivantes : un fichier, une relation et une forme de plus
+  // Les suivantes : un fichier, une relation et une forme de plus. Une forme
+  // vit dans un <w:pict> : on referme le sien et on en ouvre un autre, sinon
+  // le saut de ligne se retrouverait à l'intérieur, ce qui est invalide.
+  var separateur = parPage
+    ? '</w:pict></w:r><w:r><w:br w:type="page"/></w:r><w:r><w:pict>'
+    : '</w:pict></w:r><w:r><w:br/></w:r><w:r><w:pict>';
   for(var i=1;i<images.length;i++){
     var nom='image_aps_'+i+'.png';
     zip.file('word/media/'+nom, images[i].buffer);
     var rid='rIdAps'+i;
     var suite=dimensionner(base, dims[i])
       .replace(/r:id="[^"]*"/, 'r:id="'+rid+'"')
-      .replace(/ id="[^"]*"/, ' id="apsShape'+i+'"')
-      .replace(/o:spid="[^"]*"/, 'o:spid="_x0000_s99'+(90+i)+'"');
-    sortie += '<w:br/>'+suite;
+      .replace(/ id="[^"]*"/, ' id="Capture APS '+(i+1)+'"')
+      .replace(/o:spid="[^"]*"/, 'o:spid="_x0000_i20'+(30+i)+'"');
+    sortie += separateur + suite;
     zip.__relsAps=(zip.__relsAps||[]);
     zip.__relsAps.push({id:rid, cible:'media/'+nom});
   }
@@ -18359,7 +18404,7 @@ var GEN_PARAMS = {
     texteInconnu:'à définir',
     page3:'supprimer',        // 'supprimer' ou 'conserver'
     capturesParPage:false,
-    corrigerModele:false,     // le modèle fourni est déjà corrigé
+    corrigerModele:true,      // le modèle réel porte encore 4 runs Wingdings mêlés
     raisons:{'SPIE':'SPIE CITY NETWORK'}
   }
 };
@@ -18561,10 +18606,18 @@ function renderGenModule(el, cle){
       var jt=docxJetons(etat.modele.xml);
       var nj=Object.keys(jt).length;
       var def=docxDefauts(etat.modele.xml);
+      var cadre = cfg.aps ? !!docxFormeDe(etat.modele.xml, etat.modele.ridAps) : true;
+      var souci = def.length || !cadre;
       zone.appendChild(info('Modèle chargé : <b>'+etat.nomModele+'</b> — '+nj+' jeton(s), '
-        +(etat.modele.xml.match(/<w:p[ >]/g)||[]).length+' paragraphes.'
+        +(etat.modele.xml.match(/<w:p[ >]/g)||[]).length+' paragraphes'
+        +(cfg.aps?(cadre?', cadre de la capture APS repéré.':'.'):'.')
+        +(!cadre&&cfg.aps?'<br><span style="color:#B91C1C">⚠ Cadre de la capture APS introuvable : '
+          +'aucun document ne sera généré.</span>':'')
         +(def.length?'<br><span style="color:#B91C1C">⚠ '+def.map(function(d){ return d.l; }).join('<br>⚠ ')
-          +'</span>':''), def.length?'#B91C1C':'#047857', def.length?'#FEE2E2':'#D1FAE5'));
+          +'</span><br>'+(p.corrigerModele
+            ?'La correction est active : elle sera appliquée à chaque document.'
+            :'<b>Coche « Corriger les défauts du modèle » ci-dessous</b>, sinon le texte sortira en symboles.')
+          :''), souci?'#B91C1C':'#047857', souci?'#FEE2E2':'#D1FAE5'));
     }
 
     zone.appendChild(boiteDepot('📄 Modèle Word (.docx)',
@@ -18574,7 +18627,7 @@ function renderGenModule(el, cle){
         libsGen().then(function(){ return lireFichier(fs[0]); }).then(function(buf){
           return docxOuvrir(buf).then(function(m){ m.__buf=buf; return m; });
         }).then(function(m){
-          etat.modele={brut:m.__buf, zip:m.zip, xml:m.xml};
+          etat.modele={brut:m.__buf, zip:m.zip, xml:m.xml, rels:m.rels, ridAps:m.ridAps};
           etat.nomModele=fs[0].name; dessiner();
         }).catch(function(e){ uiAlert('Modèle illisible', String(e.message||e)); });
       }));
@@ -18831,7 +18884,7 @@ function renderGenModule(el, cle){
       var caps=etat.captures[l.N_AFFAIRE]||[];
       if(cfg.aps){
         if(!caps.length) throw new Error('capture APS absente, document non généré');
-        xml=docxImages(zip, xml, caps, p.capturesParPage);
+        xml=docxImages(zip, xml, caps, p.capturesParPage, etat.modele.ridAps);
       }
       var s=docxSubstituer(xml, ppsValeurs(l, p));
       var ctrl=docxControle(etat.modele.xml, s.xml, 0);
@@ -18854,6 +18907,20 @@ function renderGenModule(el, cle){
   function lancer(prog){
     var choisies=etat.lignes.filter(function(l){ return etat.sel[l.N_AFFAIRE]; });
     if(!choisies.length || !etat.modele) return;
+    // Un réglage enregistré peut avoir désactivé la correction. On ne produit
+    // jamais en silence un document dont on sait qu'il sortira abîmé.
+    var def=docxDefauts(etat.modele.xml);
+    if(def.length && !p.corrigerModele){
+      uiConfirm('Défauts détectés dans le modèle',
+        def.map(function(d){ return '· '+d.l; }).join('\n')
+        +'\n\nLa correction est désactivée dans les paramètres.\n'
+        +'Les documents sortiront avec ces défauts.\n\nGénérer quand même ?',
+        function(){ lancerVraiment(prog, choisies); }, true);
+      return;
+    }
+    lancerVraiment(prog, choisies);
+  }
+  function lancerVraiment(prog, choisies){
     etat.journal=[];
     var zipLot=new JSZip(), i=0;
     function suite(){
@@ -18892,7 +18959,7 @@ function renderGenModule(el, cle){
       .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.arrayBuffer(); })
       .then(function(buf){
         return docxOuvrir(buf).then(function(m){
-          etat.modele={brut:buf, zip:m.zip, xml:m.xml};
+          etat.modele={brut:buf, zip:m.zip, xml:m.xml, rels:m.rels, ridAps:m.ridAps};
           etat.nomModele=cfg.fichier.replace(/^.*\//,'')+' (dépôt)';
           dessiner();
         });
@@ -20862,7 +20929,7 @@ window.addEventListener('beforeunload', function(e){
 // On ne recharge jamais de force, une saisie en cours serait perdue :
 // on propose, la personne choisit son moment.
 // ══════════════════════════════════════════════════════════════
-var APP_VERSION='2026-09-07-2';
+var APP_VERSION='2026-09-07-3';
 var MAJ_VUE=false;
 function bandeauMaj(v){
   if(MAJ_VUE || document.getElementById('maj-banner')) return;
