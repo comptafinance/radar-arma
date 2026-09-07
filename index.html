@@ -1887,6 +1887,15 @@ var SERVICES = [
 ];
 var SVC_CUR = (function(){ try{ return localStorage.getItem('radar_svc')||'ARMA'; }catch(e){ return 'ARMA'; } })();
 
+// Les tâches back-office IRVE ne sont pas des affaires : elles n'ont ni
+// dossier ni UO. Mélangées à l'IRVE dans le prévisionnel, on ne voyait plus
+// ce qui venait des dossiers et ce qui venait du back-office. Elles ont donc
+// leur propre ligne, qui n'est pas un périmètre à part entière.
+var SVC_BO = {k:'IRVE_BO', l:'IRVE back-office', court:'IRVE BO',
+              fg:'#7C3AED', bg:'#EDE9FE', bo:true};
+function seriesPrev(){ return SERVICES.concat([SVC_BO]); }
+function serieInfo(k){ return k===SVC_BO.k ? SVC_BO : svcInfo(k); }
+
 function svcOf(cp){
   var d=DATA[cp];
   if(d && d.svc) return d.svc;
@@ -5364,9 +5373,21 @@ function tacheMontant(){ return TACHE_MONTANT||0; }
 // Une tâche est traitée quand elle porte une vraie date de réalisation.
 // « À réaliser », « A FAIRE » ou rien : elle est encore ouverte.
 function tacheOuverte(t){
+  // Une tâche peut être faite sans qu'on sache quand : le drapeau prime
+  // donc sur la date. Sans drapeau, une vraie date vaut réalisation.
+  if(t && t.fait) return false;
   var d=String((t||{}).date||'').trim();
   if(!d) return true;
   return !( /^\d{4}-\d{2}-\d{2}/.test(d) || frToISO(d) );
+}
+// Marquer faite, avec ou sans date. iso vide : réalisée, date inconnue.
+function tacheFaire(t, iso){
+  t.fait=true;
+  if(iso) t.date=iso; else delete t.date;
+}
+function tacheRouvrir(t){
+  delete t.fait;
+  t.date='À réaliser';
 }
 // ── Édition d'une tâche directement dans un tableau ──
 // Partagé par les deux vues, onglet Affaires et onglet Référent, pour que
@@ -5415,15 +5436,17 @@ function celluleDateTache(t, apres){
   inp.addEventListener('blur',function(){
     inp.style.borderColor='transparent'; inp.style.background='transparent';
     var v=inp.value.trim(), iso=frToISO(v);
-    if(iso) t.date=iso; else if(v) t.date=v; else delete t.date;
+    // Une vraie date vaut réalisation ; un texte libre ou rien la rouvre.
+    if(iso){ tacheFaire(t, iso); }
+    else if(v){ delete t.fait; t.date=v; }
+    else { delete t.fait; delete t.date; }
     sbSave();
     try{ peindre(); }catch(e){}
     if(apres) apres();
   });
   td.appendChild(inp);
-  // Le sablier ne disait rien de l'etat de la tache et ne servait qu'a la
-  // rouvrir. A la place, un bouton qui montre l'etat et le change. Passer une
-  // tache en realisee demande sa date : sans date, elle reste ouverte.
+  // Un bouton qui montre l'etat et le change. La date de realisation est
+  // proposee mais pas exigee : laisser vide marque la tache faite sans date.
   var b=document.createElement('button');
   b.style.cssText='border:1px solid var(--b2);border-radius:6px;cursor:pointer;font-size:8.5px;'
     +'font-weight:800;padding:2px 5px;font-family:inherit;white-space:nowrap;margin-left:2px';
@@ -5433,23 +5456,32 @@ function celluleDateTache(t, apres){
     b.style.background = faite ? '#D1FAE5' : 'var(--s2)';
     b.style.color      = faite ? '#047857' : 'var(--t3)';
     b.style.borderColor= faite ? '#047857' : 'var(--b2)';
-    b.title = faite ? 'Réalisée le '+dFR(t.date)+'\nCliquer pour la rouvrir'
-                    : 'Non réalisée\nCliquer pour la marquer réalisée et saisir la date';
+    b.title = faite
+      ? (t.date ? 'Réalisée le '+dFR(t.date) : 'Réalisée, date non renseignée')
+        +'\nCliquer pour la rouvrir'
+      : 'Non réalisée\nCliquer pour la marquer réalisée';
   }
   b.addEventListener('click',function(){
     if(!tacheOuverte(t)){                      // realisee -> on la rouvre
-      t.date='À réaliser'; inp.value='À réaliser';
+      tacheRouvrir(t); inp.value='À réaliser';
       sbSave(); peindre(); if(apres) apres();
       return;
     }
     var d=new Date();
     var auj=String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear();
     uiPrompt('Date de réalisation', auj, function(v){
-      var iso=frToISO(String(v||'').trim());
-      if(!iso){ uiAlert('Date attendue','Saisir la date au format JJ/MM/AAAA.\nLa tâche reste non réalisée.'); return; }
-      t.date=iso; inp.value=dFR(iso);
+      v=String(v||'').trim();
+      if(v){
+        var iso=frToISO(v);
+        if(!iso){ uiAlert('Date non comprise',
+          'Format attendu JJ/MM/AAAA.\nLaisse le champ vide pour marquer la tâche faite sans date.'); return; }
+        tacheFaire(t, iso); inp.value=dFR(iso);
+      } else {
+        tacheFaire(t, '');  inp.value='';
+      }
       sbSave(); peindre(); if(apres) apres();
-    }, {message:'Quand cette tâche a-t-elle été réalisée ?', placeholder:'JJ/MM/AAAA', okLabel:'Marquer réalisée'});
+    }, {message:'Quand cette tâche a-t-elle été réalisée ?\nLaisse vide pour la marquer faite sans date.',
+        placeholder:'JJ/MM/AAAA', okLabel:'Marquer réalisée'});
   });
   peindre();
   td.appendChild(b);
@@ -5486,39 +5518,121 @@ function setTachesPrev(iso, n){
   n=+n||0;
   if(n>0) TACHES_PREV[iso]=n; else delete TACHES_PREV[iso];
 }
-// Qui prendra les t\u00e2ches \u00e0 venir d'un mois donn\u00e9 : { '2026-11':'PG' }.
-// Vide, la charge et la facturation restent sur le p\u00e9rim\u00e8tre sans nom.
-// Renseign\u00e9, elles partent sur le portefeuille de cette personne.
+// R\u00e9partition des t\u00e2ches \u00e0 venir d'un mois : { '2026-11': {PG:8, SD:4} }.
+// Ce qui n'est attribu\u00e9 \u00e0 personne reste sur le p\u00e9rim\u00e8tre, sans nom.
+// L'ancienne forme, un seul porteur \u00e9crit en clair, est relue telle quelle.
 var TACHES_PREV_CP = {};
-function tachesPrevCp(iso){ return TACHES_PREV_CP[iso]||''; }
-function setTachesPrevCp(iso, ini){
-  if(ini) TACHES_PREV_CP[iso]=ini; else delete TACHES_PREV_CP[iso];
+function tachesPrevRepart(iso){
+  var r=TACHES_PREV_CP[iso];
+  if(typeof r==='string' && r){ var o={}; o[r]=tachesPrevMois(iso); return o; }
+  return (r && typeof r==='object') ? r : {};
 }
-// Personnes qui peuvent porter ces t\u00e2ches : celles qui ont un portefeuille IRVE
-function tachesPrevCandidats(){
-  return personnes().filter(function(p){
-    return p.cps.some(function(cp){ return svcOf(cp)==='IRVE'; });
-  });
+function tachesPrevPart(iso, ini){ return +(tachesPrevRepart(iso)[ini]||0)||0; }
+function setTachesPrevPart(iso, ini, n){
+  n=Math.max(0, +n||0);
+  var r=tachesPrevRepart(iso);
+  if(n) r[ini]=n; else delete r[ini];
+  if(Object.keys(r).length) TACHES_PREV_CP[iso]=r; else delete TACHES_PREV_CP[iso];
 }
+function tachesPrevAttribuees(iso){
+  var r=tachesPrevRepart(iso), n=0;
+  Object.keys(r).forEach(function(k){ n+=(+r[k]||0); });
+  return n;
+}
+function tachesPrevReste(iso){ return tachesPrevMois(iso)-tachesPrevAttribuees(iso); }
+// N'importe qui dans l'\u00e9quipe peut porter ces t\u00e2ches, pas seulement les
+// personnes d\u00e9j\u00e0 sur l'IRVE : c'est justement ainsi qu'on bascule la charge.
+function tachesPrevCandidats(){ return personnes(); }
 // Chiffre d'affaires attendu des t\u00e2ches back-office, mois par mois.
 // ini vide : tout, quel que soit le porteur. ini renseign\u00e9 : ce porteur seul.
+// Répartir les tâches d'un mois entre plusieurs personnes de l'équipe
+function repartirTachesModal(iso, apres){
+  var ov=document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9400;display:flex;'
+    +'align-items:center;justify-content:center;padding:16px';
+  var box=document.createElement('div');
+  box.style.cssText='background:var(--s);border-radius:14px;max-width:400px;width:100%;'
+    +'max-height:88vh;overflow:auto';
+  var mi=moisIndex(iso+'-01');
+  box.innerHTML='<div style="padding:13px 16px 2px;font-size:13px;font-weight:800">'
+    +'Répartir les tâches de '+moisLabel(mi===null?0:mi)+'</div>';
+  var sst=document.createElement('div');
+  sst.style.cssText='padding:0 16px 8px;font-size:11px;color:var(--t3)';
+  box.appendChild(sst);
+  var liste=document.createElement('div');
+  liste.style.cssText='padding:0 16px 6px;display:flex;flex-direction:column;gap:6px';
+  function majTitre(){
+    var reste=tachesPrevReste(iso);
+    sst.innerHTML=tachesPrevMois(iso)+' tâche(s) attendue(s) — '
+      +'<b style="color:'+(reste<0?'var(--red)':(reste>0?'#B45309':'#047857'))+'">'
+      +(reste>0?(reste+' non attribuée(s)'):(reste<0?((-reste)+' de trop'):'tout est attribué'))+'</b>';
+  }
+  tachesPrevCandidats().forEach(function(p){
+    var l=document.createElement('div');
+    l.style.cssText='display:flex;align-items:center;gap:8px';
+    var n=document.createElement('span');
+    n.style.cssText='flex:1;font-size:12px;font-weight:700;color:var(--t2)';
+    var svcs=p.cps.map(function(cp){ return svcInfo(svcOf(cp)).court; }).join(' ');
+    n.textContent=p.ini+' · '+p.nom;
+    var s=document.createElement('span');
+    s.style.cssText='font-size:9px;color:var(--t3)'; s.textContent=svcs;
+    var i=document.createElement('input');
+    i.type='number'; i.min='0'; i.step='1';
+    i.value=tachesPrevPart(iso,p.ini)||'';
+    i.placeholder='0';
+    i.style.cssText='width:70px;border:1.5px solid var(--b2);border-radius:7px;padding:5px 8px;'
+      +'font-size:13px;font-weight:800;text-align:center;background:var(--bg);color:var(--t);'
+      +'font-family:inherit';
+    i.addEventListener('change',function(){
+      setTachesPrevPart(iso, p.ini, i.value);
+      i.value=tachesPrevPart(iso,p.ini)||'';
+      majTitre(); sbSave();
+    });
+    l.appendChild(n); l.appendChild(s); l.appendChild(i);
+    liste.appendChild(l);
+  });
+  majTitre();
+  box.appendChild(liste);
+  var aide=document.createElement('div');
+  aide.style.cssText='padding:4px 16px 8px;font-size:10px;color:var(--t3);line-height:1.5';
+  aide.textContent='Ce qui n’est attribué à personne reste sur le périmètre, sans nom. '
+    +'La charge et la facturation d’une part attribuée partent sur le portefeuille de la personne.';
+  box.appendChild(aide);
+  var ft=document.createElement('div');
+  ft.style.cssText='display:flex;gap:8px;justify-content:space-between;padding:6px 16px 14px';
+  var bz=document.createElement('button');
+  bz.style.cssText='border:1px solid var(--b2);background:var(--s2);color:var(--t2);border-radius:8px;'
+    +'padding:7px 12px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit';
+  bz.textContent='Tout remettre à zéro';
+  bz.addEventListener('click',function(){
+    delete TACHES_PREV_CP[iso]; sbSave();
+    [].slice.call(liste.querySelectorAll('input')).forEach(function(x){ x.value=''; });
+    majTitre();
+  });
+  var bf=document.createElement('button');
+  bf.style.cssText='border:none;background:var(--brand);color:#fff;border-radius:8px;padding:7px 16px;'
+    +'font-size:12px;font-weight:700;cursor:pointer;font-family:inherit';
+  bf.textContent='Fermer';
+  bf.addEventListener('click',function(){
+    if(ov.parentNode) document.body.removeChild(ov);
+    if(apres) apres();
+  });
+  ft.appendChild(bz); ft.appendChild(bf); box.appendChild(ft);
+  ov.appendChild(box); document.body.appendChild(ov);
+  ov.addEventListener('click',function(e){ if(e.target===ov) bf.click(); });
+}
+function nbTachesPrev(iso, ini){
+  return (ini===undefined || ini===null) ? tachesPrevMois(iso) : tachesPrevPart(iso, ini);
+}
 function factuTachesPrev(nMois, ini){
   var out=new Array(nMois).fill(0);
-  for(var i=0;i<nMois;i++){
-    var iso=moisISO(i);
-    if(ini!==undefined && ini!==null && tachesPrevCp(iso)!==ini) continue;
-    out[i]=tachesPrevMois(iso)*tacheMontant();
-  }
+  for(var i=0;i<nMois;i++) out[i]=nbTachesPrev(moisISO(i), ini)*tacheMontant();
   return out;
 }
 // Charge correspondante, en heures : une t\u00e2che vaut une heure
 function heuresTachesPrev(nMois, ini){
   var out=new Array(nMois).fill(0);
-  for(var i=0;i<nMois;i++){
-    var iso=moisISO(i);
-    if(ini!==undefined && ini!==null && tachesPrevCp(iso)!==ini) continue;
-    out[i]=tachesPrevMois(iso)*TACHE_HEURES;
-  }
+  for(var i=0;i<nMois;i++) out[i]=nbTachesPrev(moisISO(i), ini)*TACHE_HEURES;
   return out;
 }
 
@@ -5556,6 +5670,37 @@ function rIrveTaches(){
   tot.style.cssText='font-size:10.5px;font-weight:800;color:var(--green)';
   tot.textContent=nSel+' s\u00e9lectionn\u00e9e(s) \u2014 '+fmtEur(nSel*tacheMontant());
   bar.appendChild(tot);
+  // Passer plusieurs t\u00e2ches en Fait d'un coup : les cocher une par une puis
+  // les basculer, plut\u00f4t que d'ouvrir chaque ligne.
+  var bFait=document.createElement('button');
+  bFait.style.cssText='border:none;background:'+(nSel?'#047857':'var(--b2)')+';color:#fff;'
+    +'border-radius:7px;padding:5px 12px;font-size:10px;font-weight:700;font-family:inherit;'
+    +'cursor:'+(nSel?'pointer':'not-allowed');
+  bFait.textContent='\u2713 Passer en Fait'+(nSel?' ('+nSel+')':'');
+  bFait.disabled=!nSel;
+  bFait.title='Marquer r\u00e9alis\u00e9es les t\u00e2ches coch\u00e9es';
+  bFait.addEventListener('click',function(){
+    var choisies=IRVE_TACHES.filter(function(t,i){ return TACHE_SEL[i]; });
+    if(!choisies.length) return;
+    var d=new Date();
+    var auj=String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear();
+    uiPrompt('Passer '+choisies.length+' t\u00e2che(s) en Fait', auj, function(v){
+      v=String(v||'').trim();
+      var iso='';
+      if(v){
+        iso=frToISO(v);
+        if(!iso){ uiAlert('Date non comprise',
+          'Format attendu JJ/MM/AAAA.\nLaisse le champ vide pour les marquer faites sans date.'); return; }
+      }
+      choisies.forEach(function(t){ tacheFaire(t, iso); });
+      TACHE_SEL={};
+      sbSave();
+      showToast(choisies.length+' t\u00e2che(s) pass\u00e9e(s) en Fait');
+      sansBouger(function(){ rIrveTaches(); });
+    }, {message:'Date de r\u00e9alisation commune.\nLaisse vide pour les marquer faites sans date.',
+        placeholder:'JJ/MM/AAAA', okLabel:'Marquer r\u00e9alis\u00e9es'});
+  });
+  bar.appendChild(bFait);
   var exp=document.createElement('button');
   exp.style.cssText='border:none;background:var(--teal);color:#fff;border-radius:7px;padding:5px 12px;'
     +'font-size:10px;font-weight:700;cursor:pointer;font-family:inherit';
@@ -5603,29 +5748,36 @@ function rIrveTaches(){
         try{ rPrevFactu(); rPrevCharge(); }catch(e){}
         majTotTaches();
       });
-      // Qui prendra ces tâches : la charge et la facturation suivent alors
-      // son portefeuille au lieu de rester sur le périmètre en général.
-      var sc=document.createElement('select');
-      sc.style.cssText='width:100%;border:none;background:transparent;font-size:8.5px;'
-        +'font-weight:800;color:var(--t3);font-family:inherit;cursor:pointer;text-align:center;'
-        +'padding:1px 0;margin-top:2px';
-      var o0=document.createElement('option'); o0.value=''; o0.textContent='non attribué';
-      sc.appendChild(o0);
-      tachesPrevCandidats().forEach(function(p){
-        var o=document.createElement('option'); o.value=p.ini;
-        o.textContent=p.ini+' · '+p.nom;
-        sc.appendChild(o);
-      });
-      sc.value=tachesPrevCp(iso);
-      if(sc.value){ sc.style.color='#7C3AED'; }
-      sc.title='Qui prendra les tâches de '+moisLabel(i)
-        +'\nRenseigné, la charge et la facturation partent sur son portefeuille.';
-      sc.addEventListener('change',function(){
-        setTachesPrevCp(iso, sc.value);
-        sc.style.color=sc.value?'#7C3AED':'var(--t3)';
-        sbSave();
+      // Qui prendra ces tâches. La charge et la facturation suivent alors le
+      // portefeuille de chacun au lieu de rester sur le périmètre en général.
+      // Un mois peut être partagé : 8 pour Paul, 4 pour Souad.
+      var sc=document.createElement('button');
+      sc.style.cssText='width:100%;border:1px dashed var(--b2);background:transparent;'
+        +'border-radius:5px;font-size:8.5px;font-weight:800;font-family:inherit;cursor:pointer;'
+        +'padding:2px 0;margin-top:3px;color:var(--t3)';
+      function majRepart(){
+        var r=tachesPrevRepart(iso), qui=Object.keys(r).filter(function(k){ return r[k]; });
+        var reste=tachesPrevReste(iso);
+        if(!qui.length){ sc.textContent='non attribué'; sc.style.color='var(--t3)';
+                         sc.style.borderStyle='dashed'; }
+        else {
+          sc.textContent=qui.map(function(k){ return k+' '+r[k]; }).join(' · ')
+            +(reste>0?' · reste '+reste:'');
+          sc.style.color='#7C3AED'; sc.style.borderStyle='solid';
+        }
+        sc.title='Qui prendra les '+tachesPrevMois(iso)+' tâche(s) de '+moisLabel(i)
+          +'\n'+(qui.length?qui.map(function(k){ return k+' : '+r[k]; }).join('\n'):'Personne pour l’instant')
+          +(reste>0?('\nNon attribué : '+reste):'')
+          +(reste<0?('\nATTENTION : '+(-reste)+' de plus que le total du mois'):'')
+          +'\nCliquer pour répartir';
+        if(reste<0){ sc.style.color='var(--red)'; sc.style.borderColor='var(--red)'; }
+        else sc.style.borderColor=qui.length?'#7C3AED':'var(--b2)';
+      }
+      majRepart();
+      sc.addEventListener('click',function(){ repartirTachesModal(iso, function(){
+        majRepart(); majTotTaches();
         try{ rPrevFactu(); rPrevCharge(); }catch(e){}
-      });
+      }); });
       c.appendChild(lb); c.appendChild(inp); c.appendChild(sc); tpg.appendChild(c);
     })(mi);
   }
@@ -5642,7 +5794,9 @@ function rIrveTaches(){
   tp.appendChild(tpt);
   body.appendChild(tp);
 
-  var wrap=document.createElement('div'); wrap.style.cssText='overflow-x:auto;max-height:340px;overflow-y:auto';
+  var wrap=document.createElement('div');
+  wrap.id='taches-bo-scroll';   // identifiant stable : sansBouger le retrouve
+  wrap.style.cssText='overflow-x:auto;max-height:340px;overflow-y:auto';
   var tbl=document.createElement('table'); tbl.className='fa-tbl';
   var th=document.createElement('thead'), tr=document.createElement('tr');
   [['',''],['Date',''],['N\u00b0 affaire','l'],['T\u00e2che','l'],['Pour qui','l'],['CP',''],['CRD',''],
@@ -5661,7 +5815,10 @@ function rIrveTaches(){
     var tdC=document.createElement('td');
     var cb=document.createElement('input'); cb.type='checkbox';
     cb.checked=!!TACHE_SEL[i];
-    cb.addEventListener('change',function(){ TACHE_SEL[i]=cb.checked; rIrveTaches(); });
+    cb.addEventListener('change',function(){
+      TACHE_SEL[i]=cb.checked;
+      sansBouger(function(){ rIrveTaches(); });
+    });
     tdC.appendChild(cb); row.appendChild(tdC);
 
     // \u00c9dition directe, m\u00eames champs que dans l'onglet Affaires
@@ -7636,6 +7793,26 @@ function faSelClass(v){
 // ══════════════════════════════════════════════════════════════
 // RÉAFFECTATION D'UNE AFFAIRE D'UN PORTEFEUILLE À UN AUTRE
 // ══════════════════════════════════════════════════════════════
+// Le portefeuille d'une personne sur un périmètre donné. S'il n'existe pas,
+// on le crée : réaffecter une affaire ARMA à quelqu'un qui n'a pas encore
+// d'ARMA doit marcher, pas être refusé.
+function portefeuillePour(ini, svc){
+  var trouve=Object.keys(DATA).filter(function(cp){
+    return (DATA[cp].ini||'')===ini && svcOf(cp)===svc;
+  })[0];
+  if(trouve) return trouve;
+  var modele=Object.keys(DATA).filter(function(cp){ return (DATA[cp].ini||'')===ini; })[0];
+  if(!modele) return null;
+  var n=1, key;
+  do { key='CP'+n; n++; } while(DATA[key]);
+  DATA[key]={name:DATA[modele].name||ini, ini:ini, svc:svc, closed:0, en_cours:0,
+             total_valo:0, total_factu:0, bill_counts:{}, affaires:[]};
+  AVC[key]=AVC[modele]||CP_PALETTE[(Object.keys(DATA).length-1)%CP_PALETTE.length];
+  DXP[key]=0;
+  PERIM[key]=svcInfo(svc).l||svcInfo(svc).court||PERIM_DEFAUT;
+  showToast('Portefeuille '+svcInfo(svc).court+' créé pour '+(DATA[key].name));
+  return key;
+}
 function moveAffaire(aff, fromCP, toCP){
   if(!DATA[fromCP]||!DATA[toCP]||fromCP===toCP) return false;
   var src=DATA[fromCP].affaires||[];
@@ -8382,18 +8559,16 @@ function rPrevCharge(){
       var ad=heuresAffectation(s.k, PREV_MOIS);
       for(var m2=0;m2<PREV_MOIS;m2++) arr[m2]+=ad[m2];
     }
-    // Les tâches back-office attendues pèsent une heure chacune
-    if(s.k==='IRVE'){
-      var th=heuresTachesPrev(PREV_MOIS);
-      for(var m4=0;m4<PREV_MOIS;m4++) arr[m4]+=th[m4];
-    }
     parSvc[s.k]=arr;
   });
+  // Les tâches back-office pèsent une heure chacune et font leur propre
+  // ligne, comme dans la facturation prévisionnelle.
+  parSvc[SVC_BO.k]=heuresTachesPrev(PREV_MOIS);
   var totals=[];
   for(var i=0;i<PREV_MOIS;i++){
     var n=0, hh=0;
     series.filter(function(s){ return s.perso; }).forEach(function(s){ n+=s.pts[i].n; });
-    SERVICES.forEach(function(s){ hh+=parSvc[s.k][i]; });
+    seriesPrev().forEach(function(s){ hh+=(parSvc[s.k]||[])[i]||0; });
     totals.push({d:series[0].pts[i].d, n:n, h:Math.round(hh)});
   }
   var enH=uoParamsRenseignes()>0;
@@ -8416,8 +8591,8 @@ function rPrevCharge(){
     if(enH){
       var dt=document.createElement('div');
       dt.style.cssText='font-size:6px;line-height:1.15;color:var(--t3);margin-bottom:2px;text-align:center';
-      dt.innerHTML=SERVICES.map(function(s){
-        var e=Math.round(parSvc[s.k][idx]/CAP_HEURES*100)/100;
+      dt.innerHTML=seriesPrev().map(function(s){
+        var e=Math.round(((parSvc[s.k]||[])[idx]||0)/CAP_HEURES*100)/100;
         return e>0 ? '<span style="color:'+s.fg+'">'+e+'</span>' : '';
       }).filter(Boolean).join('<br>');
       colDiv.appendChild(dt);
@@ -8428,8 +8603,8 @@ function rPrevCharge(){
       var stack=document.createElement('div');
       stack.style.cssText='width:100%;display:flex;flex-direction:column;justify-content:flex-end;height:'+hTot+'px';
       var lignes=[];
-      SERVICES.forEach(function(s){
-        var hs=parSvc[s.k][idx];
+      seriesPrev().forEach(function(s){
+        var hs=(parSvc[s.k]||[])[idx]||0;
         if(hs<=0) return;
         var seg=document.createElement('div');
         seg.style.cssText='width:100%;background:'+s.fg+';opacity:.88;height:'
@@ -8602,14 +8777,28 @@ function alignerGraphTableau(chart, tbl, labs){
 function sansBouger(fn){
   var y=window.scrollY, sc=document.getElementById('scroll');
   var ys=sc?sc.scrollTop:0;
-  try{ fn(); }catch(e){ console.warn('sansBouger',e); }
-  window.scrollTo(0,y);
-  if(sc) sc.scrollTop=ys;
-  // Le module redessiné peut finir sa mise en page au cycle suivant
-  requestAnimationFrame(function(){
+  // Un tableau long vit dans sa propre boîte défilante. Rendre la main au bon
+  // endroit dans la page ne suffit donc pas : la boîte, elle, repartait en
+  // haut. On mémorise le défilement de toutes celles qui portent un
+  // identifiant, seules à être retrouvables après reconstruction.
+  var boites=[];
+  try{
+    [].slice.call(document.querySelectorAll('[id]')).forEach(function(el){
+      if(el.scrollTop>0) boites.push({id:el.id, t:el.scrollTop, l:el.scrollLeft});
+    });
+  }catch(e){}
+  function rendre(){
     window.scrollTo(0,y);
     if(sc) sc.scrollTop=ys;
-  });
+    boites.forEach(function(b){
+      var el=document.getElementById(b.id);
+      if(el){ el.scrollTop=b.t; el.scrollLeft=b.l; }
+    });
+  }
+  try{ fn(); }catch(e){ console.warn('sansBouger',e); }
+  rendre();
+  // Le module redessiné peut finir sa mise en page au cycle suivant
+  requestAnimationFrame(rendre);
 }
 // Réaligne dès que la largeur bouge, et une première fois au rendu
 function suivreAlignement(chart, tbl, labs){
@@ -10451,24 +10640,36 @@ function rReaffect(){
     var tdSel=document.createElement('td');
     var sel=document.createElement('select');
     sel.className='fa-sel'; sel.style.maxWidth='96px';
-    Object.keys(DATA).forEach(function(k){
+    // Une ligne par PERSONNE, pas par portefeuille : Alexis en porte trois et
+    // sortait donc trois fois, \u00e0 l'identique. Le p\u00e9rim\u00e8tre de l'affaire dit
+    // ensuite quel portefeuille viser, et il est cr\u00e9\u00e9 s'il manque.
+    var svcAff=svcOf(r.cp), iniCur=DATA[r.cp].ini||r.cp;
+    personnes().forEach(function(p){
       var op=document.createElement('option');
-      op.value=k; op.textContent=(DATA[k].ini||k)+' \u2014 '+(DATA[k].name||k);
-      if(k===r.cp) op.selected=true;
+      op.value=p.ini;
+      var sien=p.cps.filter(function(cp){ return svcOf(cp)===svcAff; })[0];
+      op.textContent=p.ini+' \u2014 '+p.nom+(sien?'':' (nouveau '+svcInfo(svcAff).court+')');
+      if(p.ini===iniCur) op.selected=true;
       sel.appendChild(op);
     });
     sel.addEventListener('change',function(){
-      var dest=sel.value;
-      if(dest===r.cp) return;
+      var ini=sel.value;
+      if(ini===iniCur) return;
+      var pers=personnes().filter(function(p){ return p.ini===ini; })[0];
+      var sien=pers?pers.cps.filter(function(cp){ return svcOf(cp)===svcAff; })[0]:null;
       uiDialog({
         title:'R\u00e9affecter '+a.code,
-        message:(a.no||'')+'\n\nDe : '+(DATA[r.cp].name||r.cp)+'\nVers : '+(DATA[dest].name||dest),
+        message:(a.no||'')+'\n\nDe : '+(DATA[r.cp].name||r.cp)
+          +'\nVers : '+((pers&&pers.nom)||ini)+' \u00b7 '+svcInfo(svcAff).court
+          +(sien?'':'\n\nCette personne n\u2019a pas encore de portefeuille '
+            +svcInfo(svcAff).court+' : il sera cr\u00e9\u00e9.'),
         okLabel:'D\u00e9placer',
         onOK:function(){
-          if(moveAffaire(a, r.cp, dest)) rReaffect();
-          else { sel.value=r.cp; showToast('\u00c9chec du d\u00e9placement'); }
+          var dest=portefeuillePour(ini, svcAff);
+          if(dest && moveAffaire(a, r.cp, dest)){ try{ buildTabs(); }catch(e){} rReaffect(); }
+          else { sel.value=iniCur; showToast('\u00c9chec du d\u00e9placement'); }
         },
-        onCancel:function(){ sel.value=r.cp; }
+        onCancel:function(){ sel.value=iniCur; }
       });
     });
     tdSel.appendChild(sel);
@@ -11619,6 +11820,49 @@ function moisLabel(i){
   var d=new Date(); d.setDate(1); d.setMonth(d.getMonth()+i);
   return moisCourt(d);
 }
+// Ce qui se facture un mois donné, rangé par périmètre puis par personne,
+// avec le compte d'UO par type. Le back-office IRVE n'a pas d'UO : il compte
+// ses tâches, sous le libellé « IRVE BO ».
+var FILTRE_PERS=null;   // { svc, ini } quand on ne regarde qu'une personne
+function moisParPersonne(i, svc){
+  var out={};   // { ARMA: { SD: {nom, uo:{PRI:2,...}, eur, lignes:[] } } }
+  function case_(k, ini, nom){
+    if(!out[k]) out[k]={};
+    if(!out[k][ini]) out[k][ini]={ini:ini, nom:nom, uo:{}, eur:0, lignes:[]};
+    return out[k][ini];
+  }
+  Object.keys(DATA).forEach(function(cp){
+    var s=svcOf(cp);
+    if(svc && svc!==SVC_BO.k && s!==svc) return;
+    if(svc===SVC_BO.k) return;
+    var d=DATA[cp], ini=d.ini||cp;
+    prevFactuLignes(cp).forEach(function(l){
+      if(l.exclu || l.fin!==i) return;
+      var c=case_(s, ini, d.name||ini);
+      var u=libelleUo(l);
+      c.uo[u]=(c.uo[u]||0)+1;
+      c.eur+=l.montant;
+      c.lignes.push(l);
+    });
+  });
+  // Tâches back-office attendues, réparties entre les personnes
+  if(!svc || svc===SVC_BO.k || svc==='IRVE'){
+    var iso=moisISO(i), rep=tachesPrevRepart(iso), reste=tachesPrevReste(iso);
+    Object.keys(rep).forEach(function(ini){
+      if(!rep[ini]) return;
+      var p=personnes().filter(function(x){ return x.ini===ini; })[0];
+      var c=case_(SVC_BO.k, ini, (p&&p.nom)||ini);
+      c.uo['IRVE BO']=(c.uo['IRVE BO']||0)+rep[ini];
+      c.eur+=rep[ini]*tacheMontant();
+    });
+    if(reste>0){
+      var c2=case_(SVC_BO.k, '—', 'Non attribué');
+      c2.uo['IRVE BO']=(c2.uo['IRVE BO']||0)+reste;
+      c2.eur+=reste*tacheMontant();
+    }
+  }
+  return out;
+}
 function moisUoModal(i, N, svc, attendu){
   var ov=document.createElement('div');
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9400;display:flex;'
@@ -11627,6 +11871,7 @@ function moisUoModal(i, N, svc, attendu){
   box.style.cssText='background:var(--s);border-radius:14px;width:100%;max-width:600px;max-height:84vh;'
     +'display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.3)';
   var suite={on:false};
+  FILTRE_PERS=null;              // on rouvre toujours sur le mois entier
   function fermer(){ if(ov.parentNode) document.body.removeChild(ov); }
 
   var hdr=document.createElement('div');
@@ -11639,25 +11884,41 @@ function moisUoModal(i, N, svc, attendu){
 
   function dessiner(){
     var lignes=uoDuMois(i, svc);
-    var tot=lignes.reduce(function(s,l){ return s+l.montant; },0);
-    var svi=svc?svcInfo(svc):null;
+    // Le back-office IRVE n'a pas d'UO, seulement des tâches : le
+    // récapitulatif par personne existe même sans une seule ligne d'UO, et
+    // le total de l'en-tête doit le compter.
+    var parP=moisParPersonne(i, svc);
+    var tot=0;
+    Object.keys(parP).forEach(function(k){
+      Object.keys(parP[k]).forEach(function(ini){ tot+=parP[k][ini].eur; });
+    });
+    var nBo=0;
+    if(parP[SVC_BO.k]) Object.keys(parP[SVC_BO.k]).forEach(function(ini){
+      nBo+=(parP[SVC_BO.k][ini].uo['IRVE BO']||0); });
+    // serieInfo, pas svcInfo : IRVE BO n'est pas un périmètre, et svcInfo
+    // retombait alors sur ARMA — l'en-tête annonçait « ARMA — 0 € ».
+    var svi=svc?serieInfo(svc):null;
+    var quoi=[];
+    if(lignes.length) quoi.push(lignes.length+' UO');
+    if(nBo) quoi.push(nBo+' tâche(s) back-office');
     hdr.innerHTML='<div style="font-size:13px;font-weight:800;color:var(--t)">'
       +(svi?'<span style="font-size:10px;font-weight:800;color:'+svi.fg+';background:'+svi.bg
             +';padding:2px 8px;border-radius:7px;margin-right:7px">'+svi.court+'</span>':'')
       +moisLabel(i)+' — '+fmtEur(Math.round(tot))+'</div>'
       +'<div style="font-size:10.5px;color:var(--t3);margin-top:2px">'
-      +lignes.length+' UO facturées ce mois-là'+(svi?' sur '+svi.court:'')
-      +'. Chaque UO se facture en une fois et pour son montant entier, '
-      +'au mois où elle s’achève. Choisir un mois dans la liste déroulante la déplace.'
-      +(svc && tauxDe(svc)<0.999
+      +(quoi.length?quoi.join(' et '):'rien')+' à facturer ce mois-là'
+      +(svi?' sur '+svi.court:'')
+      +(lignes.length?'. Chaque UO se facture en une fois et pour son montant entier, '
+        +'au mois où elle s’achève. Choisir un mois dans la liste déroulante la déplace.':'.')
+      +(svc && svc!==SVC_BO.k && tauxDe(svc)<0.999
         ? ' Le taux d’activité '+svi.court+' de '+Math.round(tauxDe(svc)*100)
           +' % ne réduit pas les montants : il allonge les délais, une part du '
           +'portefeuille étant bloquée. Réglable dans Configuration.'
         : '')+'</div>';
     corps.innerHTML='';
-    if(!lignes.length){
+    if(!lignes.length && !Object.keys(parP).length){
       corps.innerHTML='<div style="padding:22px;text-align:center;color:var(--t3);font-size:11px;'
-        +'font-style:italic">Aucune UO facturée sur ce mois</div>';
+        +'font-style:italic">Rien de facturé sur ce mois</div>';
       return;
     }
     // Récapitulatif par UO : d'où vient le montant du mois
@@ -11682,6 +11943,58 @@ function moisUoModal(i, N, svc, attendu){
       bloc.appendChild(s);
     });
     corps.appendChild(bloc);
+
+    // ── Qui produit quoi ce mois-là ───────────────────────────
+    // Le total ne dit pas d'où il vient. Une ligne par personne, avec le
+    // compte d'UO par type, et un clic pour ne garder qu'elle.
+    var zoneP=document.createElement('div');
+    zoneP.style.cssText='border-bottom:1px solid var(--b)';
+    seriesPrev().forEach(function(sv){
+      var gens=parP[sv.k];
+      if(!gens || !Object.keys(gens).length) return;
+      var t=document.createElement('div');
+      t.style.cssText='display:flex;align-items:center;gap:6px;padding:7px 15px 3px;'
+        +'font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:'+sv.fg;
+      t.innerHTML='<span style="width:8px;height:8px;border-radius:2px;background:'+sv.fg+'"></span>'
+        +sv.court;
+      zoneP.appendChild(t);
+      Object.keys(gens).sort().forEach(function(ini){
+        var g=gens[ini];
+        var l=document.createElement('div');
+        l.style.cssText='display:flex;align-items:center;gap:8px;padding:4px 15px;cursor:pointer;'
+          +'font-size:10px;border-left:3px solid transparent';
+        var actif=(FILTRE_PERS && FILTRE_PERS.svc===sv.k && FILTRE_PERS.ini===ini);
+        if(actif){ l.style.background=sv.bg; l.style.borderLeftColor=sv.fg; }
+        var nom=document.createElement('span');
+        nom.style.cssText='font-weight:800;color:var(--t);min-width:96px';
+        nom.textContent=g.nom;
+        var det=document.createElement('span');
+        det.style.cssText='flex:1;color:var(--t2);font-weight:600';
+        det.innerHTML=Object.keys(g.uo).sort().map(function(u){
+          return u+' = <b>'+g.uo[u]+'</b>';
+        }).join(' <span style="color:var(--b2)">/</span> ');
+        var eur=document.createElement('span');
+        eur.style.cssText='font-weight:800;color:var(--green);white-space:nowrap';
+        eur.textContent=fmtEur(Math.round(g.eur));
+        l.appendChild(nom); l.appendChild(det); l.appendChild(eur);
+        l.title=(actif?'Cliquer pour revoir tout le mois':'Cliquer pour ne voir que ses UO');
+        l.addEventListener('click',function(){
+          FILTRE_PERS = actif ? null : {svc:sv.k, ini:ini};
+          dessiner();
+        });
+        zoneP.appendChild(l);
+      });
+    });
+    if(zoneP.children.length) corps.appendChild(zoneP);
+    if(FILTRE_PERS){
+      var fb=document.createElement('div');
+      fb.style.cssText='padding:6px 15px;font-size:9.5px;font-weight:700;color:#1D4ED8;'
+        +'background:#DBEAFE;border-bottom:1px solid var(--b);cursor:pointer';
+      fb.textContent='Liste limitée à '+FILTRE_PERS.ini+' — cliquer pour tout revoir';
+      fb.addEventListener('click',function(){ FILTRE_PERS=null; dessiner(); });
+      corps.appendChild(fb);
+      lignes=lignes.filter(function(l){ return (DATA[l.cp].ini||l.cp)===FILTRE_PERS.ini; });
+    }
     // Le graphique peut inclure les affectations prévisionnelles, qui ne
     // correspondent à aucune UO existante : on l'annonce plutôt que de
     // laisser un écart inexpliqué entre la cellule et cette liste.
@@ -11812,14 +12125,16 @@ function rPrevFactu(){
       var ad=factuAffectation(s.k,N);
       for(var m2=0;m2<N;m2++) arr[m2]+=ad[m2];
     }
-    // Les tâches back-office attendues se facturent sur le périmètre IRVE
-    if(s.k==='IRVE'){
-      var tp=factuTachesPrev(N);
-      for(var m4=0;m4<N;m4++) arr[m4]+=tp[m4];
-    }
     parSvc[s.k]=arr;
     for(var m3=0;m3<N;m3++) total[m3]+=arr[m3];
   });
+  // Les tâches back-office attendues font leur propre ligne : ce ne sont pas
+  // des dossiers, les mêler à l'IRVE brouillait les deux.
+  (function(){
+    var tp=factuTachesPrev(N);
+    parSvc[SVC_BO.k]=tp;
+    for(var m=0;m<N;m++) total[m]+=tp[m];
+  })();
   var cout=coutEquipeMois();
   var maxV=Math.max(cout, Math.max.apply(null,total)||1);
 
@@ -11867,8 +12182,8 @@ function rPrevFactu(){
     stack.style.cssText='width:100%;display:flex;flex-direction:column;justify-content:flex-end;height:'
       +hT+'px;border-radius:4px 4px 0 0;overflow:hidden';
     var lignes=[];
-    SERVICES.forEach(function(s){
-      var hv=parSvc[s.k][i];
+    seriesPrev().forEach(function(s){
+      var hv=(parSvc[s.k]||[])[i]||0;
       if(hv<=0) return;
       var seg=document.createElement('div');
       seg.style.cssText='width:100%;background:'+s.fg+';opacity:.88;height:'
@@ -11934,8 +12249,8 @@ function rPrevFactu(){
     });
     tb.appendChild(r);
   }
-  SERVICES.forEach(function(s){
-    if(!parSvc[s.k].some(function(x){ return x>0; })) return;
+  seriesPrev().forEach(function(s){
+    if(!(parSvc[s.k]||[]).some(function(x){ return x>0; })) return;
     ligne(s.court, parSvc[s.k], s.fg, false, s.k);
   });
   ligne('CA total', total, 'var(--t)', true, null);
@@ -13297,7 +13612,13 @@ function refHash(s){                 // empreinte simple, suffisante ici
 function refVerrouOk(){ return REF_OUVERT; }
 
 function demanderMdp(onOk){
+  // Un seul panneau à la fois. showV('ref') part de plusieurs endroits : le
+  // bouton de la barre, celui de la colonne, et le démarrage quand le dernier
+  // onglet ouvert était le Référent. Deux appels empilaient deux panneaux :
+  // valider en fermait un, l'autre restait à l'écran.
+  if(document.getElementById('ref-mdp')) return;
   var ov=document.createElement('div');
+  ov.id='ref-mdp';
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9500;display:flex;'
     +'align-items:center;justify-content:center;padding:18px';
   var box=document.createElement('div');
@@ -13358,6 +13679,9 @@ function changerMdpModal(){
 }
 
 function rRef(){
+  // On entre dans l'onglet avec la vue complète. Un filtre par mois posé la
+  // veille masquerait des affaires sans qu'on sache pourquoi.
+  FA_FILTRE_MOIS='';
   try{ rRefNav(); }catch(e){}
   try{ masquerSectionsRef(); }catch(e){ console.warn('masquerSectionsRef',e); }
   // Section KPI opérationnels retirée : rKpiSvcBar, rKpiOpsRef, rPerf et
@@ -20929,7 +21253,7 @@ window.addEventListener('beforeunload', function(e){
 // On ne recharge jamais de force, une saisie en cours serait perdue :
 // on propose, la personne choisit son moment.
 // ══════════════════════════════════════════════════════════════
-var APP_VERSION='2026-09-07-3';
+var APP_VERSION='2026-09-07-4';
 var MAJ_VUE=false;
 function bandeauMaj(v){
   if(MAJ_VUE || document.getElementById('maj-banner')) return;
