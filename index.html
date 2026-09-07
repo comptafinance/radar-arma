@@ -1167,7 +1167,7 @@ function sbHeaders(){
 // Serialize full app state to JSON
 function serializeState(){
   return JSON.stringify({
-    DATA:DATA,AVC:AVC,DXP:DXP,COMMENTS:COMMENTS,ENGAGE_HIST:ENGAGE_HIST,PERIM:PERIM,CHARGE_CAP:CHARGE_CAP,CAP_SVC:CAP_SVC,DUREE_SVC:DUREE_SVC,UO_PARAMS:UO_PARAMS,CAP_HEURES:CAP_HEURES,IRVE_TACHES:IRVE_TACHES,TACHES_PREV:TACHES_PREV,MARCHE_MONTANT:MARCHE_MONTANT,AFFECT_PREV:AFFECT_PREV,FACTU_HIST:FACTU_HIST,REF_MDP:REF_MDP,UO_PRIX:UO_PRIX,IRVE_PRIX:IRVE_PRIX,TACHE_MONTANT:TACHE_MONTANT,COUT_MENSUEL:COUT_MENSUEL,MECA_PRIX:MECA_UOS.map(function(u){return u.prix;}),AFFECT_FIN:AFFECT_FIN,TAUX_ACTIVITE:TAUX_ACTIVITE,SVC_CUR:SVC_CUR,TIME_LOG:TIME_LOG,TJM:TJM,HISTO_SEM:HISTO_SEM,SKILLS:SKILLS,ECARTS:ECARTS,COMP_REFS:COMP_REFS,FORMATIONS:FORMATIONS,IDEES:IDEES,COMP_REQ_PAR_ENTITE:COMP_REQ_PAR_ENTITE,CONC_ACTIONS:CONC_ACTIONS,CONC_AJOUTS:CONC_AJOUTS,MIGR:MIGR,
+    DATA:DATA,AVC:AVC,DXP:DXP,COMMENTS:COMMENTS,ENGAGE_HIST:ENGAGE_HIST,PERIM:PERIM,CHARGE_CAP:CHARGE_CAP,CAP_SVC:CAP_SVC,DUREE_SVC:DUREE_SVC,UO_PARAMS:UO_PARAMS,CAP_HEURES:CAP_HEURES,IRVE_TACHES:IRVE_TACHES,TACHES_PREV:TACHES_PREV,MARCHE_MONTANT:MARCHE_MONTANT,AFFECT_PREV:AFFECT_PREV,FACTU_HIST:FACTU_HIST,REF_MDP:REF_MDP,UO_PRIX:UO_PRIX,IRVE_PRIX:IRVE_PRIX,TACHE_MONTANT:TACHE_MONTANT,COUT_MENSUEL:COUT_MENSUEL,MECA_PRIX:MECA_UOS.map(function(u){return u.prix;}),AFFECT_FIN:AFFECT_FIN,TAUX_ACTIVITE:TAUX_ACTIVITE,SVC_CUR:SVC_CUR,TIME_LOG:TIME_LOG,TJM:TJM,HISTO_SEM:HISTO_SEM,SKILLS:SKILLS,ECARTS:ECARTS,COMP_REFS:COMP_REFS,FORMATIONS:FORMATIONS,IDEES:IDEES,COMP_REQ_PAR_ENTITE:COMP_REQ_PAR_ENTITE,CONC_ACTIONS:CONC_ACTIONS,CONC_AJOUTS:CONC_AJOUTS,MIGR:MIGR,TACHES_PREV_CP:TACHES_PREV_CP,CONC_RESEAU:CONC_RESEAU,
     LINKS_DATA:LINKS_DATA,
     MAIL_DATA:MAIL_DATA,
     HISTORY:HISTORY,
@@ -1248,6 +1248,9 @@ function applyState(json){
     if(s.CONC_AJOUTS){ Object.keys(CONC_AJOUTS).forEach(function(k){delete CONC_AJOUTS[k];});
       Object.keys(s.CONC_AJOUTS).forEach(function(k){CONC_AJOUTS[k]=s.CONC_AJOUTS[k];}); }
     if(s.MIGR) Object.keys(s.MIGR).forEach(function(k){MIGR[k]=s.MIGR[k];});
+    if(s.TACHES_PREV_CP){ Object.keys(TACHES_PREV_CP).forEach(function(k){delete TACHES_PREV_CP[k];});
+      Object.keys(s.TACHES_PREV_CP).forEach(function(k){TACHES_PREV_CP[k]=s.TACHES_PREV_CP[k];}); }
+    if(s.CONC_RESEAU) Object.keys(s.CONC_RESEAU).forEach(function(k){CONC_RESEAU[k]=s.CONC_RESEAU[k];});
     if(s.LINKS_DATA&&s.LINKS_DATA.length)LINKS_DATA.splice(0,LINKS_DATA.length,...s.LINKS_DATA);
     if(s.MAIL_DATA)Object.keys(s.MAIL_DATA).forEach(function(k){MAIL_DATA[k]=s.MAIL_DATA[k];});
     if(s.HISTORY)Object.keys(s.HISTORY).forEach(function(k){HISTORY[k]=s.HISTORY[k];});
@@ -1938,9 +1941,13 @@ function rSvcBar(){
   el.innerHTML='';
   // Le compteur suit le chargé de projet choisi, sur LES TROIS périmètres :
   // on voit d'un coup ce qu'il porte partout, sans changer d'onglet.
-  var vus=selCps(), listeCur=cpsOfSvc(SVC_CUR);
-  var iniSel = (vus.length===1 && vus.length<listeCur.length)
-    ? ((DATA[vus[0]]||{}).ini||null) : null;
+  // Un seul portefeuille affiche : les compteurs des trois perimetres suivent
+  // cette personne. La condition portait aussi sur le nombre de portefeuilles
+  // du perimetre courant : sur RATP, ou il n'y en a qu'un, elle etait fausse et
+  // les compteurs repartaient sur TOUS les portefeuilles, d'ou ARMA 96 alors
+  // qu'Alexis n'en porte que 16.
+  var vus=selCps();
+  var iniSel = (vus.length===1) ? ((DATA[vus[0]]||{}).ini||null) : null;
   SERVICES.forEach(function(s){
     var liste=cpsOfSvc(s.k);
     var retenus = iniSel
@@ -2628,10 +2635,15 @@ function rMecaGrid(){
     return;
   }
   var cps={}; pairs.forEach(function(p){ cps[p.cp]=1; });
-  var conc=[];
+  var conc=[], vusConc={};
   Object.keys(cps).forEach(function(cp){
     mecaConc(cp).forEach(function(c){
-      if(!conc.filter(function(x){ return x.k===c.k; }).length) conc.push(c);
+      // Dedoublonnage sur la cle ET sur le nom normalise : le meme
+      // concessionnaire portait deux cles et sortait deux fois.
+      var nk=concCle(c.nom);
+      if(conc.filter(function(x){ return x.k===c.k; }).length) return;
+      if(vusConc[nk]) return;
+      vusConc[nk]=1; conc.push(c);
     });
   });
 
@@ -2651,10 +2663,13 @@ function rMecaGrid(){
   thL.textContent='Concessionnaires ('+conc.length+')';
   trh.appendChild(thL);
   var thC=document.createElement('th'); thC.className='ag-code';
-  thC.style.width='150px'; thC.textContent='Commentaire';
+  thC.style.width='150px'; thC.textContent='Actions par responsable';
+  thC.title='Actions en cours, découpées par qui doit agir';
   trh.appendChild(thC);
   var thD=document.createElement('th'); thD.className='ag-code';
-  thD.style.width='72px'; thD.textContent='Maj.';
+  thD.style.width='72px';
+  thD.innerHTML='Créée<div style="font-weight:600;font-size:7.5px;color:var(--t3)">→ rendu</div>';
+  thD.title='Date de création de la dernière action, puis la prochaine date de rendu prévue';
   trh.appendChild(thD);
   affs.forEach(function(a){
     var mc=a.meca||{};
@@ -2772,54 +2787,59 @@ function rMecaGrid(){
   conc.forEach(function(cc){
     var tr=document.createElement('tr');
     var td=document.createElement('td'); td.className='ag-lbl';
-    // Nom, plus le nombre d'actions ouvertes et le nombre de contacts
-    var nAct=0, nCt=0, dMaj='';
-    try{ nAct=concActionsOuvertes(cc.nom); nCt=concContacts(cc.nom).length;
-         dMaj=concDerniereDate(cc.nom); }catch(e){}
-    td.innerHTML='<span>'+cc.nom+'</span>'
-      +(nAct?'<span style="margin-left:5px;font-size:8px;font-weight:900;padding:1px 5px;'
-        +'border-radius:5px;background:#FEF3C7;color:#B45309">'+nAct+'</span>':'')
-      +(nCt?'<span style="margin-left:3px;font-size:8px;font-weight:800;padding:1px 5px;'
-        +'border-radius:5px;background:var(--s3);color:var(--t3)">👤'+nCt+'</span>':'');
-    // Commentaire et date, comme sur les lignes de livrables
+    // Pastille du type de reseau, nom, puis les actions ouvertes decoupees
+    // par responsable : un nombre global ne disait pas qui devait agir.
+    var rt=RESEAU_TYPES[reseauDe(cc.nom)]||RESEAU_TYPES.inconnu;
+    var parQui={}, nCt=0;
+    try{ parQui=concActionsParQui(cc.nom); nCt=concContacts(cc.nom).length; }catch(e){}
+    var html='<span style="display:inline-block;width:8px;height:8px;border-radius:2px;'
+      +'background:'+rt.c+';margin-right:5px;vertical-align:middle"></span>'
+      +'<span>'+cc.nom+'</span>';
+    CONC_RESP.forEach(function(q){
+      if(!parQui[q]) return;
+      var co=RESP_COUL[q]||RESP_COUL.Autre;
+      html+='<span style="margin-left:4px;font-size:7.5px;font-weight:900;padding:1px 5px;'
+        +'border-radius:5px;background:'+co.bg+';color:'+co.c+'">'+q.slice(0,4)+' '+parQui[q]+'</span>';
+    });
+    if(nCt) html+='<span style="margin-left:3px;font-size:8px;font-weight:800;padding:1px 5px;'
+      +'border-radius:5px;background:var(--s3);color:var(--t3)">👤'+nCt+'</span>';
+    td.innerHTML=html;
+    // Les actions remplacent le commentaire : a gauche qui doit agir, a
+    // droite la derniere action creee et la prochaine echeance.
     (function(){
-      var store=(DATA[CCP].meca_com=DATA[CCP].meca_com||{});
-      var cle='CONC::'+cc.k;
       var tdC=document.createElement('td');
       tdC.style.cssText='font-size:8.5px;padding:3px 5px;border-right:1px solid var(--b);'
         +'border-bottom:1px solid var(--b);cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
       var tdD=document.createElement('td');
       tdD.style.cssText='font-size:8px;text-align:center;padding:3px 2px;border-right:1px solid var(--b);'
-        +'border-bottom:1px solid var(--b);color:var(--t3)';
+        +'border-bottom:1px solid var(--b);color:var(--t3);line-height:1.3';
       function paintC(){
-        var o=store[cle]||{};
-        // \u00c0 d\u00e9faut de commentaire saisi ici, on montre celui du fichier
-        var s={com:'', date:'', etat:''};
-        try{ s=concSuivi(cc.nom); }catch(e){}
-        var txt=o.text||s.com||'';
-        tdC.textContent=txt?txt.replace(/\n/g,' \u00b7 '):'\u2014';
-        tdC.style.color=o.text?'var(--t2)':(txt?'var(--t3)':'var(--b2)');
-        tdC.title=(txt||'Aucun commentaire')
-          +(o.text?'':(s.com?'\n\n(repris du fichier Concessionnaires et Voirie)':''))
-          +'\nCliquer pour \u00e9diter';
-        var d=o.date||'';
-        try{ if(!d) d=concDerniereDate(cc.nom); }catch(e){}
-        tdD.textContent=d?dFR(d).slice(0,5):(s.etat?s.etat.slice(0,7):'\u2014');
-        tdD.style.color=d?'var(--t3)':'var(--b2)';
-        tdD.title=d?('Dernier \u00e9change le '+dFR(d)):(s.etat||'');
+        var m={}, dts={cree:'',rendu:''};
+        try{ m=concActionsParQui(cc.nom); dts=concActionsDates(cc.nom); }catch(e){}
+        var qs=CONC_RESP.filter(function(q){ return m[q]; });
+        if(qs.length){
+          tdC.innerHTML=qs.map(function(q){
+            var co=RESP_COUL[q]||RESP_COUL.Autre;
+            return '<span style="font-weight:800;color:'+co.c+'">'+q+' '+m[q]+'</span>';
+          }).join(' <span style="color:var(--b2)">\u00b7</span> ');
+          tdC.style.color='var(--t2)';
+          tdC.title=qs.map(function(q){ return q+' : '+m[q]+' action(s) en cours'; }).join('\n')
+            +'\nCliquer pour ouvrir la fiche';
+        } else {
+          tdC.textContent='\u2014';
+          tdC.style.color='var(--b2)';
+          tdC.title='Aucune action en cours\nCliquer pour en ajouter une';
+        }
+        var l1 = dts.cree ? dFR(dts.cree).slice(0,5) : '\u2014';
+        var l2 = dts.rendu ? dFR(dts.rendu).slice(0,5) : '';
+        var tard = dts.rendu && dts.rendu < dISO();
+        tdD.innerHTML='<div style="color:'+(dts.cree?'var(--t3)':'var(--b2)')+'">'+l1+'</div>'
+          +(l2?'<div style="font-weight:800;color:'+(tard?'var(--red)':'#1D4ED8')+'">\u2192 '+l2+'</div>':'');
+        tdD.title=(dts.cree?('Derni\u00e8re action cr\u00e9\u00e9e le '+dFR(dts.cree)):'Aucune action')
+          +(dts.rendu?('\nProchain rendu pr\u00e9vu le '+dFR(dts.rendu)+(tard?' \u2014 en retard':'')):'');
       }
       paintC();
-      tdC.addEventListener('click',function(){
-        var dep=(store[cle]||{}).text;
-        if(!dep){ try{ dep=concSuivi(cc.nom).com||''; }catch(e){ dep=''; } }
-        uiPrompt(cc.nom+' \u2014 Commentaire', dep, function(v){
-          v=String(v).trim();
-          // La date se met \u00e0 jour d'elle-m\u00eame d\u00e8s qu'on touche au commentaire
-          if(v) store[cle]={text:v, date:dISO()}; else delete store[cle];
-          paintC(); sbSave();
-          try{ rMecaGrid(); }catch(e){}
-        },{multiline:true, message:'La date du dernier \u00e9change se met \u00e0 jour toute seule.'});
-      });
+      tdC.addEventListener('click',function(){ mecaConcModal(cc); });
       tr._com=[tdC,tdD];
     })();
     var tip=[cc.nom];
@@ -2904,6 +2924,28 @@ function rMecaLegend(affs){
       +x[2]+';color:'+x[3]+'">'+x[1]+'</span>';
     el.appendChild(s);
   });
+  // Code couleur des reseaux : seuls les types reellement presents.
+  var vus={};
+  try{
+    var cpsL={}; selAffaires().forEach(function(p){ cpsL[p.cp]=1; });
+    Object.keys(cpsL).forEach(function(cp){
+      mecaConc(cp).forEach(function(c){ vus[reseauDe(c.nom)]=(vus[reseauDe(c.nom)]||0)+1; });
+    });
+  }catch(e){}
+  var sep=document.createElement('span');
+  sep.style.cssText='width:1px;height:16px;background:var(--b2);margin:0 3px;display:inline-block';
+  if(Object.keys(vus).length) el.appendChild(sep);
+  Object.keys(RESEAU_TYPES).forEach(function(k){
+    if(!vus[k]) return;
+    var t=RESEAU_TYPES[k];
+    var s=document.createElement('span');
+    s.style.cssText='display:inline-flex;align-items:center;gap:4px;font-size:8.5px;font-weight:800;'
+      +'padding:3px 8px;border-radius:7px;background:'+t.bg+';color:'+t.c;
+    s.innerHTML='<span style="width:8px;height:8px;border-radius:2px;background:'+t.c+'"></span>'
+      +t.l+' <span style="font-weight:900">'+vus[k]+'</span>';
+    s.title=t.l;
+    el.appendChild(s);
+  });
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -2920,6 +2962,79 @@ var CONC_CONTACTS = {"ENEDIS - HTA BT":[{"nom":"Alexis DUPRE","role":"Responsabl
 var CONC_ACTIONS = {};
 var CONC_AJOUTS  = {};
 var CONC_RESP = ['Concessionnaire','Astridsen','RATP','ENEDIS','Autre'];
+var RESP_COUL = {
+  Astridsen      :{c:'#B45309', bg:'#FEF3C7'},
+  RATP           :{c:'#1D4ED8', bg:'#DBEAFE'},
+  ENEDIS         :{c:'#047857', bg:'#D1FAE5'},
+  Concessionnaire:{c:'#7C3AED', bg:'#EDE9FE'},
+  Autre          :{c:'var(--t3)', bg:'var(--s3)'}
+};
+
+// ── COULEUR NORMALISÉE DES RÉSEAUX ────────────────────────────
+// Code couleur des travaux à proximité des réseaux, imposé par Steve le
+// 07/09/2026. Un gestionnaire de voirie n'est pas un réseau : il a sa
+// propre teinte neutre plutôt que d'être rangé en « inconnu ».
+var RESEAU_TYPES = {
+  elec   :{l:'Électricité et éclairage public',        c:'#DC2626', bg:'#FEE2E2'},
+  gaz    :{l:'Gaz combustibles et hydrocarbures',      c:'#CA8A04', bg:'#FEF9C3'},
+  eau    :{l:'Eau potable',                            c:'#2563EB', bg:'#DBEAFE'},
+  assai  :{l:'Assainissement et eaux pluviales',       c:'#78350F', bg:'#EDE0D3'},
+  telec  :{l:'Télécoms, fibre, télévision, signalisation', c:'#16A34A', bg:'#DCFCE7'},
+  chim   :{l:'Produits chimiques',                     c:'#EA580C', bg:'#FFEDD5'},
+  chauf  :{l:'Chauffage urbain, chaleur et froid',     c:'#7C3AED', bg:'#EDE9FE'},
+  inconnu:{l:'Réseau inconnu ou non identifié',        c:'#DB2777', bg:'#FCE7F3'},
+  voirie :{l:'Voirie et domanialité — hors réseau',    c:'#6B7280', bg:'#F3F4F6'}
+};
+var CONC_RESEAU = {};    // choix manuel, il prime sur la déduction
+// Déduction d'après le nom. L'ordre compte : l'assainissement avant l'eau,
+// l'éclairage avant le reste, la voirie en dernier.
+function reseauAuto(nom){
+  var n=concCle(nom);
+  // La signalisation lumineuse est verte, même quand elle est portée par un
+  // électricien : CIELIS tient l'éclairage public ET les feux tricolores.
+  if(/SIGNALISATION|\bSLT\b/.test(n)) return 'telec';
+  if(/ASSAINISSEMENT|EAUX PLUVIALES|\bSTEA\b/.test(n)) return 'assai';
+  if(/ECLAIRAGE|ENEDIS|\bRTE\b|ELECTRIC|\bHTA\b|\bHTB\b|CITELUM|SATELEC|CIELIS/.test(n)) return 'elec';
+  if(/GRDF|\bGAZ\b|HYDROCARBURE/.test(n)) return 'gaz';
+  if(/EAU DE PARIS|EAU POTABLE|\bAEP\b|VEOLIA|EAU PUBLIQUE|FRANCILIANE/.test(n)) return 'eau';
+  if(/CPCU|DALKIA|CHAUFFAGE|CHALEUR|SOGELINK|SIG IMAGE/.test(n)) return 'chauf';
+  if(/ORANGE|\bSFR\b|\bCOLT\b|IELO|PRIZZ|IMOPTEL|LUMEN|SIPARTECH|VERIZON|BOUYGUES|NETCOM|COMPLETEL|TELECOM|FIBRE|DECAUX|SIGNALISATION|\bSLT\b|ILLAD|LIAZO|ASTERIA|FREE\b/.test(n)) return 'telec';
+  if(/CHIMI/.test(n)) return 'chim';
+  if(/VOIRIE|EMPRISE|\bSTV\b|\bDVD\b|MAIRIE|VILLE D|DEPARTEMENT|COMMUNAUTE|AGGLOMERATION|EST ENSEMBLE|PLAINE COMMUNE|SNCF|\bRATP\b|TUNNEL|\bCD 93\b|SUBDIVISION|SEINE SAINT DENIS/.test(n)) return 'voirie';
+  return 'inconnu';
+}
+function reseauDe(nom){
+  var k=CONC_RESEAU[concCle(nom)];
+  return (k && RESEAU_TYPES[k]) ? k : reseauAuto(nom);
+}
+function setReseau(nom, k){
+  var c=concCle(nom);
+  if(k && k!==reseauAuto(nom)) CONC_RESEAU[c]=k; else delete CONC_RESEAU[c];
+}
+
+// Actions ouvertes découpées par responsable
+function concActionsParQui(nom){
+  var m={};
+  concActions(nom).forEach(function(x){
+    if(x.fait) return;
+    var q=x.qui||'Autre';
+    if(CONC_RESP.indexOf(q)<0) q='Autre';
+    m[q]=(m[q]||0)+1;
+  });
+  return m;
+}
+// Dernière action créée, et prochaine date de rendu encore ouverte
+function concActionsDates(nom){
+  var cree='', rendu='';
+  concActions(nom).forEach(function(x){
+    var c=x.cree||x.maj||'';
+    if(c && c>cree) cree=c;
+    if(x.fait) return;
+    var d=x.date||'';
+    if(d && (!rendu || d<rendu)) rendu=d;
+  });
+  return {cree:cree, rendu:rendu};
+}
 
 // ── Les commentaires du fichier portent déjà les actions ──────
 // Le fichier voirie écrit une action par ligne, précédée de son porteur :
@@ -2959,7 +3074,7 @@ function reprendreActions(nom){
     var deja=liste.some(function(x){ return String(x.texte||'').trim()===a.texte; });
     if(deja) return;
     liste.push({qui:a.qui, date:'', texte:a.texte, fait:false,
-                maj:s.date||'', src:'commentaire'});
+                cree:s.date||dISO(), maj:s.date||'', src:'commentaire'});
     n++;
   });
   return n;
@@ -3065,6 +3180,31 @@ function mecaConcModal(cc){
       +' \u00b7 '+concActionsOuvertes(nom)+' action(s) en cours'
       +' \u00b7 '+concContacts(nom).length+' contact(s)</div>';
     corps.innerHTML='';
+
+    // Type de r\u00e9seau : d\u00e9duit du nom, corrigeable ici.
+    var zr=document.createElement('div');
+    zr.style.cssText='display:flex;align-items:center;gap:8px;margin:10px 15px 2px;flex-wrap:wrap';
+    var lr=document.createElement('span');
+    lr.style.cssText='font-size:9.5px;font-weight:800;color:var(--t3);text-transform:uppercase;letter-spacing:.05em';
+    lr.textContent='Type de r\u00e9seau';
+    var sr=document.createElement('select');
+    var cur=reseauDe(nom), ct=RESEAU_TYPES[cur];
+    sr.style.cssText='flex:1;min-width:170px;border:1.5px solid '+ct.c+';background:'+ct.bg
+      +';color:'+ct.c+';border-radius:8px;padding:5px 9px;font-size:10.5px;font-weight:800;'
+      +'font-family:inherit;cursor:pointer';
+    Object.keys(RESEAU_TYPES).forEach(function(k){
+      var o=document.createElement('option'); o.value=k; o.textContent=RESEAU_TYPES[k].l;
+      sr.appendChild(o);
+    });
+    sr.value=cur;
+    sr.title='Couleur normalis\u00e9e des travaux \u00e0 proximit\u00e9 des r\u00e9seaux.\n'
+      +'D\u00e9duite du nom, corrigeable ici.';
+    sr.addEventListener('change',function(){
+      setReseau(nom, sr.value); sbSave(); dessiner();
+      try{ rMecaGrid(); }catch(e){}
+    });
+    zr.appendChild(lr); zr.appendChild(sr);
+    corps.appendChild(zr);
 
     // Commentaire repris du fichier
     if(s.com){
@@ -3175,7 +3315,7 @@ function mecaConcModal(cc){
       +'cursor:pointer;font-family:inherit';
     ba.textContent='+ Ajouter une action';
     ba.addEventListener('click',function(){
-      acts.push({qui:'Astridsen', date:'', texte:'', fait:false, maj:dISO()});
+      acts.push({qui:'Astridsen', date:'', texte:'', fait:false, cree:dISO(), maj:dISO()});
       sbSave(); dessiner();
     });
     corps.appendChild(ba);
@@ -3573,11 +3713,11 @@ function sbLoad(){
         try{
           var msg=[], bascule=null;
           try{ bascule=migrerIrveVersPaul(); }catch(e2){ console.warn('irveVersPaul',e2); }
-          var nA=migrerAout26(), nC=0;
+          var nA=annulerAout26(), nC=0;
           try{ nC=importerActionsCommentaires(); }catch(e2){ console.warn('actionsCom',e2); }
-          if(bascule) msg.push(bascule.total+' dossiers IRVE passés d’Alexis à Paul'
-            +(bascule.doublons?' ('+bascule.doublons+' doublons supprimés)':''));
-          if(nA) msg.push(nA+' UO déjà facturés datés d’août 26');
+          if(bascule) msg.push(bascule.doublons+' doublons IRVE retirés du portefeuille d’Alexis'
+            +(bascule.deplaces?' et '+bascule.deplaces+' dossiers passés à Paul':''));
+          if(nA) msg.push(nA+' UO remis au tiret');
           if(nC) msg.push(nC+' actions reprises des commentaires concessionnaires');
           if(msg.length){ SYNC_REV++; sbSave(); buildTabs(); renderAll();
             showToast(msg.join(' • ')); }
@@ -5342,16 +5482,39 @@ function setTachesPrev(iso, n){
   n=+n||0;
   if(n>0) TACHES_PREV[iso]=n; else delete TACHES_PREV[iso];
 }
-// Chiffre d'affaires attendu des t\u00e2ches back-office, mois par mois
-function factuTachesPrev(nMois){
+// Qui prendra les t\u00e2ches \u00e0 venir d'un mois donn\u00e9 : { '2026-11':'PG' }.
+// Vide, la charge et la facturation restent sur le p\u00e9rim\u00e8tre sans nom.
+// Renseign\u00e9, elles partent sur le portefeuille de cette personne.
+var TACHES_PREV_CP = {};
+function tachesPrevCp(iso){ return TACHES_PREV_CP[iso]||''; }
+function setTachesPrevCp(iso, ini){
+  if(ini) TACHES_PREV_CP[iso]=ini; else delete TACHES_PREV_CP[iso];
+}
+// Personnes qui peuvent porter ces t\u00e2ches : celles qui ont un portefeuille IRVE
+function tachesPrevCandidats(){
+  return personnes().filter(function(p){
+    return p.cps.some(function(cp){ return svcOf(cp)==='IRVE'; });
+  });
+}
+// Chiffre d'affaires attendu des t\u00e2ches back-office, mois par mois.
+// ini vide : tout, quel que soit le porteur. ini renseign\u00e9 : ce porteur seul.
+function factuTachesPrev(nMois, ini){
   var out=new Array(nMois).fill(0);
-  for(var i=0;i<nMois;i++) out[i]=tachesPrevMois(moisISO(i))*tacheMontant();
+  for(var i=0;i<nMois;i++){
+    var iso=moisISO(i);
+    if(ini!==undefined && ini!==null && tachesPrevCp(iso)!==ini) continue;
+    out[i]=tachesPrevMois(iso)*tacheMontant();
+  }
   return out;
 }
 // Charge correspondante, en heures : une t\u00e2che vaut une heure
-function heuresTachesPrev(nMois){
+function heuresTachesPrev(nMois, ini){
   var out=new Array(nMois).fill(0);
-  for(var i=0;i<nMois;i++) out[i]=tachesPrevMois(moisISO(i))*TACHE_HEURES;
+  for(var i=0;i<nMois;i++){
+    var iso=moisISO(i);
+    if(ini!==undefined && ini!==null && tachesPrevCp(iso)!==ini) continue;
+    out[i]=tachesPrevMois(iso)*TACHE_HEURES;
+  }
   return out;
 }
 
@@ -5436,7 +5599,30 @@ function rIrveTaches(){
         try{ rPrevFactu(); rPrevCharge(); }catch(e){}
         majTotTaches();
       });
-      c.appendChild(lb); c.appendChild(inp); tpg.appendChild(c);
+      // Qui prendra ces tâches : la charge et la facturation suivent alors
+      // son portefeuille au lieu de rester sur le périmètre en général.
+      var sc=document.createElement('select');
+      sc.style.cssText='width:100%;border:none;background:transparent;font-size:8.5px;'
+        +'font-weight:800;color:var(--t3);font-family:inherit;cursor:pointer;text-align:center;'
+        +'padding:1px 0;margin-top:2px';
+      var o0=document.createElement('option'); o0.value=''; o0.textContent='non attribué';
+      sc.appendChild(o0);
+      tachesPrevCandidats().forEach(function(p){
+        var o=document.createElement('option'); o.value=p.ini;
+        o.textContent=p.ini+' · '+p.nom;
+        sc.appendChild(o);
+      });
+      sc.value=tachesPrevCp(iso);
+      if(sc.value){ sc.style.color='#7C3AED'; }
+      sc.title='Qui prendra les tâches de '+moisLabel(i)
+        +'\nRenseigné, la charge et la facturation partent sur son portefeuille.';
+      sc.addEventListener('change',function(){
+        setTachesPrevCp(iso, sc.value);
+        sc.style.color=sc.value?'#7C3AED':'var(--t3)';
+        sbSave();
+        try{ rPrevFactu(); rPrevCharge(); }catch(e){}
+      });
+      c.appendChild(lb); c.appendChild(inp); c.appendChild(sc); tpg.appendChild(c);
     })(mi);
   }
   tp.appendChild(tpg);
@@ -7373,7 +7559,7 @@ var FA_OPTS  = ['', '1', '0,75', '0,5', '2', 'NA', '~OK'];
 var FA_CP_FILTER = 'all';
 var FA_SVC = 'ARMA';
 var FA_FILTER = 'all';
-var FA_MOIS = '';   // mois de facturation prévue, vide = tous
+var FA_FILTRE_MOIS = '';   // mois de facturation prévue, vide = tous
 var FA_SEUIL = 100;   // seuil d'avancement pour l'extraction
 
 function faGetVal(a,uo){
@@ -8153,6 +8339,12 @@ function rPrevCharge(){
       var n=0,hh=0;
       parCp.forEach(function(x){ n+=x.pts[i].n; hh+=(x.pts[i].h||0); });
       tot.push({k:parCp[0].pts[i].k, d:parCp[0].pts[i].d, n:n, h:Math.round(hh*10)/10});
+    }
+    // Les tâches back-office à venir attribuées à cette personne pèsent
+    // sur SA charge, pas sur celle du périmètre en général.
+    var thP=heuresTachesPrev(PREV_MOIS, p.ini);
+    for(var it=0; it<PREV_MOIS; it++){
+      if(thP[it]) tot[it].h=Math.round((tot[it].h+thP[it])*10)/10;
     }
     series.push({perso:true, ini:p.ini, cp:mesCp[0], pts:tot});
     if(parCp.length>1) parCp.forEach(function(x){ series.push(x); });
@@ -11078,6 +11270,72 @@ function brancherFss(source){ FSS_SOURCE=source||null; }
 var PREV_NC='NC';
 // Mois passés proposés dans la liste, pour dater un UO déjà facturé
 var PREV_RETRO=-6;
+// Sélection multiple dans le tableau de facturation, pour poser le même mois
+// sur beaucoup d'UO en une fois. Clé : portefeuille|code|no|UO.
+var FA_SEL_MODE=false;
+var FA_SEL={};
+function faSelCle(cp,a,k){ return cp+'|'+(a.code||'')+'|'+(a.no||'')+'|'+k; }
+function faSelNb(){ return Object.keys(FA_SEL).length; }
+
+// Barre flottante de la sélection multiple. Créée en JavaScript, retirée dès
+// que la sélection se ferme.
+var FA_BARRE=null;
+function majBarreSel(){
+  if(!FA_SEL_MODE){
+    if(FA_BARRE && FA_BARRE.parentNode) FA_BARRE.parentNode.removeChild(FA_BARRE);
+    FA_BARRE=null; return;
+  }
+  if(!FA_BARRE){
+    FA_BARRE=document.createElement('div');
+    FA_BARRE.id='fa-barre-sel';
+    FA_BARRE.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:9200;background:#1D4ED8;'
+      +'color:#fff;padding:8px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;'
+      +'font-size:11px;font-weight:700;font-family:inherit;box-shadow:0 -2px 14px rgba(0,0,0,.25)';
+    var t=document.createElement('span'); t.id='fa-barre-txt'; t.style.cssText='flex:1;min-width:120px';
+    var sel=document.createElement('select'); sel.id='fa-barre-mois';
+    sel.style.cssText='border:none;border-radius:7px;padding:4px 8px;font-size:11px;font-weight:800;'
+      +'font-family:inherit;background:#fff;color:#1D4ED8;cursor:pointer';
+    var o0=document.createElement('option'); o0.value=''; o0.textContent='— remettre au calcul auto';
+    sel.appendChild(o0);
+    var onc=document.createElement('option'); onc.value=PREV_NC; onc.textContent='—  non compté';
+    sel.appendChild(onc);
+    for(var m=PREV_RETRO; m<PREV_MOIS; m++){
+      var o=document.createElement('option'); o.value=moisISO(m); o.textContent=moisLabel(m);
+      sel.appendChild(o);
+    }
+    sel.value=moisISO(0);
+    var bOk=document.createElement('button'); bOk.id='fa-barre-ok';
+    bOk.style.cssText='border:none;background:#fff;color:#1D4ED8;border-radius:8px;padding:5px 14px;'
+      +'font-size:11px;font-weight:900;cursor:pointer;font-family:inherit';
+    bOk.addEventListener('click',function(){
+      var v=sel.value, n=0;
+      Object.keys(FA_SEL).forEach(function(kk){
+        var x=FA_SEL[kk]; setPrevUo(x.a, x.k, v); n++;
+      });
+      if(!n){ showToast('Aucun UO coché'); return; }
+      FA_SEL={};
+      sbSave();
+      showToast(n+' UO basculés sur '+(v===PREV_NC?'non compté':(v?moisLabel(moisIndex(v)):'le calcul automatique')));
+      rFactu();
+    });
+    var bX=document.createElement('button');
+    bX.style.cssText='border:1px solid rgba(255,255,255,.55);background:transparent;color:#fff;'
+      +'border-radius:8px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit';
+    bX.textContent='Tout décocher';
+    bX.addEventListener('click',function(){ FA_SEL={}; rFactu(); });
+    FA_BARRE.appendChild(t); FA_BARRE.appendChild(sel);
+    FA_BARRE.appendChild(bOk); FA_BARRE.appendChild(bX);
+    document.body.appendChild(FA_BARRE);
+  }
+  var n=faSelNb();
+  FA_BARRE.querySelector('#fa-barre-txt').textContent =
+    n ? (n+' UO sélectionné'+(n>1?'s':'')) : 'Cochez les UO à basculer';
+  var b=FA_BARRE.querySelector('#fa-barre-ok');
+  b.textContent='Basculer '+(n||'')+' UO';
+  b.disabled=!n;
+  b.style.opacity=n?'1':'.5';
+  b.style.cursor=n?'pointer':'not-allowed';
+}
 function prevUo(a,k){ return ((a.prev||{})[k])||''; }
 function prevEstNC(a,k){ return prevUo(a,k)===PREV_NC; }
 function setPrevUo(a,k,iso){
@@ -11089,36 +11347,41 @@ function setPrevUo(a,k,iso){
 // Le drapeau vit dans l'état partagé : la reprise ne se rejoue donc pas
 // d'un poste à l'autre, ni au rechargement.
 var MIGR = {};
-// Un UO facturé en entier ne pèse plus rien dans le prévisionnel : son mois
-// ne sert que d'historique. Steve les veut tous datés d'août 26.
-function migrerAout26(){
-  if(MIGR.aout26) return 0;
+// Août 26 sur les UO déjà facturés : demandé le 05/09, ANNULÉ le 07/09.
+// Steve préfère garder le tiret et poser les mois lui-même, en masse, depuis
+// le tableau de facturation. On retire donc ce qui avait été écrit.
+// Le retrait vise exactement ce que la reprise avait touché : un UO facturé
+// en entier portant août 26. Les mois saisis à la main sur des UO non
+// facturés ne sont pas concernés.
+function annulerAout26(){
+  if(!MIGR.aout26 || MIGR.aout26Annule) return 0;
   var n=0;
   Object.keys(DATA).forEach(function(cp){
     var svc=svcOf(cp);
     (gAff(cp)||[]).forEach(function(a){
       (UO_CAT[svc]||[]).forEach(function(u){
         if(svc==='IRVE' && u.k.indexOf(irveProfil(a)+'_')!==0) return;
+        if(prevUo(a,u.k)!=='2026-08') return;
         var f=0; try{ f=uoFacture(cp,a,u.k); }catch(e){ return; }
-        if(f<0.999) return;              // pas facturé en entier
-        if(prevUo(a,u.k)) return;        // un mois est déjà posé, on n'y touche pas
-        setPrevUo(a,u.k,'2026-08'); n++;
+        if(f<0.999) return;
+        setPrevUo(a,u.k,''); n++;
       });
     });
   });
-  MIGR.aout26=true;
+  MIGR.aout26Annule=true;
   return n;
 }
 // Les dossiers IRVE d'Alexis passent à Paul. Le dépôt a déjà été corrigé,
 // mais l'application lit son état sur le serveur : la bascule doit donc se
 // faire aussi côté données partagées. Un dossier déjà présent chez Paul
 // n'est pas recopié, il est simplement retiré de chez Alexis.
+// Volontairement PAS gardée par un drapeau à usage unique : l'état correct est
+// « Alexis n'a plus de dossier IRVE ». Tant qu'il en reste, on nettoie. Une
+// fusion venue d'un autre poste peut en effet en ramener.
 function migrerIrveVersPaul(){
-  if(MIGR.irveVersPaul) return null;
   var irve=Object.keys(DATA).filter(function(c){ return svcOf(c)==='IRVE'; });
   var src=irve.filter(function(c){ return (DATA[c].ini||'')==='AD'; })[0];
   var dst=irve.filter(function(c){ return (DATA[c].ini||'')==='PG'; })[0];
-  MIGR.irveVersPaul=true;
   if(!src || !dst || !(DATA[src].affaires||[]).length) return null;
   sauvegardeSecours('avant bascule IRVE Alexis vers Paul');
   var vus={};
@@ -12097,9 +12360,9 @@ function rFactu(){
   lm.textContent='Factu prévue';
   bar.appendChild(lm);
   var selMois=document.createElement('select');
-  selMois.style.cssText='border:1.5px solid '+(FA_MOIS?'#1D4ED8':'var(--b2)')+';border-radius:7px;'
+  selMois.style.cssText='border:1.5px solid '+(FA_FILTRE_MOIS?'#1D4ED8':'var(--b2)')+';border-radius:7px;'
     +'padding:3px 7px;font-size:10px;font-weight:700;font-family:inherit;background:'
-    +(FA_MOIS?'#DBEAFE':'var(--bg)')+';color:'+(FA_MOIS?'#1D4ED8':'var(--t3)');
+    +(FA_FILTRE_MOIS?'#DBEAFE':'var(--bg)')+';color:'+(FA_FILTRE_MOIS?'#1D4ED8':'var(--t3)');
   var o0=document.createElement('option'); o0.value=''; o0.textContent='Tous les mois';
   selMois.appendChild(o0);
   for(var fm=PREV_RETRO; fm<PREV_MOIS; fm++){
@@ -12110,10 +12373,27 @@ function rFactu(){
   var onc2=document.createElement('option');
   onc2.value=PREV_NC; onc2.textContent='—  non compté';
   selMois.appendChild(onc2);
-  selMois.value=FA_MOIS||'';
+  selMois.value=FA_FILTRE_MOIS||'';
   selMois.title='N’afficher que les affaires dont un UO se facture ce mois-là';
-  selMois.addEventListener('change',function(){ FA_MOIS=selMois.value; rFactu(); });
+  selMois.addEventListener('change',function(){ FA_FILTRE_MOIS=selMois.value; rFactu(); });
   bar.appendChild(selMois);
+
+  // ── Basculer plusieurs UO d'un coup ──────────────────────────
+  // Poser les mois un par un sur 172 affaires x 5 UO est intenable. Ce bouton
+  // ouvre des cases a cocher dans la partie « Mois de facturation prevu », et
+  // une barre en bas applique le mois choisi a tout ce qui est coche.
+  var bSel=document.createElement('button');
+  bSel.style.cssText='border:1.5px solid '+(FA_SEL_MODE?'#1D4ED8':'var(--b2)')+';background:'
+    +(FA_SEL_MODE?'#DBEAFE':'var(--s)')+';color:'+(FA_SEL_MODE?'#1D4ED8':'var(--t3)')
+    +';border-radius:7px;padding:3px 9px;font-size:10px;font-weight:800;cursor:pointer;font-family:inherit';
+  bSel.textContent=FA_SEL_MODE?'✕ Fermer la sélection':'☑ Sélectionner des UO';
+  bSel.title='Cocher plusieurs UO puis les basculer tous sur le même mois';
+  bSel.addEventListener('click',function(){
+    FA_SEL_MODE=!FA_SEL_MODE;
+    if(!FA_SEL_MODE) FA_SEL={};
+    rFactu();
+  });
+  bar.appendChild(bSel);
 
   var sp=document.createElement('span'); sp.style.flex='1'; bar.appendChild(sp);
   body.appendChild(bar);
@@ -12184,7 +12464,7 @@ function rFactu(){
 
   // Mois calculés une seule fois par portefeuille : les recalculer par
   // ligne rendrait le tableau quadratique et l'onglet lent.
-  var _filtreMois=FA_MOIS;
+  var _filtreMois=FA_FILTRE_MOIS;
   var moisCalcules={};
   cpsOfSvc(FA_SVC).forEach(function(cp){
     var m=new Map();
@@ -12294,7 +12574,27 @@ function rFactu(){
     else if(FA_SVC==='ARMA') th.title=FA_LABEL[UOS[ei]]||'';
     return th;
   }
-  entetes.forEach(function(e,ei){ trh.appendChild(enteteUo(e, ei, ei===0, '#1D4ED8')); });
+  entetes.forEach(function(e,ei){
+    var th=enteteUo(e, ei, ei===0, '#1D4ED8');
+    // En mode sélection, une case par colonne coche tout l'UO d'un coup.
+    if(FA_SEL_MODE){
+      var cb=document.createElement('input');
+      cb.type='checkbox';
+      cb.style.cssText='width:12px;height:12px;cursor:pointer;margin-top:2px';
+      cb.title='Cocher ou décocher cet UO sur toutes les affaires affichées';
+      cb.addEventListener('change',function(){
+        rows.forEach(function(r){
+          var k=(FA_SVC==='IRVE') ? (irveProfil(r.a)+'_'+UOS[ei]) : UOS[ei];
+          var kk=faSelCle(r.cp, r.a, k);
+          if(cb.checked) FA_SEL[kk]={cp:r.cp, a:r.a, k:k}; else delete FA_SEL[kk];
+        });
+        rFactu();
+      });
+      th.appendChild(document.createElement('br'));
+      th.appendChild(cb);
+    }
+    trh.appendChild(th);
+  });
   entetes.forEach(function(e,ei){ trh.appendChild(enteteUo(e, ei, ei===0, '#047857')); });
   entetes.forEach(function(e,ei){ trh.appendChild(enteteUo(e, ei, ei===0, '#7C3AED')); });
   thead.appendChild(trh); tbl.appendChild(thead);
@@ -12371,9 +12671,22 @@ function rFactu(){
       var td=document.createElement('td'); td.className='fa-uo';
       if(ui===0) td.style.borderLeft='2px solid #1D4ED855';
       var cleP = (FA_SVC==='IRVE') ? (irveProfil(a)+'_'+u) : u;
+      if(FA_SEL_MODE){
+        var kSel=faSelCle(r.cp, a, cleP);
+        var cbx=document.createElement('input');
+        cbx.type='checkbox'; cbx.checked=!!FA_SEL[kSel];
+        cbx.style.cssText='width:12px;height:12px;cursor:pointer;vertical-align:middle;margin-right:2px';
+        cbx.title='Cocher pour basculer cet UO avec les autres';
+        cbx.addEventListener('change',function(){
+          if(cbx.checked) FA_SEL[kSel]={cp:r.cp, a:a, k:cleP}; else delete FA_SEL[kSel];
+          majBarreSel();
+        });
+        td.appendChild(cbx);
+      }
       var sd=document.createElement('select');
       sd.style.cssText='font-size:8.5px;font-weight:700;border:1px solid var(--b2);border-radius:5px;'
-        +'padding:2px 3px;background:var(--bg);color:var(--t);font-family:inherit;max-width:72px';
+        +'padding:2px 3px;background:var(--bg);color:var(--t);font-family:inherit;max-width:'
+        +(FA_SEL_MODE?'56px':'72px');
       var cur=prevUo(a, cleP);
       var auto=calc[cleP];
       var o0=document.createElement('option');
@@ -12530,6 +12843,7 @@ function rFactu(){
   tbl.appendChild(tb); wrap.appendChild(tbl); body.appendChild(wrap);
   host.appendChild(card);
   try{ makeCollapsibleRef(hdr, body, 'factu_referent'); }catch(e){}
+  try{ majBarreSel(); }catch(e){}
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -17693,7 +18007,7 @@ var BO_DOCS={
   // PPS et FDO attendent le modèle Astridsen : la trame ci-dessous reprend
   // les rubriques habituelles, elle sera calée sur le document réel.
   PPS:{label:'PPS',icon:'🦺',desc:'Plan Particulier de Sécurité et de Protection de la Santé',
-    color:'var(--red)',status:'dev',cpCheck:true,fam:'Sécurité et prévention',
+    color:'var(--red)',status:'dev',cpCheck:true,svc:'IRVE',fam:'Sécurité et prévention',
     note:'Trame provisoire : à caler sur le modèle Astridsen.',
     fields:[
       {id:'bo-no',label:'N° Affaire *',type:'text',placeholder:'RAC-PAR-25-...',source:'affaire'},
@@ -17715,7 +18029,7 @@ var BO_DOCS={
       {id:'bo-notes',label:'Observations',type:'textarea',placeholder:'',source:'manual'}
     ]},
   DIE_AVENANT:{label:'Avenant DIE',icon:'📝',desc:'Demande d’avenant à la DIE',
-    color:'var(--purple)',status:'dev',cpCheck:true,fam:'Commandes et avenants',
+    color:'var(--purple)',status:'dev',cpCheck:true,svc:'IRVE',fam:'Commandes et avenants',
     fields:[
       {id:'bo-no',label:'N° Affaire *',type:'text',placeholder:'RAC-PAR-25-...',source:'affaire'},
       {id:'bo-addr',label:'Adresse du chantier',type:'text',placeholder:'',source:'affaire'},
@@ -17734,7 +18048,7 @@ var BO_DOCS={
       {id:'bo-notes',label:'Observations',type:'textarea',placeholder:'',source:'manual'}
     ]},
   FDO:{label:'FDO',icon:'📄',desc:'Fiche de demande d’ouvrage',
-    color:'var(--teal)',status:'dev',cpCheck:true,fam:'Dossiers travaux',
+    color:'var(--teal)',status:'dev',cpCheck:true,svc:'IRVE',fam:'Dossiers travaux',
     note:'Trame provisoire : à caler sur le modèle Astridsen.',
     fields:[
       {id:'bo-no',label:'N° Affaire *',type:'text',placeholder:'RAC-PAR-25-...',source:'affaire'},
@@ -17790,6 +18104,13 @@ var BO_FAM = {
   MAIL_PRIMO:'Mails', MAIL_PLANNING_PRESTA:'Mails', MAIL_PLANNING_CLIENT:'Mails'
 };
 function boFam(key){ return (BO_DOCS[key]||{}).fam || BO_FAM[key] || 'Autres'; }
+// Périmètre auquel appartient un module. Sans mention, c'est ARMA : c'est là
+// que vivaient tous les documents jusqu'ici. PPS, avenant DIE et FDO sont
+// rangés sous IRVE depuis le 07/09/2026.
+function boSvc(key){ return (BO_DOCS[key]||{}).svc || 'ARMA'; }
+function boModulesDe(svc){
+  return Object.keys(BO_DOCS).filter(function(k){ return boSvc(k)===svc; });
+}
 var BO_FILTRE='';        // '', 'ok', 'beta' ou 'dev'
 function boBadge(doc){
   var e=BO_ETATS[boEtat(doc)];
@@ -18313,7 +18634,7 @@ function renderREGARDForm(el,type){
 function rBO(){
   var el=document.getElementById('bo-content');
   try{ rSvcTabs('bo-svc', BO_SVC, function(k){ BO_SVC=k; BO_DOC=null; rBO(); }); }catch(e){}
-  if(BO_SVC!=='ARMA' && !BO_DOC){
+  if(!boModulesDe(BO_SVC).length && !BO_DOC){
     el.innerHTML='';
     messageServiceVide(el, BO_SVC, 'document');
     var n=document.createElement('div');
@@ -18379,7 +18700,7 @@ function rBO(){
   // ordre lisible, et empilait jusqu'à deux pastilles d'état contradictoires
   // sur la même carte. On regroupe par famille, une seule pastille par module,
   // et un filtre par état en tête.
-  var cles=Object.keys(BO_DOCS);
+  var cles=boModulesDe(BO_SVC);
   var compte={dev:0, beta:0, ok:0};
   cles.forEach(function(k){ compte[boEtat(BO_DOCS[k])]++; });
 
@@ -19759,7 +20080,7 @@ window.addEventListener('beforeunload', function(e){
 // On ne recharge jamais de force, une saisie en cours serait perdue :
 // on propose, la personne choisit son moment.
 // ══════════════════════════════════════════════════════════════
-var APP_VERSION='2026-09-05-3';
+var APP_VERSION='2026-09-07-1';
 var MAJ_VUE=false;
 function bandeauMaj(v){
   if(MAJ_VUE || document.getElementById('maj-banner')) return;
