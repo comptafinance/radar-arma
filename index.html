@@ -1562,19 +1562,39 @@ Object.keys(statsMap).forEach(function(id){
 var AG_MODE = 'grid';   // la vue cartes a été retirée
 var AG_SHOW_CLOT = false;
 
+// Ordre voulu par Steve le 09/09/2026 : le DIE, le pr\u00e9visionnel, puis les
+// deux lignes d'avenant sur un fond \u00e0 part, puis les d\u00e9penses et l'\u00e9cart sur
+// un autre. Les deux montants du bas se saisissent apr\u00e8s coup.
 var AG_BUD_ROWS = [
   {k:'budget_alloue',       l:'DIE (allou\u00e9 apr\u00e8s primo)'},
-  {k:'budget_previsionnel', l:'Budget pr\u00e9visionnel'},
-  {k:'budget_definitif',    l:'R\u00e9alis\u00e9 (constat CREI)'}
+  {k:'budget_previsionnel', l:'Budget pr\u00e9visionnel'}
 ];
+var AG_BUD_ROWS_FIN = [
+  {k:'budget_definitif',    l:'D\u00e9penses r\u00e9alis\u00e9es'}
+];
+// O\u00f9 en est la demande d'avenant
+var AVENANT_ETATS = [
+  {k:'',     l:'\u2014',       fg:'var(--b2)', bg:''},
+  {k:'non',  l:'Non',     fg:'#B91C1C',   bg:'#FEE2E2'},
+  {k:'cours',l:'En cours',fg:'#B45309',   bg:'#FEF3C7'},
+  {k:'oui',  l:'Oui',     fg:'#047857',   bg:'#D1FAE5'}
+];
+function avenantEtatInfo(k){
+  return AVENANT_ETATS.filter(function(e){ return e.k===(k||''); })[0] || AVENANT_ETATS[0];
+}
+// Un avenant est n\u00e9cessaire d\u00e8s que le pr\u00e9visionnel d\u00e9passe le DIE
+function avenantRequis(a){
+  var f=a.fin||{}, die=f.budget_alloue||0, prev=f.budget_previsionnel||0;
+  return die>0 && prev>0 && prev>die;
+}
+// Planning ramen\u00e9 aux seuls jalons utiles, demand\u00e9 par Steve le 09/09/2026 :
+// accord client, MEX pr\u00e9visionnelle, MEX d\u00e9finitive. Travaux client,
+// int\u00e9rieur, ext\u00e9rieur et Ecome sont retir\u00e9s ; leurs donn\u00e9es restent dans le
+// fichier, il suffit de remettre les lignes pour les revoir.
 var AG_DATE_ROWS = [
   {k:'date_accord',    l:'\ud83e\udd1d Accord client'},
-  {k:'date_trx_client',l:'\ud83d\udc64 Travaux client'},
-  {k:'date_trx_int',   l:'\ud83c\udfe0 Travaux int\u00e9rieur'},
-  {k:'debut_trx_ext',  l:'\u25b6 Travaux ext. \u2014 d\u00e9but'},
-  {k:'fin_trx_ext',    l:'\u25c0 Travaux ext. \u2014 fin'},
-  {k:'date_ecome',     l:'\u26a1 Ecome'},
-  {k:'date_mex_prev',  l:'\ud83d\udcc5 MEX pr\u00e9visionnelle'}
+  {k:'date_mex_prev',  l:'\ud83d\udcc5 MEX pr\u00e9visionnelle'},
+  {k:'date_mex_def',   l:'\ud83d\udcc6 MEX d\u00e9finitive'}
 ];
 // Bloc de clôture, mis en évidence
 var AG_DATE_FIN = [{k:'date_mex', l:'\u2705 MEX r\u00e9alis\u00e9e'}];
@@ -2091,6 +2111,7 @@ var IRVE_COLS = [
   {k:'commune',   l:'Commune',          w:140, fort:true},
   {k:'mandataire',l:'Mandataire',       w:92},
   {k:'be',        l:'BE',               w:84},
+  {k:'dateag',    l:'Date d’AG',   w:88},
   {k:'avancement',l:'Avancement',       w:126, fort:true},
   {k:'_majcom',   l:'Maj. comm.',       w:74},
   {k:'soustache', l:'Commentaire d\u2019avancement', w:250, fort:true}
@@ -2302,17 +2323,17 @@ function rIrveGrid(){
     return;
   }
   var tbl=document.createElement('table'); tbl.className='ag-tbl irv-tbl';
-  var total=IRVE_COLS.reduce(function(s,c){ return s+c.w; },0)+20;
+  var total=IRVE_COLS.reduce(function(s,c){ return s+c.w; },0)+66;
   tbl.style.width=total+'px';
   var cg=document.createElement('colgroup');
-  if(isMulti()){ var xc=document.createElement('col'); xc.style.width='46px'; cg.appendChild(xc); }
+  var xc=document.createElement('col'); xc.style.width='46px'; cg.appendChild(xc);
   IRVE_COLS.forEach(function(c){ var x=document.createElement('col'); x.style.width=c.w+'px'; cg.appendChild(x); });
   tbl.appendChild(cg);
 
   var thead=document.createElement('thead'); var tr=document.createElement('tr');
-  if(isMulti()){
-    var thCp=document.createElement('th'); thCp.className='irv-th'; thCp.textContent='CP'; tr.appendChild(thCp);
-  }
+  var thCp=document.createElement('th'); thCp.className='irv-th';
+  thCp.textContent='CP'; thCp.title='Chargé de projet — cliquer une cellule pour réaffecter';
+  tr.appendChild(thCp);
   IRVE_COLS.forEach(function(c,i){
     var th=document.createElement('th');
     th.className='irv-th'+(i===0?' irv-sticky':'');
@@ -2324,53 +2345,91 @@ function rIrveGrid(){
   affs.forEach(function(a){
     var iv=a.irve||{};
     var row=document.createElement('tr');
-    if(isMulti()){
+    // La colonne CP est toujours là, et c'est par elle qu'on réaffecte.
+    (function(){
       var cp=cpOf[a.code+'|'+(a.no||'')]||CCP;
       var av=AVC[cp]||['#6B7280','#F9FAFB'];
       var tdCp=document.createElement('td'); tdCp.className='irv-td';
-      tdCp.style.cssText+=';text-align:center;font-weight:800;background:'+av[1]+';color:'+av[0];
-      tdCp.textContent=DATA[cp].ini||cp; tdCp.title=DATA[cp].name||cp;
+      tdCp.style.cssText+=';text-align:center;font-weight:800;cursor:pointer;background:'
+        +av[1]+';color:'+av[0];
+      tdCp.textContent=DATA[cp].ini||cp;
+      tdCp.title=(DATA[cp].name||cp)+'\nCliquer pour réaffecter ce dossier';
+      tdCp.addEventListener('click',function(){
+        reaffecterModal(cp, a, function(){ rIrveGrid(); });
+      });
       row.appendChild(tdCp);
-    }
+    })();
     IRVE_COLS.forEach(function(c,i){
       var td=document.createElement('td');
       td.className='irv-td'+(i===0?' irv-sticky':'');
       var v=(c.k==='no')?(a.no||''):(c.k==='_type'?'':(iv[c.k]||''));
       if(c.k==='_type'){
-        var nv=irveEstNouveau(a);
-        var cx=irveComplexite(a,'TRX');
-        td.textContent=(nv?'Nouveau':'Historique')+' \u00b7 '+cx;
-        td.style.background=nv?'#DBEAFE':'#F3F4F6';
-        td.style.color=nv?'#1D4ED8':'#6B7280';
-        td.style.fontWeight='800';
-        td.title=(nv?'Dossier nouveau':'Dossier historique')
-          +'\nComplexit\u00e9 UO : '+(cx==='M'?'Moyenne':'Simple')
-          +(nv?('\nBornes : '+(iv.bornes||'?')):'\nHistorique : CRD moyen, TRX simple');
+        // La complexit\u00e9 se CHOISIT : c'est elle qui dit quels UO se facturent
+        // et \u00e0 quel tarif. Elle n'est plus d\u00e9duite du nombre de bornes.
+        var sc=document.createElement('select');
+        IRVE_COMPLEX.forEach(function(x){
+          var o=document.createElement('option');
+          o.value=x.k; o.textContent=x.court;
+          sc.appendChild(o);
+        });
+        function peindreCx(){
+          var k=irveComplexDe(a), c2=irveComplexInfo(k);
+          sc.value=k;
+          var hist=c2 && c2.hist;
+          sc.style.cssText='width:100%;border:1px solid '+(hist?'#9CA3AF':'#1D4ED8')+'55;'
+            +'border-radius:5px;padding:1px 2px;font-size:8.5px;font-weight:800;background:'
+            +(hist?'#F3F4F6':'#DBEAFE')+';color:'+(hist?'#4B5563':'#1D4ED8')
+            +';font-family:inherit';
+          sc.title=(c2?c2.l:'')+'\nUO facturables : '
+            +(c2?Object.keys(c2.uo).map(function(u){
+                return u+' \u00e0 '+String(c2.uo[u]).replace('.',',')
+                  +' ('+(irveProfilUo(a,u)==='M'?'moyen':'simple')+')'; }).join(', ')
+              :'\u2014')
+            +'\nLes autres UO ne se facturent pas.';
+        }
+        peindreCx();
+        sc.addEventListener('change',function(){
+          setIrveComplex(a, sc.value);
+          peindreCx(); sbSave();
+          sansBouger(function(){ rIrveGrid(); });
+        });
+        td.style.padding='1px 2px';
+        td.appendChild(sc);
         row.appendChild(td); return;
       }
       if(c.fort) td.style.fontSize='10px';
       if(c.k==='avancement'){
+        // Menu d\u00e9roulant : cliquer pour avancer d'un cran faisait passer par
+        // toutes les phases pour en atteindre une, et se trompait de cible.
+        var sp=document.createElement('select');
+        IRVE_PHASES.slice().sort(function(x,y){ return (x.n===0?9:x.n)-(y.n===0?9:y.n); })
+        .forEach(function(p){
+          var o=document.createElement('option'); o.value=p.l; o.textContent=p.l;
+          sp.appendChild(o);
+        });
         function paintPh(){
           var ph=irvePhase(a);
-          td.textContent=ph.l; td.style.background=ph.bg; td.style.color=ph.fg;
-          td.style.fontWeight='800';
-          td.title=(iv.avancement||'')+'\nCliquer pour changer de phase';
+          sp.value=ph.l;
+          sp.style.cssText='width:100%;border:1px solid '+ph.fg+'55;border-radius:5px;'
+            +'padding:1px 2px;font-size:8.5px;font-weight:800;background:'+ph.bg
+            +';color:'+ph.fg+';font-family:inherit';
+          sp.title=(iv.avancement||ph.l)+'\nChanger l\u2019avancement du dossier';
         }
-        paintPh(); td.style.cursor='pointer';
-        td.addEventListener('click',function(){
-          var ordre=IRVE_PHASES.slice().sort(function(x,y){ return (x.n===0?9:x.n)-(y.n===0?9:y.n); });
-          var n=irvePhaseNum(a);
-          var i=0; ordre.forEach(function(p,k){ if(p.n===n) i=k; });
-          var suiv=ordre[(i+1)%ordre.length];
+        paintPh();
+        sp.addEventListener('change',function(){
           if(!a.irve) a.irve={};
-          a.irve.avancement=suiv.l;
+          a.irve.avancement=sp.value;
           agSursisPose(a);
           paintPh(); sbSave();
-          if(suiv.n===0 || suiv.n===6){
-            showToast(a.code+' \u2192 '+suiv.l+' \u2014 disparait du tableau dans 5 s');
+          var n2=irvePhaseNum(a);
+          if(n2===0 || n2===6){
+            showToast(a.code+' \u2192 '+sp.value+' \u2014 disparait du tableau dans 5 s');
           }
           setTimeout(function(){ try{ rPhaseBar(); }catch(e){} },10);
         });
+        td.style.padding='1px 2px';
+        td.appendChild(sp);
+        row.appendChild(td); return;
       } else if(c.k==='_majcom'){
         var d=(iv.majcom||'');
         td.textContent=d?dFR(d).slice(0,5):'\u2014';
@@ -2412,6 +2471,26 @@ function rIrveGrid(){
             paintB(); sbSave(); rIrveGrid();
           },{message:'Le nombre de bornes d\u00e9termine la complexit\u00e9 : plus de 50 = moyenne.',placeholder:'0'});
         });
+      } else if(c.k==='dateag'){
+        // Date d'assembl\u00e9e g\u00e9n\u00e9rale, saisie \u00e0 la main
+        function paintAG(){
+          var d=(a.irve||{}).dateag||'';
+          td.textContent=d?dFR(d):'\u2014';
+          td.style.color=d?'var(--t2)':'var(--b2)';
+          td.style.fontWeight=d?'700':'400';
+          td.title=(d?('AG du '+dFR(d)):'Aucune date d\u2019AG')+'\nCliquer pour saisir';
+        }
+        paintAG(); td.style.cursor='pointer';
+        td.addEventListener('click',function(){
+          uiPrompt(a.no+' \u2014 Date d\u2019AG', dFR((a.irve||{}).dateag||''), function(v){
+            v=String(v||'').trim();
+            if(!a.irve) a.irve={};
+            var iso=frToISO(v);
+            if(v && !iso){ uiAlert('Date non comprise','Format attendu JJ/MM/AAAA.'); return; }
+            if(iso) a.irve.dateag=iso; else delete a.irve.dateag;
+            paintAG(); sbSave();
+          },{placeholder:'JJ/MM/AAAA', message:'Date de l\u2019assembl\u00e9e g\u00e9n\u00e9rale. Vide pour l\u2019effacer.'});
+        });
       } else {
         td.textContent=v||'\u2014';
         if(!v) td.style.color='var(--b2)';
@@ -2428,6 +2507,34 @@ function rIrveGrid(){
     tb.appendChild(row);
   });
   tbl.appendChild(tb); wrap.appendChild(tbl);
+  // Une ligne vide à compléter, au bas du tableau
+  var pied=document.createElement('div');
+  pied.style.cssText='padding:8px 6px';
+  var bAdd=document.createElement('button');
+  bAdd.style.cssText='border:1.5px dashed var(--b2);background:transparent;color:var(--t3);'
+    +'border-radius:9px;padding:6px 14px;font-size:10.5px;font-weight:800;cursor:pointer;'
+    +'font-family:inherit';
+  bAdd.textContent='+ Nouvelle affaire';
+  bAdd.title='Ajoute une ligne vide à compléter dans le portefeuille affiché';
+  bAdd.addEventListener('click',function(){
+    var cpCible=selCps()[0]||CCP;
+    if(!DATA[cpCible]){ showToast('Aucun portefeuille sélectionné'); return; }
+    var n=1, code;
+    do { code='NEW'+n; n++; } while((gAff(cpCible)||[]).some(function(x){ return x.code===code; }));
+    var na=mkAff({code:code, no:'', addr:'', typo:'', phase:'Primo',
+                  irve:{avancement:'1 - APS', complex:'N_S'}, taskStatus:{}});
+    DATA[cpCible].affaires.push(na);
+    DATA[cpCible].en_cours=(DATA[cpCible].en_cours||0)+1;
+    sbSave();
+    showToast('Ligne ajoutée — complète le n° d’affaire');
+    rIrveGrid();
+    setTimeout(function(){
+      var w2=document.getElementById('ag-wrap');
+      if(w2) w2.scrollTop=w2.scrollHeight;
+    },0);
+  });
+  pied.appendChild(bAdd);
+  wrap.appendChild(pied);
   try{ agRenderLegendIrve(affs); }catch(e){}
 }
 
@@ -2815,6 +2922,19 @@ function rMecaGrid(){
   }
 
   // Métadonnées
+  // Charge de projet : c'est ici qu'on reaffecte une station.
+  row('Charg\u00e9 de projet',function(c,a){
+    var cpA=CCP;
+    pairs.forEach(function(p){ if(p.a===a) cpA=p.cp; });
+    var av=AVC[cpA]||['#6B7280','#F9FAFB'];
+    c.textContent=(DATA[cpA]||{}).ini||cpA;
+    c.style.background=av[1]; c.style.color=av[0];
+    c.style.fontWeight='800'; c.style.cursor='pointer';
+    c.title=((DATA[cpA]||{}).name||cpA)+'\nCliquer pour r\u00e9affecter cette station';
+    c.addEventListener('click',function(){
+      reaffecterModal(cpA, a, function(){ rMecaGrid(); });
+    });
+  });
   row('Lot',function(c,a){ c.textContent=(a.meca||{}).groupe||'\u2014'; });
   // Bandeau des livrables
   var trU=document.createElement('tr'); trU.className='ag-band-bud ag-band';
@@ -3872,6 +3992,9 @@ function sbLoad(){
           var msg=[], bascule=null;
           try{ bascule=migrerIrveVersPaul(); }catch(e2){ console.warn('irveVersPaul',e2); }
           try{ migrerAffectations(); }catch(e2){ console.warn('affectMois',e2); }
+          try{ var nH=migrerHistoriquesRegularises();
+               if(nH) msg.push(nH+' UO d’historiques passés en facturation régularisée');
+          }catch(e2){ console.warn('histRegul',e2); }
           var nA=annulerAout26(), nC=0;
           try{ nC=importerActionsCommentaires(); }catch(e2){ console.warn('actionsCom',e2); }
           if(bascule) msg.push(bascule.doublons+' doublons IRVE retirés du portefeuille d’Alexis'
@@ -5180,7 +5303,7 @@ function irveComplexite(a,uo){
   return (!isNaN(b) && b>50) ? 'M' : 'S';
 }
 function irvePrixUoAff(a,uo){
-  var tab=IRVE_PRIX[irveProfil(a)]||IRVE_PRIX['S'];
+  var tab=IRVE_PRIX[irveProfilUo(a,uo)]||IRVE_PRIX['S'];
   return tab[uo]||0;
 }
 
@@ -5257,11 +5380,75 @@ function uoParam(svc,k){
 // Heures mensuelles disponibles par personne
 var CAP_HEURES = 140;
 
-// Profil IRVE d'une affaire : H (historique), S (≤50), M (>50)
-function irveProfil(a){
-  if(!irveEstNouveau(a)) return 'H';
+// ══════════════════════════════════════════════════════════════
+// COMPLEXITÉ D'UN DOSSIER IRVE, ET UO QU'ELLE OUVRE
+//
+// Barème posé par Steve le 09/09/2026. La complexité n'est plus déduite du
+// nombre de bornes : elle se choisit dans le tableau, et c'est elle qui dit
+// quels UO se facturent et pour quelle part.
+//
+//  uo   : part facturable de chaque UO. Un UO absent ne se facture pas.
+//  prof : tarif appliqué, S (simple) ou M (moyen).
+//  profUo : exception de tarif sur un UO précis — les historiques facturent
+//           leur coordination au tarif moyen et le reste au simple.
+// ══════════════════════════════════════════════════════════════
+var IRVE_COMPLEX = [
+  {k:'H_ABAND', l:'Historique abandonné',        court:'Hist. abandonné',
+   hist:true, prof:'S', uo:{ETD:0.5}},
+  {k:'H_SANS',  l:'Historique sans appui travaux', court:'Hist. sans appui',
+   hist:true, prof:'S', uo:{ETD:0.75, CRD:1}, profUo:{CRD:'M'}},
+  {k:'H_AVEC',  l:'Historique avec appui travaux', court:'Hist. avec appui',
+   hist:true, prof:'S', uo:{ETD:0.75, CRD:1, TRX:1}, profUo:{CRD:'M'}},
+  {k:'N_S',     l:'Nouveau simple',              court:'Nouveau S',
+   prof:'S', uo:{ETD:1, CRD:1, TRX:1, RCP:1}},
+  {k:'N_M',     l:'Nouveau moyen',               court:'Nouveau M',
+   prof:'M', uo:{ETD:1, CRD:1, TRX:1, RCP:1}},
+  {k:'N_RES',   l:'Nouveau reprise étude simple', court:'Reprise étude S',
+   prof:'S', uo:{ETD:0.5, CRD:1, TRX:1, RCP:1}},
+  {k:'N_REM',   l:'Nouveau reprise étude moyen',  court:'Reprise étude M',
+   prof:'M', uo:{ETD:0.5, CRD:1, TRX:1, RCP:1}},
+  {k:'N_RCS',   l:'Nouveau reprise en coordination simple', court:'Reprise coord. S',
+   prof:'S', uo:{CRD:1, TRX:1, RCP:1}},
+  {k:'N_RCM',   l:'Nouveau reprise en coordination moyen',  court:'Reprise coord. M',
+   prof:'M', uo:{CRD:1, TRX:1, RCP:1}}
+];
+function irveComplexInfo(k){
+  return IRVE_COMPLEX.filter(function(x){ return x.k===k; })[0] || null;
+}
+// Complexité retenue. Non renseignée, on la déduit de l'ancien modèle pour
+// que rien ne change tant que Steve n'a pas fait le tri.
+function irveComplexDe(a){
+  var k=((a||{}).irve||{}).complex;
+  if(k && irveComplexInfo(k)) return k;
+  if(!irveEstNouveau(a)) return 'H_AVEC';
   var b=parseInt(String((a.irve||{}).bornes||'').replace(/[^0-9]/g,''),10);
-  return (!isNaN(b) && b>50) ? 'M' : 'S';
+  return (!isNaN(b) && b>50) ? 'N_M' : 'N_S';
+}
+function irveComplexObj(a){ return irveComplexInfo(irveComplexDe(a)); }
+function setIrveComplex(a, k){
+  if(!a.irve) a.irve={};
+  if(k) a.irve.complex=k; else delete a.irve.complex;
+}
+// Part facturable d'un UO : 0 quand la complexité ne l'ouvre pas.
+function irvePlafond(a, uo){
+  var c=irveComplexObj(a);
+  if(!c) return 1;
+  return +(c.uo[uo]||0);
+}
+// Tarif appliqué à un UO : S ou M, avec l'exception par UO.
+function irveProfilUo(a, uo){
+  var c=irveComplexObj(a);
+  if(!c) return 'S';
+  return (c.profUo && c.profUo[uo]) ? c.profUo[uo] : c.prof;
+}
+// Profil IRVE d'une affaire. Il sert de PRÉFIXE DE CLÉ à tout ce qui est déjà
+// saisi — a.irve.fa, a.prev, a.cmd sont indexés par « profil_UO ». Un
+// historique garde donc son H, sinon les coefficients déjà posés ne seraient
+// plus retrouvés. Le TARIF, lui, passe par irveProfilUo.
+function irveProfil(a){
+  var c=irveComplexObj(a);
+  if(!c) return 'S';
+  return c.hist ? 'H' : c.prof;
 }
 
 // UO restant à produire sur une affaire, avec heures et durée
@@ -5315,6 +5502,8 @@ function uoRestants(cp,a){
     return u.k.indexOf(irveProfil(a)+'_')===0;
   });
   liste.forEach(function(u){
+    // Un UO que la complexité n'ouvre pas ne se produit pas et ne pèse rien.
+    if(svc==='IRVE' && irvePlafond(a, u.k.slice(-3))<=0) return;
     var fait=uoFait(cp,a,u.k);
     var p=uoParam(svc,u.k);
     out.push({k:u.k, fait:fait, part:Math.max(0,1-fait), h:p.h, d:p.d});
@@ -5397,12 +5586,20 @@ function rIrveTrxGrid(){
   var wrap=document.getElementById('ag-wrap'); if(!wrap) return;
   wrap.innerHTML='';
   var pairs=selAffaires();
+  // Seuls les dossiers NOUVEAUX passés en « 6 - En travaux » entrent ici.
+  // Les historiques n'ont pas de suivi travaux : leur facturation est
+  // régularisée et le tableau restait encombré pour rien.
   var affs=pairs.map(function(p){ return p.a; })
-                .filter(function(a){ return irvePhaseNum(a)===6 && agMatch(a); });
+                .filter(function(a){
+                  if(irvePhaseNum(a)!==6) return false;
+                  var c=irveComplexObj(a);
+                  if(c && c.hist) return false;
+                  return agMatch(a);
+                });
   try{ agSearchInfo(affs.length, pairs.length); }catch(e){}
   if(!affs.length){
     wrap.innerHTML='<div style="padding:20px;text-align:center;font-size:11px;color:var(--t3);font-style:italic">'
-      +'Aucune affaire en phase Travaux</div>';
+      +'Aucun dossier nouveau en travaux.<br>Un dossier y entre quand son avancement passe à « 6 - En travaux ».</div>';
     return;
   }
   var tbl=document.createElement('table'); tbl.className='ag-tbl';
@@ -6270,8 +6467,9 @@ function agModFill(mod,a){
   }
   if(mod==='budget'){
     var f=a.fin||{},c=0;
-    AG_BUD_ROWS.forEach(function(b){ if(f[b.k]>0) c++; });
-    return c===0?'empty':(c===AG_BUD_ROWS.length?'full':'part');
+    var toutes=AG_BUD_ROWS.concat(AG_BUD_ROWS_FIN);
+    toutes.forEach(function(b){ if(f[b.k]>0) c++; });
+    return c===0?'empty':(c===toutes.length?'full':'part');
   }
   return 'empty';
 }
@@ -6394,15 +6592,19 @@ function rAffGrid(){
   }
 
   // ── Métadonnées ──
-  if(isMulti()){
-    metaRow('Charg\u00e9 de projet',function(c,a){
-      var cp=affCp(a); var av=AVC[cp]||['#6B7280','#F9FAFB'];
-      c.textContent=DATA[cp].ini||cp;
-      c.style.background=av[1]; c.style.color=av[0];
-      c.style.fontWeight='800'; c.style.fontSize='8.5px';
-      c.title=DATA[cp].name||cp;
+  // La ligne est toujours la : c'est par elle qu'on reaffecte un dossier,
+  // depuis le 09/09/2026. Le module de l'onglet Referent a ete retire.
+  metaRow('Charg\u00e9 de projet',function(c,a){
+    var cp=affCp(a); var av=AVC[cp]||['#6B7280','#F9FAFB'];
+    c.textContent=DATA[cp].ini||cp;
+    c.style.background=av[1]; c.style.color=av[0];
+    c.style.fontWeight='800'; c.style.fontSize='8.5px';
+    c.style.cursor='pointer';
+    c.title=(DATA[cp].name||cp)+'\nCliquer pour r\u00e9affecter ce dossier';
+    c.addEventListener('click',function(){
+      reaffecterModal(cp, a, function(){ rAffGrid(); });
     });
-  }
+  });
   metaRow("\u00c9tat de l'affaire",function(c,a){
     var k=agEtatOf(a);
     var e=AG_ETATS[k]||AG_ETATS['autre'];
@@ -6812,7 +7014,20 @@ function agRowsPlanning(affs){
     c.style.color = n===null?'var(--b2)':(n>120?'var(--red)':n>60?'var(--amber)':'#3730A3');
     c.title=ph+(n!==null?' depuis '+n+' jours':'');
   },'ag-date'));
-  // 3. Date d'affectation
+  // 3. Derni\u00e8re action r\u00e9alis\u00e9e, en jours
+  rows.push(agMakeRow('\ud83d\udd54 Derni\u00e8re action',affs,function(c,a){
+    var d=null;
+    try{ d=derniereAction(a); }catch(e){}
+    var n=null;
+    if(d){ n=Math.floor((Date.now()-new Date(d).getTime())/86400000); }
+    c.textContent = (n===null)?'\u2014':(n+'j');
+    c.style.fontWeight='800';
+    c.style.color = (n===null)?'var(--b2)':(n>30?'var(--red)':n>15?'var(--amber)':'var(--t2)');
+    c.title = (n===null)
+      ? 'Aucune date exploitable sur ce dossier'
+      : ('Derni\u00e8re action le '+dFR(d)+', il y a '+n+' jours');
+  },'ag-date'));
+  // 4. Date d'affectation
   rows.push(agMakeRow("\ud83d\udccc Date d'affectation",affs,function(c,a){
     if(!a.cycle) a.cycle={};
     function paint(){
@@ -6861,6 +7076,12 @@ function agRowsPlanning(affs){
   AG_DATE_ROWS.forEach(function(dr){ rows.push(ligneDate(dr)); });
   // 5. Clôture : une seule ligne pour l'issue du chantier, MEX ou chute
   rows.push(agRowIssue(affs));
+  // Les trois premières lignes sont des indicateurs, pas des jalons à saisir :
+  // durée du dossier, ancienneté de phase, dernière action. Un fond légèrement
+  // différent les sépare des dates.
+  [0,1,2].forEach(function(i){
+    if(rows[i]) rows[i].style.background='#F5F3FF';
+  });
   return rows;
 }
 
@@ -7009,7 +7230,9 @@ function agRowIssue(affs){
 // MODULE BUDGET
 // ══════════════════════════════════════════════════════
 function agRowsBudget(affs){
-  var rows=AG_BUD_ROWS.map(function(br){
+  // Une ligne de montant, r\u00e9utilis\u00e9e en haut pour le DIE et le pr\u00e9visionnel,
+  // et en bas pour les d\u00e9penses r\u00e9alis\u00e9es.
+  function ligneMontant(br){
     return agMakeRow(br.l,affs,function(c,a){
       function paint(){
         if(!a.fin) a.fin={};
@@ -7027,43 +7250,58 @@ function agRowsBudget(affs){
         a.fin[br.k]= isNaN(num)?0:num;
         paint(); sbSave();
         try{ refreshAllBadges(); }catch(e){}
-        var band=document.querySelector('#ag-wrap .ag-band-bud');
-        if(band){
-          var cell=band.children[affs.indexOf(a)+1];
-          if(cell){ var st=agModFill('budget',a); cell.textContent=agFillMark(st); cell.style.color=agFillColor(st); }
-        }
+        try{ sansBouger(function(){ rAffGrid(); }); }catch(e){}
         }, {message:'Montant en euros \u2014 vide pour effacer.', placeholder:'0'});
       });
     },'ag-money');
-  });
-  // Demande d'avenant : obligatoire si le DIE est insuffisant
-  rows.push(agMakeRow('Demande d\u2019avenant',affs,function(c,a){
-    if(!a.fin) a.fin={};
-    function paint(){
-      var die=a.fin.budget_alloue||0, prev=a.fin.budget_previsionnel||0;
-      var requis = die>0 && prev>0 && die<prev;
-      var v=a.avenant||'';
-      c.textContent = v ? (v.length>8?v.slice(0,8)+'\u2026':v) : (requis?'\u26a0 requis':'\u2014');
-      c.style.fontWeight = requis&&!v ? '800' : '600';
-      c.style.color = v ? 'var(--t2)' : (requis?'var(--red)':'var(--b2)');
-      c.style.background = requis&&!v ? '#FEE2E2' : '';
-      c.title = requis
-        ? ('DIE '+Math.round(die).toLocaleString('fr')+' \u20ac < pr\u00e9visionnel '
-           +Math.round(prev).toLocaleString('fr')+' \u20ac\\nUne demande d\u2019avenant est obligatoire.'
-           +(v?'\\n\\n'+v:''))
-        : (v||'Sans objet');
-    }
-    paint(); c.style.cursor='pointer';
-    c.addEventListener('click',function(){
-      uiPrompt(a.code+' \u2014 Demande d\u2019avenant', a.avenant||'', function(v){
-        v=String(v).trim();
-        if(v) a.avenant=v; else delete a.avenant;
-        paint(); sbSave();
-      },{multiline:true,message:'R\u00e9f\u00e9rence et objet de la demande d\u2019avenant.'});
+  }
+  var rows=AG_BUD_ROWS.map(ligneMontant);
+  // \u2500\u2500 Avenant : la question, puis l'\u00e9tat de la d\u00e9marche \u2500\u2500
+  var rAvReq=agMakeRow('Demande d\u2019avenant ?',affs,function(c,a){
+    var req=avenantRequis(a);
+    var f=a.fin||{}, die=f.budget_alloue||0, prev=f.budget_previsionnel||0;
+    c.textContent = (!die||!prev) ? '\u2014' : (req?'Oui':'Non');
+    c.style.fontWeight='800';
+    c.style.color = (!die||!prev) ? 'var(--b2)' : (req?'#B91C1C':'#047857');
+    c.title = (!die||!prev)
+      ? 'Renseigner le DIE et le budget pr\u00e9visionnel'
+      : (req
+        ? ('Pr\u00e9visionnel '+Math.round(prev).toLocaleString('fr')+' \u20ac au-dessus du DIE '
+           +Math.round(die).toLocaleString('fr')+' \u20ac : un avenant est n\u00e9cessaire.')
+        : ('Pr\u00e9visionnel '+Math.round(prev).toLocaleString('fr')+' \u20ac dans le DIE '
+           +Math.round(die).toLocaleString('fr')+' \u20ac.'));
+  },'ag-money');
+  rows.push(rAvReq);
+  var rAvFait=agMakeRow('Demande d\u2019avenant faite ?',affs,function(c,a){
+    var s=document.createElement('select');
+    AVENANT_ETATS.forEach(function(e){
+      var o=document.createElement('option'); o.value=e.k; o.textContent=e.l; s.appendChild(o);
     });
-  },'ag-money'));
+    function peindre(){
+      var e=avenantEtatInfo(a.avenant_etat);
+      s.value=e.k;
+      s.style.cssText='width:100%;border:1px solid '+(e.bg?e.fg+'55':'var(--b2)')+';border-radius:5px;'
+        +'padding:1px 2px;font-size:9px;font-weight:800;background:'+(e.bg||'transparent')
+        +';color:'+e.fg+';font-family:inherit';
+      s.title='O\u00f9 en est la demande d\u2019avenant'
+        +(avenantRequis(a)&&e.k!=='oui' ? '\n\u26a0 Un avenant est n\u00e9cessaire sur ce dossier.' : '')
+        +(a.avenant?('\n\n'+a.avenant):'');
+    }
+    peindre();
+    s.addEventListener('change',function(){
+      if(s.value) a.avenant_etat=s.value; else delete a.avenant_etat;
+      peindre(); sbSave();
+    });
+    c.style.padding='1px 2px';
+    c.appendChild(s);
+  },'ag-money');
+  rows.push(rAvFait);
+  [rAvReq, rAvFait].forEach(function(r){ r.style.background='#FEF9F3'; });
+  // \u2500\u2500 D\u00e9penses r\u00e9alis\u00e9es, puis l'\u00e9cart \u2500\u2500
+  var rDep=AG_BUD_ROWS_FIN.map(function(br){ return ligneMontant(br); });
+  rDep.forEach(function(r){ rows.push(r); });
   // Respect du DIE
-  rows.push(agMakeRow('\u00c9cart / DIE',affs,function(c,a){
+  var rEcart=agMakeRow('\u00c9cart / DIE',affs,function(c,a){
     var e=dieEcart(a);
     if(e===null){ c.textContent='\u2014'; c.style.color='var(--b2)';
       c.title='Renseigner le DIE et le r\u00e9alis\u00e9 CREI'; return; }
@@ -7071,9 +7309,12 @@ function agRowsBudget(affs){
     c.style.fontWeight='800';
     c.style.color = e<=0?'var(--green)':e<=10?'var(--amber)':'var(--red)';
     var m=dieMontants(a);
-    c.title='DIE '+Math.round(m.die).toLocaleString('fr')+' \u20ac \u2192 r\u00e9alis\u00e9 '
+    c.title='DIE '+Math.round(m.die).toLocaleString('fr')+' \u20ac \u2192 d\u00e9penses '
       +Math.round(m.reel).toLocaleString('fr')+' \u20ac';
-  },'ag-money'));
+  },'ag-money');
+  rows.push(rEcart);
+  // D\u00e9penses et \u00e9cart partagent leur propre fond
+  rDep.concat([rEcart]).forEach(function(r){ r.style.background='#F0F9FF'; });
   // Commentaire budget
   rows.push(agMakeRow('Note budget',affs,function(c,a){
     function paint(){
@@ -7965,6 +8206,86 @@ function portefeuillePour(ini, svc){
   PERIM[key]=svcInfo(svc).l||svcInfo(svc).court||PERIM_DEFAUT;
   showToast('Portefeuille '+svcInfo(svc).court+' créé pour '+(DATA[key].name));
   return key;
+}
+// ══════════════════════════════════════════════════════════════
+// RÉAFFECTER UN DOSSIER DEPUIS LE TABLEAU
+// La réaffectation ne se fait plus depuis l'onglet Référent mais là où le
+// dossier est sous les yeux. On annonce l'effet sur la charge des deux
+// personnes avant de valider : déplacer un dossier, c'est déplacer du travail.
+// ══════════════════════════════════════════════════════════════
+// Heures mensuelles qu'un dossier fait peser, toutes UO restantes confondues
+function chargeAffaireMois(cp, a){
+  var h=0, d=0;
+  try{
+    uoRestants(cp,a).forEach(function(u){ h+=(u.heures||0); d+=(u.duree||0); });
+  }catch(e){ return 0; }
+  if(!h) return 0;
+  return h/Math.max(1, Math.round(d||1));
+}
+function pctCharge(h){ return Math.round((h/Math.max(1,CAP_HEURES))*100); }
+function reaffecterModal(cp, a, apres){
+  var svc=svcOf(cp), iniCur=(DATA[cp]||{}).ini||cp;
+  var gens=personnes().filter(function(p){ return p.ini!==iniCur; });
+  if(!gens.length){ showToast('Aucune autre personne'); return; }
+  var ov=document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9400;display:flex;'
+    +'align-items:center;justify-content:center;padding:16px';
+  var box=document.createElement('div');
+  box.style.cssText='background:var(--s);border-radius:14px;max-width:430px;width:100%;'
+    +'max-height:88vh;overflow:auto';
+  box.innerHTML='<div style="padding:13px 16px 2px;font-size:13px;font-weight:800">'
+      +'Réaffecter '+(a.no||a.code||'')+'</div>'
+    +'<div style="padding:0 16px 8px;font-size:11px;color:var(--t3)">'
+      +(a.addr||'')+'<br>Actuellement chez <b>'+((DATA[cp]||{}).name||iniCur)+'</b> · '
+      +svcInfo(svc).court+'</div>';
+  var ch=chargeParPersonne(PREV_MOIS);
+  var hAff=chargeAffaireMois(cp, a);
+  var liste=document.createElement('div');
+  liste.style.cssText='padding:0 16px 8px;display:flex;flex-direction:column;gap:6px';
+  gens.forEach(function(p){
+    var b=document.createElement('button');
+    b.style.cssText='text-align:left;border:1.5px solid var(--b2);background:var(--s2);'
+      +'border-radius:9px;padding:7px 10px;font-size:11px;cursor:pointer;font-family:inherit;'
+      +'color:var(--t2)';
+    var hA=(ch[iniCur]||[])[0]||0, hB=(ch[p.ini]||[])[0]||0;
+    var av1=pctCharge(hA), ap1=pctCharge(Math.max(0,hA-hAff));
+    var av2=pctCharge(hB), ap2=pctCharge(hB+hAff);
+    b.innerHTML='<div style="font-weight:800;color:var(--t)">'+p.ini+' · '+p.nom+'</div>'
+      +'<div style="font-size:9.5px;color:var(--t3);margin-top:2px">'
+      +'charge de '+((DATA[cp]||{}).name||iniCur)+' : '+av1+' % → <b>'+ap1+' %</b>'
+      +' &nbsp;·&nbsp; charge de '+p.nom+' : '+av2+' % → <b>'+ap2+' %</b></div>';
+    b.addEventListener('click',function(){
+      var sien=p.cps.filter(function(x){ return svcOf(x)===svc; })[0];
+      uiConfirm('Confirmer la réattribution',
+        'Voulez-vous confirmer la réattribution de ce dossier de '
+        +((DATA[cp]||{}).name||iniCur)+' à '+p.nom+' ?\n\n'
+        +'charge de '+((DATA[cp]||{}).name||iniCur)+' : '+av1+' % → '+ap1+' %\n'
+        +'charge de '+p.nom+' : '+av2+' % → '+ap2+' %'
+        +(sien?'':'\n\n'+p.nom+' n’a pas encore de portefeuille '+svcInfo(svc).court
+          +' : il sera créé.'),
+        function(){
+          var dest=portefeuillePour(p.ini, svc);
+          if(dest && moveAffaire(a, cp, dest)){
+            if(ov.parentNode) document.body.removeChild(ov);
+            CHARGE_CACHE=null;
+            try{ buildTabs(); }catch(e){}
+            if(apres) apres();
+          } else showToast('Échec du déplacement');
+        }, false);
+    });
+    liste.appendChild(b);
+  });
+  box.appendChild(liste);
+  var ft=document.createElement('div');
+  ft.style.cssText='display:flex;justify-content:flex-end;padding:4px 16px 14px';
+  var an=document.createElement('button');
+  an.style.cssText='border:1px solid var(--b2);background:var(--s2);color:var(--t2);border-radius:8px;'
+    +'padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit';
+  an.textContent='Annuler';
+  an.addEventListener('click',function(){ if(ov.parentNode) document.body.removeChild(ov); });
+  ft.appendChild(an); box.appendChild(ft);
+  ov.appendChild(box); document.body.appendChild(ov);
+  ov.addEventListener('click',function(e){ if(e.target===ov) an.click(); });
 }
 function moveAffaire(aff, fromCP, toCP){
   if(!DATA[fromCP]||!DATA[toCP]||fromCP===toCP) return false;
@@ -11909,8 +12230,11 @@ function uoPrixRestant(cp,a,u){
   var svc=svcOf(cp);
   if(svc==='ARMA') return UO_PRIX[FA_KEY[u.k]]||0;
   if(svc==='IRVE'){
-    var tab=IRVE_PRIX[irveProfil(a)]||IRVE_PRIX['S'];
-    return tab[u.k.slice(-3)]||0;
+    // Le tarif vient de la complexité, UO par UO : un historique facture sa
+    // coordination au moyen et le reste au simple.
+    var uo=u.k.slice(-3);
+    var tab=IRVE_PRIX[irveProfilUo(a,uo)]||IRVE_PRIX['S'];
+    return tab[uo]||0;
   }
   var m=MECA_UOS.filter(function(x){ return x.k===u.k; })[0];
   return m?m.prix:0;
@@ -12097,6 +12421,34 @@ function migrerIrveVersPaul(){
   DATA[src].closed=0;
   return {total:total, deplaces:deplaces, doublons:doublons, src:src, dst:dst};
 }
+// « L'ensemble de la facturation pour les dossiers historiques est
+// régularisé » — Steve, 09/09/2026. On porte donc le coefficient facturé de
+// chaque UO d'historique à son plafond : il ne reste rien à facturer dessus.
+function migrerHistoriquesRegularises(){
+  if(MIGR.histRegul) return 0;
+  var n=0;
+  cpsOfSvc('IRVE').forEach(function(cp){
+    (gAff(cp)||[]).forEach(function(a){
+      var c=irveComplexObj(a);
+      if(!c || !c.hist) return;
+      if(!a.irve) a.irve={};
+      if(!a.irve.fa) a.irve.fa={};
+      var prof=irveProfil(a);
+      ['ETD','CRD','TRX','RCP'].forEach(function(uo){
+        var plaf=+(c.uo[uo]||0);
+        var cle=prof+'_'+uo;
+        if(plaf>0){
+          if(irveCoef(a.irve.fa[cle])<plaf){ a.irve.fa[cle]=plaf; n++; }
+        } else {
+          // UO sans objet pour cette complexité
+          if(!a.irve.fa[cle]) a.irve.fa[cle]='NA';
+        }
+      });
+    });
+  });
+  MIGR.histRegul=true;
+  return n;
+}
 // Ancien décalage relatif, gardé en repli pour ne rien perdre
 function decalUo(a,k){ return ((a.decal||{})[k])||0; }
 function setDecalUo(a,k,v){
@@ -12159,7 +12511,12 @@ function prevFactuLignes(cp){
       // Le montant est le prix de l'UO moins ce qui en a déjà été facturé.
       var fact=uoFacture(cp,a,u.k);
       if(fact<0) return;                      // UO sans objet
-      var reste=1-fact;
+      // Le plafond, c'est la part que la complexité du dossier ouvre à la
+      // facturation. Une étude d'historique abandonné plafonne à 0,5 : une
+      // fois ces 0,5 facturés, il ne reste rien, pas 0,5 de plus.
+      var plaf=(svc==='IRVE') ? irvePlafond(a, u.k.slice(-3)) : 1;
+      if(plaf<=0) return;                     // UO que la complexité n'ouvre pas
+      var reste=plaf-fact;
       if(reste<=0.001) return;                // déjà facturée en entier
       var px=uoPrixRestant(cp,a,u)*reste;
       if(!px) return;
@@ -21948,7 +22305,7 @@ window.addEventListener('beforeunload', function(e){
 // On ne recharge jamais de force, une saisie en cours serait perdue :
 // on propose, la personne choisit son moment.
 // ══════════════════════════════════════════════════════════════
-var APP_VERSION='2026-09-09-2';
+var APP_VERSION='2026-09-09-3';
 var MAJ_VUE=false;
 function bandeauMaj(v){
   if(MAJ_VUE || document.getElementById('maj-banner')) return;
