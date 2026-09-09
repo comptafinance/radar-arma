@@ -2119,12 +2119,33 @@ function rBoGrid(){
   var add=document.createElement('button');
   add.style.cssText='border:none;background:var(--brand);color:#fff;border-radius:7px;padding:5px 12px;'
     +'font-size:10px;font-weight:700;cursor:pointer;font-family:inherit';
-  add.textContent='+ Ajouter une t\u00e2che';
-  add.addEventListener('click',function(){ tacheModal(null); });
+  add.textContent='+ Ligne vide';
+  add.title='Ajoute une ligne \u00e0 compl\u00e9ter au bas du tableau';
+  add.addEventListener('click',function(){
+    ajouterTacheVide();
+    if(TACHE_MASQUE_FAIT){ /* une ligne vide est ouverte : elle reste visible */ }
+    rBoGrid();
+    // La nouvelle ligne est en bas : on l'am\u00e8ne sous les yeux
+    setTimeout(function(){
+      var w=document.getElementById('bo-taches-scroll');
+      if(w){ w.scrollTop=w.scrollHeight;
+             var d=w.querySelector('tbody tr:last-child input'); if(d) d.focus(); }
+    },0);
+  });
   bar.appendChild(add);
+  // Masquer ce qui est fait : le tableau ne garde que ce qui reste \u00e0 traiter
+  var msk=document.createElement('button');
+  msk.style.cssText='border:1.5px solid '+(TACHE_MASQUE_FAIT?'#047857':'var(--b2)')+';background:'
+    +(TACHE_MASQUE_FAIT?'#D1FAE5':'var(--s)')+';color:'+(TACHE_MASQUE_FAIT?'#047857':'var(--t3)')
+    +';border-radius:7px;padding:5px 11px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit';
+  msk.textContent=(TACHE_MASQUE_FAIT?'\u2713 ':'')+'Masquer les t\u00e2ches faites';
+  msk.addEventListener('click',function(){ setTacheMasque(!TACHE_MASQUE_FAIT); rBoGrid(); });
+  bar.appendChild(msk);
   var info=document.createElement('span');
   info.style.cssText='font-size:10px;color:var(--t3);flex:1';
-  info.textContent=IRVE_TACHES.length+' t\u00e2che(s) \u2014 '+fmtEur(IRVE_TACHES.length*tacheMontant())
+  var nOuv=IRVE_TACHES.filter(tacheOuverte).length;
+  info.textContent=IRVE_TACHES.length+' t\u00e2che(s), '+nOuv+' \u00e0 faire \u2014 '
+    +fmtEur(IRVE_TACHES.length*tacheMontant())
     +' au total ('+fmtEur(tacheMontant())+' par t\u00e2che)';
   bar.appendChild(info);
   box.appendChild(bar);
@@ -2150,13 +2171,17 @@ function rBoGrid(){
   .forEach(function(c){ var x=document.createElement('th'); if(c[1])x.className=c[1]; x.textContent=c[0]; tr.appendChild(x); });
   th.appendChild(tr); tbl.appendChild(th);
   var tb=document.createElement('tbody');
-  if(!IRVE_TACHES.length){
+  var vues=tachesAffichees();
+  if(!vues.length){
     var t0=document.createElement('tr'); var d0=document.createElement('td'); d0.colSpan=8;
     d0.style.cssText='padding:16px;text-align:center;font-style:italic;color:var(--t3)';
-    d0.textContent='Aucune t\u00e2che enregistr\u00e9e';
+    d0.textContent=IRVE_TACHES.length
+      ? 'Toutes les t\u00e2ches sont faites \u2014 d\u00e9coche \u00ab Masquer les t\u00e2ches faites \u00bb pour les revoir'
+      : 'Aucune t\u00e2che enregistr\u00e9e';
     t0.appendChild(d0); tb.appendChild(t0);
   }
-  IRVE_TACHES.forEach(function(t,i){
+  vues.forEach(function(t){
+    tacheId(t);
     var row=document.createElement('tr');
     // Tout se modifie sur place, sans passer par le stylet
     function apres(){ sansBouger(function(){ rBoGrid(); }); }
@@ -2195,14 +2220,34 @@ function rBoGrid(){
     del.textContent='\u2715';
     del.addEventListener('click',function(){
       uiConfirm('Supprimer la t\u00e2che','Cette ligne sera supprim\u00e9e.',function(){
-        IRVE_TACHES.splice(i,1); sbSave(); rBoGrid();
+        // Par identit\u00e9, jamais par rang : le tableau peut \u00eatre filtr\u00e9.
+        supprimerTache(t); sbSave(); rBoGrid();
       },true);
     });
     tdA.appendChild(del);
     row.appendChild(tdA);
     tb.appendChild(row);
   });
-  tbl.appendChild(tb); box.appendChild(tbl);
+  tbl.appendChild(tb);
+  // Le tableau vit dans sa bo\u00eete d\u00e9filante, et s'ouvre sur la derni\u00e8re ligne :
+  // les t\u00e2ches r\u00e9centes sont en bas, c'est l\u00e0 qu'on veut arriver.
+  var boxT=document.createElement('div');
+  boxT.id='bo-taches-scroll';
+  boxT.style.cssText='max-height:420px;overflow-y:auto;overflow-x:auto';
+  boxT.appendChild(tbl);
+  box.appendChild(boxT);
+  // La boîte n'a sa hauteur qu'une fois la vue affichée : on repasse au
+  // cycle suivant, puis une dernière fois un peu plus tard.
+  function versLeBas(){
+    var w=document.getElementById('bo-taches-scroll');
+    if(!w || BO_SCROLL_FAIT) return;
+    if(!w.clientHeight) return;              // pas encore mis en page
+    w.scrollTop=w.scrollHeight;
+    BO_SCROLL_FAIT=true;
+  }
+  requestAnimationFrame(versLeBas);
+  setTimeout(versLeBas, 150);
+  setTimeout(versLeBas, 400);
   listesTaches(box);
   wrap.appendChild(box);
   var lg=document.getElementById('ag-legend'); if(lg) lg.innerHTML='';
@@ -3881,11 +3926,16 @@ function majFactu(){
 
 function sbSave(){
   SYNC_REV++;                            // une saisie de plus attend le serveur
-  // Avant la connexion, personne n'a rien tape : ce que l'application ecrit
-  // en montant (donnees livrees avec le fichier, reglages par defaut) n'est
-  // pas du travail a proteger. Sans cela la premiere lecture serveur fusionnait
-  // au lieu de reprendre, et les donnees livrees ecrasaient les vraies.
-  if(!SB_TOKEN) SYNC_REV_OK=SYNC_REV; else poserAttente();
+  // AVANT la première lecture serveur, personne n'a rien tapé : ce que
+  // l'application écrit en montant n'est pas du travail à protéger.
+  //
+  // APRÈS, c'est l'inverse. Une session qui expire en cours de route laisse
+  // SB_TOKEN vide, et la règle d'origine marquait alors chaque saisie comme
+  // « rien à protéger » : le marqueur d'attente n'était jamais posé, le badge
+  // restait au vert, et le travail partait à la poubelle au rechargement.
+  // C'est ainsi que des tâches basculées en Fait ne se sont pas enregistrées.
+  if(!SB_TOKEN && !SYNC_PRET) SYNC_REV_OK=SYNC_REV;
+  else poserAttente();
   try{ majBadgeSync(); }catch(e){}
   try{ lsSaveNow(); }catch(e){}          // filet de sécurité local
   try{ majFactu(); }catch(e){}           // la facturation suit l'avancement
@@ -3907,13 +3957,35 @@ function sbSaveNow(){
   // Sans jeton de session le serveur refuse l'ecriture (401). Inutile de
   // partir : on le dit, au lieu de laisser croire que c'est enregistre.
   if(!SB_TOKEN){
-    if(!syncModifie()) return Promise.resolve(false);   // rien a proteger : on se tait
-    SYNC_ECHEC=true;
-    syncIndic('✗','var(--red)','Session fermée — non partagé');
-    alerteNonEnregistre(true,'Vos saisies ne sont PAS sur le serveur : session fermée. '
-      +'Reconnectez-vous, puis cliquez Réessayer.');
-    return Promise.resolve(false);
+    // La session a expiré : on tente de la reprendre avant d'abandonner.
+    try{
+      var cli=getSupabaseClient();
+      if(cli && cli.auth && cli.auth.getSession){
+        return cli.auth.getSession().then(function(res){
+          var sess=res && res.data && res.data.session;
+          if(sess && sess.access_token){
+            SB_TOKEN=sess.access_token;
+            return sbSaveNow();          // le jeton est revenu, on écrit
+          }
+          return echecSansSession();
+        }).catch(echecSansSession);
+      }
+    }catch(e){}
+    return echecSansSession();
   }
+  return sbSaveSuite();
+}
+function echecSansSession(){
+  if(!syncModifie()) return Promise.resolve(false);   // rien à protéger : on se tait
+  SYNC_ECHEC=true;
+  poserAttente();
+  syncIndic('✗','var(--red)','Session fermée — non partagé');
+  alerteNonEnregistre(true,'Vos saisies ne sont PAS sur le serveur : session fermée. '
+    +'Reconnectez-vous, puis cliquez Réessayer.');
+  try{ majBadgeSync(); }catch(e){}
+  return Promise.resolve(false);
+}
+function sbSaveSuite(){
   SYNC_BUSY=true;
   var rev=SYNC_REV;
   SYNC_EN_COURS=ecrireServeur(rev,0).then(function(ok){
@@ -5463,7 +5535,46 @@ var IRVE_TACHES = [{"hors":"","cp":"PGU","aff":"RAC-24-28VHMF85N4","pour":"Amira
 var TACHE_TYPES = ['Synoptique','EOTP/OCB','Plans 200e+1000e','DMEO','CMD Ext','CMD Int',
                    'DMR','ICP/PPS','Contr\u00f4le N1','Autre'];
 var TACHE_MONTANT = 100;    // montant factur\u00e9 par t\u00e2che, en euros
-var TACHE_SEL = {};
+// Identifiant stable d'une t\u00e2che. La s\u00e9lection et la suppression passaient
+// par le rang de la ligne : d\u00e8s qu'on filtre ou qu'on trie, le rang ne
+// d\u00e9signe plus la m\u00eame t\u00e2che et c'est la mauvaise qui est coch\u00e9e ou effac\u00e9e.
+function tacheId(t){
+  if(!t.id) t.id='T'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+  return t.id;
+}
+function tacheParId(id){
+  return IRVE_TACHES.filter(function(t){ return t.id===id; })[0]||null;
+}
+function supprimerTache(t){
+  var i=IRVE_TACHES.indexOf(t);
+  if(i>=0) IRVE_TACHES.splice(i,1);
+}
+var TACHE_SEL = {};         // cl\u00e9 : identifiant de t\u00e2che, pas rang de ligne
+// Le tableau s'ouvre sur sa derni\u00e8re ligne, une fois par entr\u00e9e dans l'onglet.
+// Ensuite on laisse la main : sansBouger garde la position pendant la saisie.
+var BO_SCROLL_FAIT = false;
+// Masquer les t\u00e2ches d\u00e9j\u00e0 r\u00e9alis\u00e9es. Pr\u00e9f\u00e9rence d'\u00e9cran, retenue sur le poste.
+var TACHE_MASQUE_FAIT = (function(){
+  try{ return localStorage.getItem('radar_taches_masque')==='1'; }catch(e){ return false; }
+})();
+function setTacheMasque(v){
+  TACHE_MASQUE_FAIT=!!v;
+  try{ localStorage.setItem('radar_taches_masque', v?'1':'0'); }catch(e){}
+}
+// Les t\u00e2ches \u00e0 afficher, dans l'ordre du tableau
+function tachesAffichees(){
+  return IRVE_TACHES.filter(function(t){
+    return !TACHE_MASQUE_FAIT || tacheOuverte(t);
+  });
+}
+// Une ligne vide, ajout\u00e9e au bas du tableau et pr\u00eate \u00e0 \u00eatre compl\u00e9t\u00e9e
+function ajouterTacheVide(){
+  var t={date:'', aff:'', tache:'', pour:'', cp:''};
+  tacheId(t);
+  IRVE_TACHES.push(t);
+  sbSave();
+  return t;
+}
 // T\u00e2ches back-office attendues sur les mois \u00e0 venir : { '2026-11': 12 }
 // Elles alimentent la facturation pr\u00e9visionnelle IRVE et la charge,
 // \u00e0 raison d'une heure par t\u00e2che.
@@ -5840,13 +5951,14 @@ function rIrveTaches(){
     td0.textContent='Aucune t\u00e2che enregistr\u00e9e';
     tr0.appendChild(td0); tb.appendChild(tr0);
   }
-  IRVE_TACHES.forEach(function(t,i){
+  tachesAffichees().forEach(function(t){
+    var idT=tacheId(t);
     var row=document.createElement('tr');
     var tdC=document.createElement('td');
     var cb=document.createElement('input'); cb.type='checkbox';
-    cb.checked=!!TACHE_SEL[i];
+    cb.checked=!!TACHE_SEL[idT];
     cb.addEventListener('change',function(){
-      TACHE_SEL[i]=cb.checked;
+      TACHE_SEL[idT]=cb.checked;
       sansBouger(function(){ rIrveTaches(); });
     });
     tdC.appendChild(cb); row.appendChild(tdC);
@@ -5981,9 +6093,18 @@ function tacheModal(idx){
     +'font-size:12px;font-weight:700;cursor:pointer;font-family:inherit';
   ok.textContent='Enregistrer';
   ok.addEventListener('click',function(){
+    // On FUSIONNE dans la tâche existante. Remplacer l'objet entier effaçait
+    // tout ce que cette fenêtre ne connaît pas : le drapeau « Fait », le
+    // mois, la ligne hors portefeuille, l'UO de coordination. C'est ainsi que
+    // des tâches basculées en Fait redevenaient à faire.
     var o={date:frToISO(iD.value)||dISO(), aff:iA.value.trim(), tache:sT.value,
            pour:iP.value.trim(), cp:iC.value.trim().toUpperCase()};
-    if(idx===null) IRVE_TACHES.push(o); else IRVE_TACHES[idx]=o;
+    if(idx===null){ tacheId(o); IRVE_TACHES.push(o); }
+    else { var cible=IRVE_TACHES[idx]||{};
+           Object.keys(o).forEach(function(k){ cible[k]=o[k]; });
+           // Une vraie date de réalisation vaut réalisation
+           if(frToISO(iD.value)) cible.fait=true;
+           IRVE_TACHES[idx]=cible; }
     document.body.removeChild(ov); sbSave(); rIrveTaches();
     showToast('T\u00e2che enregistr\u00e9e');
   });
@@ -5992,7 +6113,7 @@ function tacheModal(idx){
 }
 
 function exportTaches(){
-  var sel=IRVE_TACHES.filter(function(t,i){ return TACHE_SEL[i]; });
+  var sel=IRVE_TACHES.filter(function(t){ return TACHE_SEL[tacheId(t)]; });
   if(!sel.length){ uiAlert('Aucune s\u00e9lection','Cochez les t\u00e2ches \u00e0 int\u00e9grer.'); return; }
   var det2=[], pa={}, tot2=0;
   sel.forEach(function(t){
@@ -17183,6 +17304,8 @@ function showV(v){
   memoOnglet(v);
   var nb=document.getElementById('nb-'+v);if(nb)nb.classList.add('on');
   document.getElementById('scroll').scrollTop=0;
+  // On rentre dans un onglet : le tableau des tâches se replace en bas.
+  BO_SCROLL_FAIT=false;
   // Masquer profil+stats dans Référent, restaurer ailleurs
   var appEl=document.querySelector('.app');
   if(appEl) appEl.classList.toggle('hide-profile', v==='ref');
@@ -21849,7 +21972,7 @@ window.addEventListener('beforeunload', function(e){
 // On ne recharge jamais de force, une saisie en cours serait perdue :
 // on propose, la personne choisit son moment.
 // ══════════════════════════════════════════════════════════════
-var APP_VERSION='2026-09-07-5';
+var APP_VERSION='2026-09-09-1';
 var MAJ_VUE=false;
 function bandeauMaj(v){
   if(MAJ_VUE || document.getElementById('maj-banner')) return;
