@@ -1657,7 +1657,9 @@ function agDocMenu(a, anchor){
 
 // ── Définition des modules (ordre d'affichage en tête de grille) ──
 var AG_MODULES = [
-  {id:'temps',    label:'\u23f1\ufe0f Temps pass\u00e9',      cls:'ag-band-tps'},
+  // Module Temps passe retire le 09/09/2026 a la demande de Steve. Son code
+  // reste dans le fichier, il suffit de remettre la ligne pour le revoir.
+  // {id:'temps',    label:'\u23f1\ufe0f Temps pass\u00e9',      cls:'ag-band-tps'},
   {id:'syno',     label:'\ud83d\udcd0 Synoptique',            cls:'ag-band-syno'},
   {id:'revue',    label:'\ud83d\uddd3\ufe0f Revue / Auto-revue', cls:'ag-band-rev'},
   {id:'planning', label:'\ud83d\udcc5 Planning',              cls:'ag-band-plan'},
@@ -5363,7 +5365,7 @@ function uoParamsRenseignes(){
 // Seules les UO Travaux et Réception sont suivies ici.
 // ══════════════════════════════════════════════════════════════
 var IRVE_TRX_T = {
-  'Coordination':['EOTP niv2 (vérifier DST et DIE)','Création OCB (GE-CO)','INT // CMD',
+  'Coordination':['Création OCB (GE-CO)','EOTP niv2 (vérifier DST et DIE)','INT // CMD',
     'INT // DMR (OPEX+CAPEX+LINKY)','INT // ICP + PPS ou FAR + PPR','INT // DMR LINKY',
     'EXT // CMD','EXT // CMD ETD','EXT // DMR (PRESTA+ENEDIS)','EXT // ICP + PPS ou FAR + PPR',
     'EXT // Plan 200ème / 1000ème','INT // Plan synoptique','DMEO','CMD TRANSFO','Créer PDL',
@@ -10968,6 +10970,7 @@ function rCharge(){
 function rReaffect(){
   var host=document.getElementById('ref-reaffect');
   if(!host) return;
+  host.innerHTML=''; return;   // module retire, voir la colonne CP des tableaux
   host.innerHTML='';
   var card=document.createElement('div');
   card.style.cssText='background:var(--s);border:1.5px solid var(--b);border-radius:12px;overflow:hidden;margin:0 10px 12px';
@@ -13387,7 +13390,7 @@ function rFactu(){
     var nf=document.createElement('div');
     nf.style.cssText='margin:0 12px 6px;padding:6px 10px;border:1px solid #EAB308;border-radius:9px;'
       +'background:#FEF3C7;color:#713F12;font-size:9.5px;line-height:1.5';
-    nf.textContent='Commandes et FSS : saisie manuelle pour l’instant. '
+    nf.textContent='Commandes et FSS : saisie manuelle, depuis Consommation du marché. '
       +'Le dossier SharePoint qui portera les pièces n’est pas encore créé ; '
       +'la lecture automatique s’y branchera sans changer ce tableau.';
     body.appendChild(nf);
@@ -13418,7 +13421,6 @@ function rFactu(){
   }
   trg.appendChild(groupe('Mois de facturation pr\u00e9vu', UOS.length, '#1D4ED8', '#DBEAFE'));
   trg.appendChild(groupe('Factur\u00e9', UOS.length, '#047857', '#D1FAE5'));
-  trg.appendChild(groupe('Commandes et FSS', UOS.length, '#7C3AED', '#EDE9FE'));
   thead.appendChild(trg);
 
   cols.forEach(function(c){ var th=document.createElement('th'); if(c.cls)th.className=c.cls;
@@ -13454,7 +13456,6 @@ function rFactu(){
     trh.appendChild(th);
   });
   entetes.forEach(function(e,ei){ trh.appendChild(enteteUo(e, ei, ei===0, '#047857')); });
-  entetes.forEach(function(e,ei){ trh.appendChild(enteteUo(e, ei, ei===0, '#7C3AED')); });
   thead.appendChild(trh); tbl.appendChild(thead);
   var tb=document.createElement('tbody');
   if(!rows.length){
@@ -13667,35 +13668,9 @@ function rFactu(){
       td.appendChild(box); tr.appendChild(td);
     });
 
-    // ── Commandes et FSS ──
-    UOS.forEach(function(u,ui){
-      var td=document.createElement('td'); td.className='fa-uo';
-      if(ui===0) td.style.borderLeft='2px solid #7C3AED55';
-      td.style.padding='2px 3px';
-      var cle = (FA_SVC==='IRVE') ? (irveProfil(a)+'_'+u) : u;
-      var sc=document.createElement('select');
-      CMD_ETATS.forEach(function(e){
-        var o=document.createElement('option'); o.value=e.k; o.textContent=e.l;
-        sc.appendChild(o);
-      });
-      function peindreCmd(){
-        var e=cmdEtatInfo(cmdDe(a,cle));
-        sc.value=e.k;
-        sc.style.cssText='border:1px solid '+e.fg+'66;border-radius:5px;padding:1px 3px;'
-          +'font-size:8.5px;font-weight:800;background:'+e.bg+';color:'+e.fg
-          +';font-family:inherit;max-width:72px';
-        sc.title=u+' — '+e.t
-          +(FSS_SOURCE?'' : '\nSaisie manuelle : le dossier des commandes et FSS n’est pas encore branché');
-      }
-      peindreCmd();
-      sc.addEventListener('change',function(){
-        setCmd(a, cle, sc.value);
-        peindreCmd();
-        sbSave();
-        majResumeCmd();
-      });
-      td.appendChild(sc); tr.appendChild(td);
-    });
+    // Bloc « Commandes et FSS » retire du tableau le 09/09/2026 a la demande
+    // de Steve, sur les trois perimetres. Le suivi des commandes reste dans
+    // Consommation du marche, qui lit les memes donnees (a.cmd).
     tb.appendChild(tr);
   });
   tbl.appendChild(tb); wrap.appendChild(tbl); body.appendChild(wrap);
@@ -14240,7 +14215,8 @@ function rRef(){
   }catch(e){ console.warn('admin',e); }
   try{ rCharge(); }catch(e){ console.warn('rCharge',e); }
   try{ rPrevCharge(); }catch(e){ console.warn('rPrevCharge',e); }
-  try{ rReaffect(); }catch(e){ console.warn('rReaffect',e); }
+  // Reaffectation retiree de l'onglet Referent le 09/09/2026 : elle se fait
+  // desormais depuis la colonne CP des tableaux d'affaires.
   try{ rSynthFactu(); }catch(e){ console.warn('rSynthFactu',e); }
   try{ rPrevFactu(); }catch(e){ console.warn('rPrevFactu',e); }
   try{ rMarche(); }catch(e){ console.warn('rMarche',e); }
@@ -21972,7 +21948,7 @@ window.addEventListener('beforeunload', function(e){
 // On ne recharge jamais de force, une saisie en cours serait perdue :
 // on propose, la personne choisit son moment.
 // ══════════════════════════════════════════════════════════════
-var APP_VERSION='2026-09-09-1';
+var APP_VERSION='2026-09-09-2';
 var MAJ_VUE=false;
 function bandeauMaj(v){
   if(MAJ_VUE || document.getElementById('maj-banner')) return;
