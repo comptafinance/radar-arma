@@ -2273,6 +2273,7 @@ function rBoGrid(){
   setTimeout(versLeBas, 400);
   listesTaches(box);
   wrap.appendChild(box);
+  try{ majBoutonNouvelle(); }catch(e){}
   var lg=document.getElementById('ag-legend'); if(lg) lg.innerHTML='';
 }
 
@@ -2492,50 +2493,105 @@ function rIrveGrid(){
           },{placeholder:'JJ/MM/AAAA', message:'Date de l\u2019assembl\u00e9e g\u00e9n\u00e9rale. Vide pour l\u2019effacer.'});
         });
       } else {
-        td.textContent=v||'\u2014';
-        if(!v) td.style.color='var(--b2)';
-        td.title=v||'';
-      }
-      if(c.k==='no' && a.no){
-        td.style.cursor='pointer'; td.style.color='var(--blue)'; td.style.fontWeight='700';
-        td.title=a.no+'\nCliquer pour copier';
-        td.addEventListener('click',function(){ copyNo(a.no); });
-        td.appendChild(btnEditAff(cpOf[a.code+'|'+(a.no||'')]||CCP,a));
+        // Toutes les colonnes de texte se saisissent sur place. Une ligne
+        // fra\u00eechement cr\u00e9\u00e9e \u00e9tait sinon impossible \u00e0 remplir.
+        var champ=(c.k==='no')?'no':c.k;
+        // Le texte vit dans son propre span : \u00e9crire dans td.textContent
+        // effacerait le crayon d\u00e8s la premi\u00e8re saisie.
+        var spTxt=document.createElement('span');
+        var crayon=null;
+        td.appendChild(spTxt);
+        function paintTxt(){
+          var val=(champ==='no')?(a.no||''):((a.irve||{})[champ]||'');
+          spTxt.textContent=val||'\u2014';
+          td.style.color=val?(champ==='no'?'var(--blue)':'var(--t2)'):'var(--b2)';
+          if(champ==='no') td.style.fontWeight='700';
+          td.title=(val||'non renseign\u00e9')+'\nCliquer pour saisir';
+          if(champ==='no' && a.no){
+            td.title=a.no+'\nCliquer pour saisir \u2014 le crayon ouvre la fiche';
+          }
+        }
+        paintTxt();
+        td.style.cursor='pointer';
+        td.addEventListener('click',function(ev){
+          // Seul le crayon garde son r\u00f4le ; tout le reste de la cellule saisit.
+          if(crayon && (ev.target===crayon || crayon.contains(ev.target))) return;
+          var cur=(champ==='no')?(a.no||''):((a.irve||{})[champ]||'');
+          uiPrompt((a.no||a.code||'Nouvelle affaire')+' \u2014 '+c.l, cur, function(nv){
+            nv=String(nv||'').trim();
+            if(champ==='no'){ a.no=nv; }
+            else { if(!a.irve) a.irve={}; if(nv) a.irve[champ]=nv; else delete a.irve[champ]; }
+            paintTxt(); sbSave();
+          },{placeholder:c.l});
+        });
+        if(champ==='no'){
+          crayon=btnEditAff(cpOf[a.code+'|'+(a.no||'')]||CCP,a);
+          td.appendChild(crayon);
+        }
       }
       row.appendChild(td);
     });
     tb.appendChild(row);
   });
   tbl.appendChild(tb); wrap.appendChild(tbl);
-  // Une ligne vide à compléter, au bas du tableau
-  var pied=document.createElement('div');
-  pied.style.cssText='padding:8px 6px';
-  var bAdd=document.createElement('button');
-  bAdd.style.cssText='border:1.5px dashed var(--b2);background:transparent;color:var(--t3);'
-    +'border-radius:9px;padding:6px 14px;font-size:10.5px;font-weight:800;cursor:pointer;'
-    +'font-family:inherit';
-  bAdd.textContent='+ Nouvelle affaire';
-  bAdd.title='Ajoute une ligne vide à compléter dans le portefeuille affiché';
-  bAdd.addEventListener('click',function(){
-    var cpCible=selCps()[0]||CCP;
-    if(!DATA[cpCible]){ showToast('Aucun portefeuille sélectionné'); return; }
-    var n=1, code;
-    do { code='NEW'+n; n++; } while((gAff(cpCible)||[]).some(function(x){ return x.code===code; }));
-    var na=mkAff({code:code, no:'', addr:'', typo:'', phase:'Primo',
-                  irve:{avancement:'1 - APS', complex:'N_S'}, taskStatus:{}});
-    DATA[cpCible].affaires.push(na);
-    DATA[cpCible].en_cours=(DATA[cpCible].en_cours||0)+1;
-    sbSave();
-    showToast('Ligne ajoutée — complète le n° d’affaire');
-    rIrveGrid();
-    setTimeout(function(){
-      var w2=document.getElementById('ag-wrap');
-      if(w2) w2.scrollTop=w2.scrollHeight;
-    },0);
-  });
-  pied.appendChild(bAdd);
-  wrap.appendChild(pied);
   try{ agRenderLegendIrve(affs); }catch(e){}
+  try{ majBoutonNouvelle(); }catch(e){}
+}
+
+// ══════════════════════════════════════════════════════════════
+// CRÉER UNE AFFAIRE, DEPUIS N'IMPORTE QUEL PÉRIMÈTRE
+// Le bouton était au bas du tableau : dès qu'on remontait, il disparaissait.
+// Il est maintenant fixé au bas de la fenêtre, comme le témoin
+// d'enregistrement, et suit le périmètre affiché.
+// ══════════════════════════════════════════════════════════════
+function nouvelleAffaire(){
+  var cpCible=selCps()[0]||CCP;
+  if(!DATA[cpCible]){ showToast('Aucun portefeuille sélectionné'); return; }
+  var svc=svcOf(cpCible);
+  var n=1, code;
+  do { code='NEW'+n; n++; } while((gAff(cpCible)||[]).some(function(x){ return x.code===code; }));
+  var base={code:code, no:'', addr:'', typo:'', phase:'Primo', meteo:1, taskStatus:{}};
+  if(svc==='IRVE') base.irve={avancement:'1 - APS', complex:'N_S'};
+  if(svc==='MECA') base.meca={station:'Nouvelle station', ville:'', conc:{}, fa:{}};
+  var na=mkAff(base);
+  DATA[cpCible].affaires.push(na);
+  DATA[cpCible].en_cours=(DATA[cpCible].en_cours||0)+1;
+  sbSave();
+  try{ buildTabs(); }catch(e){}
+  showToast('Affaire créée dans le portefeuille de '+(DATA[cpCible].name||cpCible)
+    +' — complète le n° d’affaire');
+  // gridForSvc() choisit le tableau du périmètre affiché : ARMA, IRVE ou RATP.
+  try{ gridForSvc()(); }catch(e){ try{ renderAll(); }catch(e2){} }
+  try{ majBoutonNouvelle(); }catch(e){}
+}
+// Le bouton n'a de sens que sur les tableaux d'affaires, pas sur les tâches BO
+function boutonNouvelleUtile(){
+  // La vue Affaires porte l'identifiant v-p, pas v-aff.
+  var v=document.getElementById('v-p');
+  if(!v || !v.classList.contains('on')) return false;
+  if(SVC_CUR==='IRVE' && IRVE_VUE==='bo') return false;   // le + y ajoute une tâche
+  return true;
+}
+var BTN_NOUVELLE=null;
+function majBoutonNouvelle(){
+  if(!BTN_NOUVELLE){
+    var b=document.createElement('button');
+    b.id='btn-nouvelle-affaire';
+    b.style.cssText='position:fixed;right:10px;bottom:46px;z-index:9050;border:1.5px solid var(--brand);'
+      +'background:var(--brand);color:#fff;border-radius:999px;padding:6px 14px;font-size:10.5px;'
+      +'font-weight:800;cursor:pointer;font-family:inherit;box-shadow:0 2px 10px rgba(0,0,0,.18)';
+    b.addEventListener('click',nouvelleAffaire);
+    document.body.appendChild(b);
+    BTN_NOUVELLE=b;
+  }
+  if(!boutonNouvelleUtile()){ BTN_NOUVELLE.style.display='none'; return; }
+  BTN_NOUVELLE.style.display='';
+  var cpCible=selCps()[0]||CCP;
+  var svc=svcOf(cpCible);
+  BTN_NOUVELLE.textContent='+ Nouvelle affaire '+svcInfo(svc).court;
+  BTN_NOUVELLE.title='Crée une ligne vide dans le portefeuille de '
+    +((DATA[cpCible]||{}).name||cpCible)+' sur '+svcInfo(svc).court
+    +'\nComplète ensuite le n° d’affaire et la commune directement dans le tableau.';
 }
 
 function agRenderLegendIrve(affs){
@@ -2872,10 +2928,31 @@ function rMecaGrid(){
     var mc=a.meca||{};
     var th=document.createElement('th'); th.className='ag-code';
     th.style.whiteSpace='normal'; th.style.lineHeight='1.15'; th.style.fontSize='9px';
-    th.innerHTML='<div style="font-weight:900">'+(mc.station||a.code)+'</div>'
-      +'<div style="font-size:7.5px;font-weight:600;color:var(--t3)">'+(mc.ville||'')+'</div>';
-    th.title=(mc.libelle||'')+'\n'+(mc.groupe||'')+'\nCliquer pour ouvrir la fiche';
-    th.addEventListener('click',function(){ if(a.no) copyNo(a.no); });
+    // Station et ville se saisissent sur place : une station fraîchement
+    // créée était sinon impossible à nommer.
+    var dSt=document.createElement('div');
+    dSt.style.cssText='font-weight:900;cursor:pointer';
+    var dVl=document.createElement('div');
+    dVl.style.cssText='font-size:7.5px;font-weight:600;color:var(--t3);cursor:pointer';
+    function paintMeca(){
+      var m=a.meca||{};
+      dSt.textContent=m.station||a.code;
+      dVl.textContent=m.ville||'— ville —';
+      th.title=(m.libelle||'')+'\n'+(m.groupe||'')
+        +'\nCliquer le nom ou la ville pour les modifier';
+    }
+    function saisirMeca(champ,label){
+      if(!a.meca) a.meca={station:'',ville:'',conc:{},fa:{}};
+      uiPrompt((a.meca.station||a.code)+' — '+label, a.meca[champ]||'', function(nv){
+        a.meca[champ]=String(nv||'').trim();
+        paintMeca(); sbSave();
+      },{placeholder:label});
+    }
+    dSt.addEventListener('click',function(e){ e.stopPropagation(); saisirMeca('station','Nom de la station'); });
+    dVl.addEventListener('click',function(e){ e.stopPropagation(); saisirMeca('ville','Ville'); });
+    paintMeca();
+    th.appendChild(dSt); th.appendChild(dVl);
+    th.addEventListener('click',function(ev){ if(ev.target===th && a.no) copyNo(a.no); });
     th.appendChild(btnEditAff(CCP,a));
     trh.appendChild(th);
   });
@@ -3092,6 +3169,7 @@ function rMecaGrid(){
 
   tbl.appendChild(tb); wrap.appendChild(tbl);
   try{ rMecaLegend(affs); }catch(e){}
+  try{ majBoutonNouvelle(); }catch(e){}
 }
 
 // Recalcule la ligne « Taux de contact »
@@ -6569,8 +6647,14 @@ function rAffGrid(){
     th.style.color=col.fg;
     th.style.boxShadow='inset 0 -3px 0 '+col.fg;
     th.title=(a.no||'')+'\n'+(a.addr||'')+'\nPhase : '+col.l+'\nCliquer pour ouvrir la fiche';
-    th.title=(a.no||'')+'\n'+(a.addr||'')+'\nCliquer pour copier le num\u00e9ro';
-    th.addEventListener('click',function(){ if(a.no) copyNo(a.no); });
+    // Une affaire fra\u00eechement cr\u00e9\u00e9e n'a pas de num\u00e9ro : copier n'aurait rien \u00e0
+    // copier, le clic ouvre alors la fiche pour la compl\u00e9ter.
+    th.title=(a.no||'Affaire \u00e0 compl\u00e9ter')+'\n'+(a.addr||'')
+      +'\n'+(a.no?'Cliquer pour copier le num\u00e9ro':'Cliquer pour compl\u00e9ter la fiche');
+    th.addEventListener('click',function(ev){
+      if(ev.target!==th) return;          // le crayon garde son r\u00f4le
+      if(a.no) copyNo(a.no); else editAffaireModal(affCp(a),a);
+    });
     th.appendChild(btnEditAff(affCp(a),a));
     trH.appendChild(th);
   });
@@ -6736,6 +6820,7 @@ function rAffGrid(){
 
   tbl.appendChild(tb);
   wrap.appendChild(tbl);
+  try{ majBoutonNouvelle(); }catch(e){}
   try{ agApplyHighlight(); }catch(e){}
   try{ agRenderLegend(); }catch(e){}
   try{ rPhaseBar(); }catch(e){}
@@ -7415,6 +7500,7 @@ function gridForSvc(){
 }
 
 function agSetMode(m){
+  try{ majBoutonNouvelle(); }catch(e){}
   AG_MODE=m;
   try{ localStorage.setItem('radar_aff_mode',m); }catch(e){}
   var gz=document.getElementById('ag-grid-zone'), cz=document.getElementById('ag-cards-zone');
@@ -17639,6 +17725,7 @@ function showV(v){
   document.getElementById('scroll').scrollTop=0;
   // On rentre dans un onglet : le tableau des tâches se replace en bas.
   BO_SCROLL_FAIT=false;
+  try{ majBoutonNouvelle(); }catch(e){}
   // Masquer profil+stats dans Référent, restaurer ailleurs
   var appEl=document.querySelector('.app');
   if(appEl) appEl.classList.toggle('hide-profile', v==='ref');
@@ -22305,7 +22392,7 @@ window.addEventListener('beforeunload', function(e){
 // On ne recharge jamais de force, une saisie en cours serait perdue :
 // on propose, la personne choisit son moment.
 // ══════════════════════════════════════════════════════════════
-var APP_VERSION='2026-09-09-3';
+var APP_VERSION='2026-09-09-4';
 var MAJ_VUE=false;
 function bandeauMaj(v){
   if(MAJ_VUE || document.getElementById('maj-banner')) return;
