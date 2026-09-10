@@ -2108,9 +2108,11 @@ var IRVE_COLS = [
   {k:'no',        l:'N\u00b0 affaire',  w:150, fort:true},
   {k:'_type',     l:'Type',             w:78},
   {k:'bornes',    l:'Bornes',           w:54},
+  {k:'travaux',   l:'Travaux',          w:74},
   {k:'commune',   l:'Commune',          w:140, fort:true},
   {k:'mandataire',l:'Mandataire',       w:92},
   {k:'be',        l:'BE',               w:84},
+  {k:'ech',       l:'N° ECH',           w:96},
   {k:'dateag',    l:'Date d’AG',   w:88},
   {k:'avancement',l:'Avancement',       w:126, fort:true},
   {k:'_majcom',   l:'Maj. comm.',       w:74},
@@ -4073,6 +4075,9 @@ function sbLoad(){
           try{ var nH=migrerHistoriquesRegularises();
                if(nH) msg.push(nH+' UO d’historiques passés en facturation régularisée');
           }catch(e2){ console.warn('histRegul',e2); }
+          try{ var nI=importerAffairesIrveSept26();
+               if(nI) msg.push(nI+' affaires IRVE ajoutées en étude chez Paul');
+          }catch(e2){ console.warn('irveSept26',e2); }
           var nA=annulerAout26(), nC=0;
           try{ nC=importerActionsCommentaires(); }catch(e2){ console.warn('actionsCom',e2); }
           if(bascule) msg.push(bascule.doublons+' doublons IRVE retirés du portefeuille d’Alexis'
@@ -5366,7 +5371,7 @@ function irveUoFacturable(a,uo){
 }
 
 // Dossiers nouveaux (liste fournie) ; les autres sont historiques
-var IRVE_NOUVEAUX = ["RAC-IFE-26-003137","RAC-IFE-26-003591","RAC-IFE-26-003086","RAC-IFE-26-003905","RAC-IFE-26-003906","RAC-IFE-26-003902","RAC-IFE-26-001335","RAC-IFE-26-001965","RAC-IFE-26-002789","RAC-IFE-26-003904","RAC-IFE-26-004244","RAC-IFE-26-004428","RAC-IFE-26-003382","RAC-IFE-26-004040","RAC-IFE-26-004044","RAC-IFE-26-001857","RAC-IFE-26-004181","RAC-IFE-26-003947","RAC-IFE-26-004175","RAC-IFE-26-004843","RAC-IFE-26-004907","RAC-IFE-26-004169","RAC-IFE-26-005894","RAC-IFE-26-004563","RAC-IFE-26-005505","RAC-IFE-26-004638","RAC-IFE-26-005151","RAC-IFE-26-003858","RAC-IFE-26-005706","RAC-IFE-26-005730","RAC-IFE-26-001833","RAC-IFE-26-005984","RAC-IFE-26-005986","RAC-IFE-26-006036","RAC-IFE-26-004187","RAC-IFE-26-006184","RAC-IFE-26-006218","RAC-IFE-26-005775","RAC-IFE-26-006312","RAC-IFE-26-001964","RAC-IFE-26-005985","RAC-IFE-26-006260","RAC-IFE-26-006488","RAC-IFE-26-006269","RAC-IFE-26-006181","RAC-IFE-26-004840","RAC-IFE-26-006180","RAC-IFE-26-006279","RAC-25-2FKP3KO2R7","RAC-24-2DWOOMU402","RAC-24-2BGDNYMQ3Q","RAC-25-2GP0BY4UXJ","RAC-24-28FF26EHXF","RAC-IFE-26-005516","RAC-IFE-26-006008","RAC-IFE-26-007055","RAC-IFE-26-007065","RAC-IFE-26-004971","RAC-IFE-26-006060","RAC-IFE-26-007223","RAC-IFE-26-007459","RAC-IFE-26-007596","RAC-IFE-26-007615","RAC-IFE-26-004879","RAC-IFE-26-007707","RAC-IFE-26-006708"];
+var IRVE_NOUVEAUX = ["RAC-IFE-26-003122","RAC-IFE-25-009582","RAC-IFE-26-002162","RAC-IFE-25-006532","RAC-IFE-25-006845","RAC-IFE-26-005020","RAC-IFE-26-003861","RAC-IFE-26-007991","RAC-IFE-26-007744","RAC-IFE-26-004433","RAC-IFE-26-007829","RAC-IFE-26-007866","RAC-IFE-26-005489","RAC-IFE-26-008481","RAC-IFE-26-008514","RAC-IFE-26-003137","RAC-IFE-26-003591","RAC-IFE-26-003086","RAC-IFE-26-003905","RAC-IFE-26-003906","RAC-IFE-26-003902","RAC-IFE-26-001335","RAC-IFE-26-001965","RAC-IFE-26-002789","RAC-IFE-26-003904","RAC-IFE-26-004244","RAC-IFE-26-004428","RAC-IFE-26-003382","RAC-IFE-26-004040","RAC-IFE-26-004044","RAC-IFE-26-001857","RAC-IFE-26-004181","RAC-IFE-26-003947","RAC-IFE-26-004175","RAC-IFE-26-004843","RAC-IFE-26-004907","RAC-IFE-26-004169","RAC-IFE-26-005894","RAC-IFE-26-004563","RAC-IFE-26-005505","RAC-IFE-26-004638","RAC-IFE-26-005151","RAC-IFE-26-003858","RAC-IFE-26-005706","RAC-IFE-26-005730","RAC-IFE-26-001833","RAC-IFE-26-005984","RAC-IFE-26-005986","RAC-IFE-26-006036","RAC-IFE-26-004187","RAC-IFE-26-006184","RAC-IFE-26-006218","RAC-IFE-26-005775","RAC-IFE-26-006312","RAC-IFE-26-001964","RAC-IFE-26-005985","RAC-IFE-26-006260","RAC-IFE-26-006488","RAC-IFE-26-006269","RAC-IFE-26-006181","RAC-IFE-26-004840","RAC-IFE-26-006180","RAC-IFE-26-006279","RAC-25-2FKP3KO2R7","RAC-24-2DWOOMU402","RAC-24-2BGDNYMQ3Q","RAC-25-2GP0BY4UXJ","RAC-24-28FF26EHXF","RAC-IFE-26-005516","RAC-IFE-26-006008","RAC-IFE-26-007055","RAC-IFE-26-007065","RAC-IFE-26-004971","RAC-IFE-26-006060","RAC-IFE-26-007223","RAC-IFE-26-007459","RAC-IFE-26-007596","RAC-IFE-26-007615","RAC-IFE-26-004879","RAC-IFE-26-007707","RAC-IFE-26-006708"];
 function irveEstNouveau(a){
   var no=String(a.no||'').trim();
   return IRVE_NOUVEAUX.indexOf(no)>=0;
@@ -12533,6 +12538,63 @@ function migrerHistoriquesRegularises(){
     });
   });
   MIGR.histRegul=true;
+  return n;
+}
+// Seize affaires remises par Steve le 10/09/2026, à intégrer dans IRVE étude,
+// toutes au stade 1 - APS et dans le portefeuille de Paul.
+// Colonnes reçues : n° affaire, commune, bureau d'études, n° ECH, mandataire,
+// type de travaux, nombre de bornes.
+// La complexité n'est PAS posée : l'application la déduit des bornes, plus de
+// 50 donnant moyen, et le menu déroulant du tableau reste maître.
+var IRVE_IMPORT_1009 = [
+ ['RAC-IFE-26-003122','JOINVILLE-LE-PONT','GME CEMECO & AUDITELEC','ECH2127990','IZI by EDF','Mixte','28'],
+ ['RAC-IFE-25-009582','LAGNY-SUR-MARNE','GME CJL EVOLUTION & METREC','ECH2128140','Non','Intérieur','31'],
+ ['RAC-IFE-26-002162','MAISONS-ALFORT','GME F.C. LEC & SYNTHESE BET','ECH2128110','Non','Intérieur','42'],
+ ['RAC-IFE-25-006532','CHARENTON-LE-PONT','REVE solution','ECH2128130','Non','Intérieur','24'],
+ ['RAC-IFE-25-006845','FONTAINEBLEAU','SOGETREL','ECH2127950','IZI by EDF','Extérieur','35'],
+ ['RAC-IFE-26-005020','QUINCY-SOUS-SENART','SPIE CityNetworks','ECH2128010','Non','Intérieur','92'],
+ ['RAC-IFE-26-003861','CRÉTEIL','A3S','ECH212812Z','CAP\'BORNES','Intérieur','86'],
+ ['RAC-IFE-26-007991','LE KREMLIN-BICETRE','AZ TP','ECH2127980','DEBE','Intérieur','44'],
+ ['RAC-IFE-26-007744','MAISONS-ALFORT','ERGETIC','ECH2128060','Non','Mixte','66'],
+ ['RAC-IFE-26-003122','JOINVILLE-LE-PONT','CIRCET','ECH212797Z','IZI by EDF','Mixte','28'],
+ ['RAC-IFE-26-004433','VINCENNES','GME CEMECO & AUDITELEC','ECH2127990','Non','Intérieur','135'],
+ ['RAC-IFE-26-007829','MENNECY','GME CJL EVOLUTION & METREC','ECH2128140','CAP\'BORNES','Intérieur','100'],
+ ['RAC-IFE-26-007866','SAINT-MAUR-DES-FOSSES','AZ TP','ECH2127980','Non','Intérieur','55'],
+ ['RAC-IFE-26-005489','LE PERREUX-SUR-MARNE','REVE solution','ECH2128130','Non','Intérieur','69'],
+ ['RAC-IFE-26-008481','TREMBLAY-EN-FRANCE','SOGETREL','ECH2127950','CAP\'BORNES','Intérieur','33'],
+ ['RAC-IFE-26-008514','BRIE-COMTE-ROBERT','SPIE CityNetworks','ECH2128010','IZI by EDF','Intérieur','168']
+];
+function importerAffairesIrveSept26(){
+  if(MIGR.irveSept26) return 0;
+  var cps=cpsOfSvc('IRVE');
+  var cp=cps.filter(function(k){ return (DATA[k]||{}).ini==='PG'; })[0]
+       ||cps.filter(function(k){ return /paul/i.test((DATA[k]||{}).name||''); })[0];
+  if(!cp) return 0;              // aucun portefeuille pour Paul : on ne devine pas
+  // Une affaire déjà là ne se recrée pas. Le même numéro peut porter deux
+  // bureaux d'études : la clé est donc le numéro ET le BE.
+  var vus={}, codes={};
+  cps.forEach(function(k){
+    (gAff(k)||[]).forEach(function(a){
+      vus[(a.no||'')+'|'+((a.irve||{}).be||'')]=1;
+      codes[a.code]=1;
+    });
+  });
+  var arr=DATA[cp].affaires, n=0;
+  IRVE_IMPORT_1009.forEach(function(r){
+    var cle=r[0]+'|'+r[2];
+    if(vus[cle]) return;
+    vus[cle]=1;
+    var base=String(r[0]).slice(-3), code=base, i=1;
+    while(codes[code]){ code=base+'-'+i; i++; }
+    codes[code]=1;
+    arr.push(mkAff({code:code, no:r[0], addr:r[1], typo:'', phase:'Primo', meteo:1,
+      taskStatus:{}, svc:'IRVE',
+      irve:{commune:r[1], be:r[2], ech:r[3], mandataire:r[4], travaux:r[5],
+            bornes:r[6], avancement:'1 - APS', soustache:'', af:{}, fa:{}}}));
+    n++;
+  });
+  if(n) DATA[cp].en_cours=(DATA[cp].en_cours||0)+n;
+  MIGR.irveSept26=true;
   return n;
 }
 // Ancien décalage relatif, gardé en repli pour ne rien perdre
@@ -22392,7 +22454,7 @@ window.addEventListener('beforeunload', function(e){
 // On ne recharge jamais de force, une saisie en cours serait perdue :
 // on propose, la personne choisit son moment.
 // ══════════════════════════════════════════════════════════════
-var APP_VERSION='2026-09-09-4';
+var APP_VERSION='2026-09-10-1';
 var MAJ_VUE=false;
 function bandeauMaj(v){
   if(MAJ_VUE || document.getElementById('maj-banner')) return;
