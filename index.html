@@ -2879,6 +2879,11 @@ function mecaPct(a){
   return tot?Math.round(ok/tot*100):null;
 }
 
+// Contacts concessionnaires retirés du tableau RATP le 24/09/2026 : Alexis ne
+// garde que la partie haute, jusqu'aux livrables BPU. Les données restent dans
+// l'état (statuts par station, actions, contacts ajoutés), rien n'est effacé.
+// Archive dans ENEDIS\RADAR - Sauvegardes. Remettre true pour les revoir.
+var MECA_CONTACTS=false;
 function rMecaGrid(){
   var wrap=document.getElementById('ag-wrap'); if(!wrap) return;
   wrap.innerHTML='';
@@ -2891,7 +2896,7 @@ function rMecaGrid(){
   }
   var cps={}; pairs.forEach(function(p){ cps[p.cp]=1; });
   var conc=[], vusConc={};
-  Object.keys(cps).forEach(function(cp){
+  if(MECA_CONTACTS) Object.keys(cps).forEach(function(cp){
     mecaConc(cp).forEach(function(c){
       // Dedoublonnage sur la cle ET sur le nom normalise : le meme
       // concessionnaire portait deux cles et sortait deux fois.
@@ -2915,16 +2920,16 @@ function rMecaGrid(){
   // En-tête : stations
   var thead=document.createElement('thead'); var trh=document.createElement('tr');
   var thL=document.createElement('th'); thL.className='ag-lbl';
-  thL.textContent='Concessionnaires ('+conc.length+')';
+  thL.textContent=MECA_CONTACTS ? ('Concessionnaires ('+conc.length+')') : ('Stations ('+affs.length+')');
   trh.appendChild(thL);
   var thC=document.createElement('th'); thC.className='ag-code';
-  thC.style.width='150px'; thC.textContent='Actions par responsable';
-  thC.title='Actions en cours, découpées par qui doit agir';
+  thC.style.width='150px'; thC.textContent=MECA_CONTACTS ? 'Actions par responsable' : 'Commentaire';
+  thC.title=MECA_CONTACTS ? 'Actions en cours, découpées par qui doit agir' : 'Commentaire de la ligne, cliquer pour l’éditer';
   trh.appendChild(thC);
   var thD=document.createElement('th'); thD.className='ag-code';
   thD.style.width='72px';
-  thD.innerHTML='Créée<div style="font-weight:600;font-size:7.5px;color:var(--t3)">→ rendu</div>';
-  thD.title='Date de création de la dernière action, puis la prochaine date de rendu prévue';
+  thD.innerHTML=MECA_CONTACTS ? 'Créée<div style="font-weight:600;font-size:7.5px;color:var(--t3)">→ rendu</div>' : 'Modifié';
+  thD.title=MECA_CONTACTS ? 'Date de création de la dernière action, puis la prochaine date de rendu prévue' : 'Date du dernier commentaire';
   trh.appendChild(thD);
   affs.forEach(function(a){
     var mc=a.meca||{};
@@ -3072,7 +3077,7 @@ function rMecaGrid(){
       });
     },'ag-money');
   });
-  row('Taux de contact',function(c,a){
+  if(MECA_CONTACTS) row('Taux de contact',function(c,a){
     var p=mecaPct(a);
     c.textContent = p===null?'\u2014':p+'%';
     c.style.fontWeight='800';
@@ -3093,7 +3098,7 @@ function rMecaGrid(){
     c.style.color=p===null?'var(--b2)':(p===100?'var(--green)':'var(--amber)');
     trB.appendChild(c);
   });
-  tb.appendChild(trB);
+  if(MECA_CONTACTS) tb.appendChild(trB);
 
   // Une ligne par concessionnaire
   conc.forEach(function(cc){
@@ -3227,9 +3232,12 @@ function rMecaLegend(affs){
       if(v==='C'||v==='NC'){ tot++; if(v==='C') ok++; }
     });
   });
-  [['Contact\u00e9s',ok,'#047857','#D1FAE5'],
+  var puces=[['Contact\u00e9s',ok,'#047857','#D1FAE5'],
    ['\u00c0 contacter',tot-ok,'#B91C1C','#FEE2E2'],
-   ['Stations',affs.length,'#B45309','#FEF3C7']].forEach(function(x){
+   ['Stations',affs.length,'#B45309','#FEF3C7']];
+  // Sans la partie contacts, seul le nombre de stations reste utile
+  if(!MECA_CONTACTS) puces=puces.slice(2);
+  puces.forEach(function(x){
     var s=document.createElement('span');
     s.style.cssText='display:inline-flex;align-items:center;gap:4px;font-size:8.5px;font-weight:800;'
       +'padding:3px 8px;border-radius:7px;background:'+x[3]+';color:'+x[2];
@@ -3237,6 +3245,7 @@ function rMecaLegend(affs){
       +x[2]+';color:'+x[3]+'">'+x[1]+'</span>';
     el.appendChild(s);
   });
+  if(!MECA_CONTACTS) return;
   // Code couleur des reseaux : seuls les types reellement presents.
   var vus={};
   try{
@@ -3267,7 +3276,11 @@ function rMecaLegend(affs){
 // pour les commentaires et GLOBAL pour les contacts, au 04/09/2026.
 // Les actions et les contacts ajoutes ensuite vivent dans l'etat.
 // ══════════════════════════════════════════════════════════════
+// Suivi et commentaires des concessionnaires retirés du code public le 24/09/2026.
+// Archive : ENEDIS\RADAR - Sauvegardes\2026-09-24_avant-taches-BO-et-RATP-sans-contacts.
 var CONC_SUIVI = {};
+// Contacts (noms, téléphones, mails) des concessionnaires retirés du code public le 24/09/2026.
+// Archive : ENEDIS\RADAR - Sauvegardes\2026-09-24_avant-taches-BO-et-RATP-sans-contacts.
 var CONC_CONTACTS = {};
 // \u2500\u2500 Actions et contacts ajout\u00e9s dans l'application \u2500\u2500
 // CONC_ACTIONS : { 'nom du concessionnaire' : [{qui, date, texte, fait}] }
@@ -4103,6 +4116,7 @@ function sbLoad(){
           }catch(e2){ console.warn('irveSept26',e2); }
           // Facturation à date des fichiers d'Alexis, 24/09/2026
           try{ var rF=repriseFactu0924(); if(rF) msg.push(rF); }catch(e2){ console.warn('factu0924',e2); }
+          try{ var rT=repriseTachesBo0924(); if(rT) msg.push(rT); }catch(e2){ console.warn('tachesBo0924',e2); }
           var nA=annulerAout26(), nC=0;
           try{ nC=importerActionsCommentaires(); }catch(e2){ console.warn('actionsCom',e2); }
           if(bascule) msg.push(bascule.doublons+' doublons IRVE retirés du portefeuille d’Alexis'
@@ -5207,8 +5221,8 @@ function kpiOpsMeca(ini){
   // puis une ligne par concessionnaire.
   cpsKpi('MECA', ini).forEach(function(cp){
     var store=(DATA[cp]||{}).meca_com||{};
-    var cles=['Lot'].concat(MECA_UOS.map(function(u){ return u.l; }), ['Taux de contact']);
-    mecaConc(cp).forEach(function(cc){ cles.push('CONC::'+cc.k); });
+    var cles=['Lot'].concat(MECA_UOS.map(function(u){ return u.l; }), MECA_CONTACTS?['Taux de contact']:[]);
+    if(MECA_CONTACTS) mecaConc(cp).forEach(function(cc){ cles.push('CONC::'+cc.k); });
     cles.forEach(function(k){
       comTot++;
       if(!String((store[k]||{}).text||'').trim()) comVides++;
@@ -5839,6 +5853,9 @@ function rIrveTrxGrid(){
 // Chaque tâche vaut 0,1 UO coordination moyen.
 // ══════════════════════════════════════════════════════════════
 var IRVE_TACHES = [{"hors":"","cp":"PGU","aff":"RAC-24-28VHMF85N4","pour":"Amira","tache":"Plans 200e+1000e","date":"2026-05-12","mois":"5"},{"hors":"","cp":"PGU","aff":"RAC-24-28VHMF85N4","pour":"Amira","tache":"DMEO","date":"2026-05-12","mois":"5"},{"hors":"","cp":"PGU","aff":"RAC-24-28VHMF85N4","pour":"Amira","tache":"Synoptique","date":"2026-05-12","mois":"5"},{"hors":"","cp":"PGU","aff":"RAC-24-28VHMF85N4","pour":"Amira","tache":"OCB","date":"2026-05-12","mois":"5"},{"hors":"","cp":"ADU","aff":"RAC-24-28Y0686EZR","pour":"","tache":"FDO","date":"","mois":""},{"hors":"","cp":"ADU","aff":"RAC-24-28Y0686EZR","pour":"","tache":"DMEO","date":"","mois":""},{"hors":"","cp":"PGU","aff":"RAC-24-28Y0686EZR","pour":"Amira","tache":"Plans 200e+1000e","date":"2026-03-26","mois":"3"},{"hors":"","cp":"PGU","aff":"RAC-24-28Y0686EZR","pour":"Amira","tache":"Synoptique","date":"2026-03-26","mois":"3"},{"hors":"","cp":"PGU","aff":"RAC-24-28Y0686EZR","pour":"Amira","tache":"PPS","date":"2026-04-08","mois":"4"},{"hors":"","cp":"ADU","aff":"RAC-24-28Y0686EZR","pour":"","tache":"FDO","date":"","mois":""},{"hors":"","cp":"","aff":"RAC-24-28Y0686EZR","pour":"","tache":"DMR","date":"","mois":""},{"hors":"","cp":"","aff":"RAC-24-28Y0686EZR","pour":"","tache":"CMD","date":"","mois":""},{"hors":"","cp":"PGU","aff":"RAC-24-28Y0686EZR","pour":"","tache":"OCB/PDL","date":"","mois":""},{"hors":"","cp":"","aff":"RAC-24-28Y0686EZR","pour":"","tache":"DMR Ext","date":"","mois":""},{"hors":"","cp":"PGU","aff":"RAC-24-29U8ILY691","pour":"Amira","tache":"Plans 200e+1000e","date":"2026-03-26","mois":"3"},{"hors":"","cp":"PGU","aff":"RAC-24-29U8ILY691","pour":"Amira","tache":"Synoptique","date":"2026-03-26","mois":"3"},{"hors":"","cp":"PGU","aff":"RAC-24-29U8ILY691","pour":"Amira","tache":"PPS","date":"2026-03-26","mois":"3"},{"hors":"","cp":"ADU","aff":"RAC-24-29U8ILY691","pour":"","tache":"DMEO","date":"","mois":""},{"hors":"","cp":"ADU","aff":"RAC-24-29U8ILY691","pour":"","tache":"FDO","date":"","mois":""},{"hors":"","cp":"PGU","aff":"RAC-24-29U8ILY691","pour":"","tache":"OCB/PDL","date":"","mois":""},{"hors":"","cp":"","aff":"RAC-24-29U8ILY691","pour":"","tache":"CMD","date":"","mois":""},{"hors":"","cp":"PGU","aff":"RAC-24-2ARTT808RO","pour":"Amira","tache":"Plans 200e+1000e","date":"2026-03-26","mois":"3"},{"hors":"","cp":"PGU","aff":"RAC-24-2ARTT808RO","pour":"Amira","tache":"Synoptique","date":"2026-03-26","mois":"3"},{"hors":"","cp":"","aff":"RAC-24-2ARTT808RO","pour":"","tache":"CMD Ext","date":"","mois":""},{"hors":"","cp":"ADU","aff":"RAC-24-2ARTT808RO","pour":"","tache":"DMEO","date":"","mois":""},{"hors":"","cp":"ADU","aff":"RAC-24-2ARTT808RO","pour":"","tache":"FDO","date":"","mois":""},{"hors":"","cp":"PGU","aff":"RAC-24-2ARTT808RO","pour":"","tache":"OCB/PDL","date":"","mois":""},{"hors":"","cp":"PGU","aff":"RAC-24-2AS25SOJVK","pour":"Amira","tache":"Plans 200e+1000e","date":"2026-03-26","mois":"3"},{"hors":"","cp":"PGU","aff":"RAC-24-2AS25SOJVK","pour":"Amira","tache":"Synoptique","date":"2026-03-24","mois":"3"},{"hors":"","cp":"PGU","aff":"RAC-24-2AS25SOJVK","pour":"Amira","tache":"PPS","date":"2026-04-09","mois":"4"},{"hors":"","cp":"","aff":"RAC-24-2AS25SOJVK","pour":"","tache":"OCB/PDL","date":"","mois":""},{"hors":"","cp":"","aff":"RAC-24-2AS25SOJVK","pour":"","tache":"DMR Ext","date":"","mois":""},{"hors":"","cp":"ADU","aff":"RAC-24-2AS25SOJVK","pour":"","tache":"FDO","date":"","mois":""},{"hors":"","cp":"ADU","aff":"RAC-24-2AS25SOJVK","pour":"","tache":"DMEO","date":"","mois":""},{"hors":"","cp":"","aff":"RAC-24-2AS25SOJVK","pour":"","tache":"PPS","date":"","mois":""},{"hors":"","cp":"PGU","aff":"RAC-24-2AS5IRKFVK","pour":"Amira","tache":"Plans 200e+1000e","date":"2026-03-30","mois":"3"},{"hors":"","cp":"PGU","aff":"RAC-24-2AS5IRKFVK","pour":"Amira","tache":"Synoptique","date":"2026-03-26","mois":"3"},{"hors":"","cp":"PGU","aff":"RAC-24-2AS5IRKFVK","pour":"Amira","tache":"PPS","date":"2026-04-01","mois":"4"},{"hors":"","cp":"ADU","aff":"RAC-24-2AS5IRKFVK","pour":"","tache":"FDO","date":"","mois":""},{"hors":"","cp":"ADU","aff":"RAC-24-2AS5IRKFVK","pour":"","tache":"DMEO","date":"","mois":""},{"hors":"","cp":"PGU","aff":"RAC-24-2AS5IRKFVK","pour":"","tache":"OCB/PDL","date":"","mois":""},{"hors":"","cp":"","aff":"RAC-24-2AS5IRKFVK","pour":"","tache":"CMD Int","date":"","mois":""},{"hors":"","cp":"ADU","aff":"RAC-24-2AXJBFAEVK","pour":"Amira","tache":"FDO","date":"2026-03-31","mois":"3"},{"hors":"","cp":"PGU","aff":"RAC-24-2AXJBFAEVK","pour":"Amira","tache":"Plans 200e+1000e","date":"2026-03-26","mois":"3"},{"hors":"","cp":"PGU","aff":"RAC-24-2AXJBFAEVK","pour":"Amira","tache":"Synoptique","date":"2026-03-24","mois":"3"},{"hors":"","cp":"PGU","aff":"RAC-24-2AXJBFAEVK","pour":"Amira","tache":"PPS","date":"2026-04-08","mois":"4"},{"hors":"","cp":"ADU","aff":"RAC-24-2AXJBFAEVK","pour":"","tache":"DMEO","date":"","mois":""},{"hors":"","cp":"PGU","aff":"RAC-24-2AXJBFAEVK","pour":"","tache":"OCB/PDL","date":"","mois":""},{"hors":"","cp":"","aff":"RAC-24-2AXJBFAEVK","pour":"","tache":"DMR Ext","date":"","mois":""},{"hors":"","cp":"PGU","aff":"RAC-24-2B4X49WHH5","pour":"tiphaine/Amira","tache":"PPS","date":"2026-04-09","mois":"4"},{"hors":"","cp":"PGU","aff":"RAC-24-2BLR277W3Q","pour":"tiphaine/Amira","tache":"PPS","date":"2026-04-09","mois":"4"},{"hors":"","cp":"PGU","aff":"RAC-24-2BM36VSBH5","pour":"tiphaine/Amira","tache":"PPS","date":"2026-04-09","mois":"4"},{"hors":"","cp":"ADU","aff":"RAC-24-2DU40YZX6A","pour":"Amira","tache":"FDO","date":"2026-03-31","mois":"3"},{"hors":"","cp":"PGU","aff":"RAC-24-2DU40YZX6A","pour":"Amira","tache":"Plans 200e+1000e","date":"2026-03-31","mois":"3"},{"hors":"","cp":"PGU","aff":"RAC-24-2DU40YZX6A","pour":"Amira","tache":"Synoptique","date":"2026-04-01","mois":"4"},{"hors":"","cp":"PGU","aff":"RAC-24-2DU40YZX6A","pour":"Amira","tache":"PPS","date":"2026-04-08","mois":"4"},{"hors":"","cp":"ADU","aff":"RAC-24-2DU40YZX6A","pour":"Amira","tache":"DMEO","date":"","mois":""},{"hors":"","cp":"PGU","aff":"RAC-24-2DU40YZX6A","pour":"Amira","tache":"OCB/PDL","date":"","mois":""},{"hors":"","cp":"","aff":"RAC-24-2DU40YZX6A","pour":"Amira","tache":"CMD","date":"","mois":""},{"hors":"","cp":"PGU","aff":"RAC-24-2DWOOMU402","pour":"Amira","tache":"DMEO","date":"2026-06-03","mois":"6"},{"hors":"","cp":"PGU","aff":"RAC-24-2DWOOMU402","pour":"Amira","tache":"OCB","date":"2026-06-03","mois":"6"},{"hors":"","cp":"PGU","aff":"RAC-24-2DWOOMU402","pour":"Amira","tache":"Unifillaire","date":"2026-06-03","mois":"6"},{"hors":"","cp":"PGU","aff":"RAC-25-2FI7LJH6R7","pour":"Amira","tache":"Plans 200e+1000e","date":"2026-03-26","mois":"3"},{"hors":"","cp":"PGU","aff":"RAC-25-2FI7LJH6R7","pour":"Amira","tache":"Synoptique","date":"2026-03-26","mois":"3"},{"hors":"","cp":"PGU","aff":"RAC-25-2FI7LJH6R7","pour":"Amira","tache":"PPS","date":"2026-03-26","mois":"3"},{"hors":"","cp":"","aff":"RAC-25-2FI7LJH6R7","pour":"Amira","tache":"CMD Int","date":"","mois":""},{"hors":"","cp":"ADU","aff":"RAC-25-2FI7LJH6R7","pour":"Amira","tache":"FDO","date":"","mois":""},{"hors":"","cp":"ADU","aff":"RAC-25-2FI7LJH6R7","pour":"Amira","tache":"DMEO","date":"","mois":""},{"hors":"","cp":"PGU","aff":"RAC-25-2FI7LJH6R7","pour":"Amira","tache":"OCB/PDL","date":"","mois":""},{"hors":"","cp":"PGU","aff":"RAC-25-2FKLY599R7","pour":"Amira","tache":"Plans 200e+1000e","date":"2026-05-12","mois":"5"},{"hors":"","cp":"PGU","aff":"RAC-25-2FKLY599R7","pour":"Amira","tache":"Synoptique","date":"2026-05-12","mois":"5"},{"hors":"","cp":"PGU","aff":"RAC-25-2FKLY599R7","pour":"Amira","tache":"DMEO","date":"2026-05-12","mois":"5"},{"hors":"","cp":"PGU","aff":"RAC-25-2FKLY599R7","pour":"Amira","tache":"OCB","date":"2026-05-12","mois":"5"},{"hors":"","cp":"PGU","aff":"RAC-25-2FS1OFAWSJ","pour":"Amira","tache":"Plans 200e+1000e","date":"2026-03-30","mois":"3"},{"hors":"","cp":"PGU","aff":"RAC-25-2FS1OFAWSJ","pour":"Amira","tache":"Synoptique","date":"2026-04-10","mois":"4"},{"hors":"","cp":"ADU","aff":"RAC-25-2FS1OFAWSJ","pour":"Amira","tache":"FDO","date":"","mois":""},{"hors":"","cp":"ADU","aff":"RAC-25-2FS1OFAWSJ","pour":"Amira","tache":"DMEO","date":"","mois":""},{"hors":"","cp":"PGU","aff":"RAC-25-2FS1OFAWSJ","pour":"Amira","tache":"OCB/PDL","date":"","mois":""},{"hors":"","cp":"PGU","aff":"RAC-25-2FS1OFAWSJ","pour":"Amira","tache":"DMR","date":"2026-05-12","mois":""},{"hors":"","cp":"PGU","aff":"RAC-25-2G5AVZMK1V","pour":"","tache":"OCB/PDL","date":"","mois":""},{"hors":"","cp":"PGU","aff":"RAC-25-2G5AVZMK1V","pour":"","tache":"Plans 200e+1000e","date":"","mois":""},{"hors":"","cp":"PGU","aff":"RAC-25-2G5AVZMK1V","pour":"","tache":"Synoptique","date":"","mois":""},{"hors":"","cp":"ADU","aff":"RAC-25-2G5AVZMK1V","pour":"","tache":"FDO","date":"","mois":""},{"hors":"","cp":"ADU","aff":"RAC-25-2G5AVZMK1V","pour":"","tache":"DMEO","date":"","mois":""},{"hors":"","cp":"PGU","aff":"RAC-25-2G7J97T3RP","pour":"Amira","tache":"Plans 200e+1000e","date":"2026-05-12","mois":"5"},{"hors":"","cp":"PGU","aff":"RAC-25-2G7J97T3RP","pour":"Amira","tache":"Synoptique","date":"2026-05-12","mois":"5"},{"hors":"","cp":"PGU","aff":"RAC-25-2G7J97T3RP","pour":"Amira","tache":"OCB","date":"2026-05-12","mois":"5"},{"hors":"","cp":"PGU","aff":"RAC-25-2G7J97T3RP","pour":"Amira","tache":"PPS","date":"2026-05-12","mois":"5"},{"hors":"","cp":"PGU","aff":"RAC-25-2G7J97T3RP","pour":"Amira","tache":"Commande","date":"2026-06-03","mois":"6"},{"hors":"","cp":"PGU","aff":"RAC-25-2G7J97T3RP","pour":"Amira","tache":"DMR int","date":"2026-06-03","mois":"6"},{"hors":"","cp":"PGU","aff":"RAC-25-2G7J97T3RP","pour":"Amira","tache":"DMR Ext","date":"2026-06-03","mois":"6"},{"hors":"","cp":"PGU","aff":"RAC-IFE-25-000484","pour":"Amira","tache":"Plans 200e+1000e","date":"2026-05-12","mois":"5"},{"hors":"","cp":"PGU","aff":"RAC-IFE-25-000484","pour":"Amira","tache":"OCB","date":"2026-05-12","mois":"5"},{"hors":"","cp":"PGU","aff":"RAC-IFE-25-000484","pour":"Amira","tache":"Synoptique","date":"2026-05-12","mois":"5"},{"hors":"","cp":"","aff":"RAC-IFE-25-003143","pour":"","tache":"DMR Int","date":"","mois":""},{"hors":"","cp":"ADU","aff":"RAC-24-2AXK5281VK","pour":"Amira","tache":"Avenant DIE","date":"2026-06-08","mois":"6"},{"hors":"","cp":"ADU","aff":"RAC-24-2ATNWH4FRO","pour":"Amira","tache":"Avenant DIE","date":"2026-06-08","mois":"6"},{"hors":"","cp":"ADU","aff":"RAC-24-2AS25SOJVK","pour":"Amira","tache":"Avenant DIE","date":"2026-06-08","mois":"6"},{"hors":"","cp":"ADU","aff":"RAC-25-2G5AVZMK1V","pour":"Amira","tache":"Avenant DIE","date":"2026-06-08","mois":"6"},{"hors":"","cp":"ADU","aff":"RAC-24-2ARTT808RO","pour":"Amira","tache":"Avenant DIE","date":"2026-06-08","mois":"6"},{"hors":"","cp":"ADU","aff":"RAC-24-2AXJBFAEVK","pour":"Amira","tache":"Avenant DIE","date":"2026-06-08","mois":"6"},{"hors":"","cp":"ADU","aff":"RAC-24-2AS5IRKFVK","pour":"Amira","tache":"Avenant DIE","date":"2026-06-08","mois":"6"},{"hors":"","cp":"ADU","aff":"RAC-24-29U8ILY691","pour":"Amira","tache":"Avenant DIE","date":"2026-06-08","mois":"6"},{"hors":"","cp":"ADU","aff":"RAC-25-2FI7LJH6R7","pour":"Amira","tache":"Avenant DIE","date":"2026-06-08","mois":"6"},{"hors":"","cp":"ADU","aff":"RAC-25-2FS1OFAWSJ","pour":"Amira","tache":"Avenant DIE","date":"2026-06-08","mois":"6"},{"hors":"","cp":"ADU","aff":"RAC-24-2DU40YZX6A","pour":"Amira","tache":"Avenant DIE","date":"2026-06-08","mois":"6"},{"hors":"","cp":"ADU","aff":"RAC-25-2FKLY599R7","pour":"Amira","tache":"Avenant DIE","date":"2026-06-08","mois":"6"},{"hors":"","cp":"ADU","aff":"RAC-25-2G7J97T3RP","pour":"Amira","tache":"Avenant DIE","date":"2026-06-08","mois":"6"},{"hors":"","cp":"ADU","aff":"RAC-IFE-25-000484","pour":"Amira","tache":"Avenant DIE","date":"2026-06-08","mois":"6"},{"hors":"","cp":"PGU","aff":"RAC-25-2FKP3KO2R7","pour":"AMIRA","tache":"1000/200","date":"2026-06-24","mois":"6"},{"hors":"","cp":"PGU","aff":"RAC-25-2FKP3KO2R7","pour":"AMIRA","tache":"Unifillaire","date":"2026-06-24","mois":"6"},{"hors":"","cp":"PGU","aff":"RAC-25-2FKP3KO2R7","pour":"AMIRA","tache":"DMEO","date":"2026-06-24","mois":"6"},{"hors":"","cp":"PGU","aff":"RAC-IFE-25-000675","pour":"AMIRA","tache":"1000/200","date":"2026-06-24","mois":"6"},{"hors":"","cp":"PGU","aff":"RAC-IFE-25-000675","pour":"AMIRA","tache":"Unifillaire","date":"2026-06-24","mois":"6"},{"hors":"","cp":"PGU","aff":"RAC-IFE-25-000675","pour":"AMIRA","tache":"DMEO","date":"2026-06-24","mois":"6"},{"hors":"","cp":"PGU","aff":"RAC-24-2BEQ8J6BH5","pour":"AMIRA","tache":"1000/200","date":"2026-06-24","mois":"6"},{"hors":"","cp":"PGU","aff":"RAC-24-2BEQ8J6BH5","pour":"AMIRA","tache":"Unifillaire","date":"2026-06-24","mois":"6"},{"hors":"","cp":"PGU","aff":"RAC-24-259FM1Q2T1","pour":"AMIRA","tache":"1000/200","date":"2026-06-24","mois":"6"},{"hors":"","cp":"PGU","aff":"RAC-24-259FM1Q2T1","pour":"AMIRA","tache":"Unifillaire","date":"2026-06-24","mois":"6"},{"hors":"","cp":"PGU","aff":"RAC-24-28YBB5Y5ZR","pour":"AMIRA","tache":"1000/200","date":"2026-06-24","mois":"6"},{"hors":"","cp":"PGU","aff":"RAC-24-28YBB5Y5ZR","pour":"AMIRA","tache":"Unifillaire","date":"2026-06-24","mois":"6"},{"hors":"","cp":"PGU","aff":"RAC-24-28YBB5Y5ZR","pour":"AMIRA","tache":"DMEO","date":"2026-06-24","mois":"6"},{"hors":"","cp":"PGU","aff":"RAC-24-2EZB7JFOQB","pour":"AMIRA","tache":"Unifillaire","date":"2026-06-24","mois":"6"},{"hors":"","cp":"PGU","aff":"RAC-24-2EZB7JFOQB","pour":"AMIRA","tache":"DMEO","date":"2026-06-24","mois":"6"},{"hors":"","cp":"PGU","aff":"RAC-24-2EZB7JFOQB","pour":"AMIRA","tache":"OCB","date":"2026-06-24","mois":"6"},{"hors":"","cp":"PGU","aff":"RAC-25-2FKP3KO2R7","pour":"AMIRA","tache":"OCB","date":"2026-06-24","mois":"6"},{"hors":"","cp":"PGU","aff":"RAC-24-2DWOOMU402","pour":"AMIRA","tache":"1000/200","date":"2026-06-24","mois":"6"},{"hors":"","cp":"PGU","aff":"RAC-24-2DEJI94ZIT","pour":"AMIRA","tache":"DMEO","date":"2026-06-24","mois":"6"},{"hors":"","cp":"PGU","aff":"RAC-24-2DEJI94ZIT","pour":"AMIRA","tache":"1000/200","date":"2026-06-24","mois":"6"},{"hors":"","cp":"PGU","aff":"RAC-24-2DEJI94ZIT","pour":"AMIRA","tache":"Unifillaire","date":"2026-06-24","mois":"6"},{"hors":"","cp":"PGU","aff":"RAC-24-2BEQ8J6BH5","pour":"AMIRA","tache":"DMEO","date":"2026-06-25","mois":"6"},{"hors":"","cp":"PGU","aff":"RAC-25-2FO34ERPSJ","pour":"AMIRA","tache":"OCB","date":"2026-06-25","mois":"6"},{"hors":"","cp":"PGU","aff":"RAC-25-2FO34ERPSJ","pour":"AMIRA","tache":"Unifillaire","date":"2026-06-25","mois":"6"},{"hors":"","cp":"PGU","aff":"RAC-24-2DOLJ18Q6A","pour":"AMIRA","tache":"1000/200","date":"2026-06-29","mois":"6"},{"hors":"","cp":"PGU","aff":"RAC-24-2DOLJ18Q6A","pour":"AMIRA","tache":"OCB","date":"2026-06-29","mois":"6"},{"hors":"","cp":"PGU","aff":"RAC-24-2DOLJ18Q6A","pour":"AMIRA","tache":"Unifillaire","date":"2026-06-29","mois":"6"},{"hors":"","cp":"PGU","aff":"RAC-24-2DOLJ18Q6A","pour":"AMIRA","tache":"DMEO","date":"2026-06-29","mois":"6"},{"hors":"","cp":"PGU","aff":"RAC-24-28YBB5Y5ZR","pour":"AMIRA","tache":"GECO","date":"2026-06-29","mois":"6"},{"hors":"","cp":"PGU","aff":"RAC-24-2DODWE6Y6A","pour":"AMIRA","tache":"1000/200","date":"2026-07-07","mois":"7"},{"hors":"","cp":"PGU","aff":"RAC-24-2DODWE6Y6A","pour":"AMIRA","tache":"Unifilaire","date":"2026-07-07","mois":"7"},{"hors":"","cp":"PGU","aff":"RAC-24-2DODWE6Y6A","pour":"AMIRA","tache":"DMEO","date":"2026-07-07","mois":"7"},{"hors":"","cp":"PGU","aff":"RAC-24-2DODWE6Y6A","pour":"AMIRA","tache":"GECO","date":"2026-07-07","mois":"7"},{"hors":"","cp":"ADU/PGU","aff":"Analyse de l'avancement des 23 affaires en phase étude de Jennifer","pour":"JENNIFER","tache":"Analyse","date":"2026-07-02","mois":"7"},{"hors":"","cp":"PGU","aff":"RAC-IFE-25-002936","pour":"Amira","tache":"commande presta","date":"2026-07-09","mois":"7"},{"hors":"","cp":"PGU","aff":"RAC-IFE-25-002341","pour":"Amira","tache":"OCB","date":"2026-07-15","mois":"7"},{"hors":"","cp":"PGU","aff":"RAC-IFE-25-001414","pour":"Amira","tache":"OCB","date":"2026-07-15","mois":"7"},{"hors":"","cp":"PGU","aff":"RAC-25-2FB59UUIGY","pour":"Amira","tache":"OCB","date":"2026-07-15","mois":"7"},{"hors":"","cp":"PGU","aff":"RAC-24-2DOKENZZ6A","pour":"Amira","tache":"OCB","date":"2026-07-15","mois":"7"},{"hors":"","cp":"PGU","aff":"RAC-IFE-25-002341","pour":"Amira","tache":"1000/200","date":"2026-07-15","mois":"7"},{"hors":"","cp":"PGU","aff":"RAC-IFE-25-002341","pour":"Amira","tache":"Unifilaire","date":"2026-07-15","mois":"7"},{"hors":"","cp":"PGU","aff":"RAC-IFE-25-002341","pour":"Amira","tache":"DMEO","date":"2026-07-15","mois":"7"},{"hors":"","cp":"PGU","aff":"RAC-25-2FB59UUIGY","pour":"Amira","tache":"Unifilaire","date":"2026-07-15","mois":"7"},{"hors":"","cp":"ADU","aff":"RAC-25-2FS1OFAWSJ","pour":"Amira","tache":"commande TRX EXT","date":"2026-07-21","mois":"7"},{"hors":"","cp":"ADU","aff":"RAC-IFE-25-000484","pour":"Amira","tache":"commande TRX EXT","date":"2026-07-21","mois":"7"},{"hors":"","cp":"PGU","aff":"RAC-24-2DWOOMU402","pour":"Amira","tache":"PPS","date":"2026-07-21","mois":"7"},{"hors":"","cp":"PGU","aff":"RAC-IFE-25-000484","pour":"Amira","tache":"Fond de plan","date":"2026-07-27","mois":"7"},{"hors":"","cp":"PGU","aff":"RAC-25-2FS1OFAWSJ","pour":"Amira","tache":"Fond de plan","date":"2026-07-27","mois":"7"},{"hors":"","cp":"PGU","aff":"RAC-25-2FKLY599R7","pour":"Amira","tache":"Fond de plan","date":"2026-07-27","mois":"7"},{"hors":"","cp":"PGU","aff":"RAC-24-2DOKENZZ6A","pour":"Amira","tache":"1000/200","date":"2026-07-27","mois":"7"},{"hors":"","cp":"PGU","aff":"RAC-24-2DOKENZZ6A","pour":"Amira","tache":"Unifilaire","date":"2026-07-27","mois":"7"},{"hors":"","cp":"PGU","aff":"RAC-24-2DOKENZZ6A","pour":"Amira","tache":"DMEO","date":"2026-07-27","mois":"7"},{"hors":"","cp":"PGU","aff":"RAC-IFE-25-001414","pour":"Amira","tache":"1000/200","date":"2026-07-27","mois":"7"},{"hors":"","cp":"PGU","aff":"RAC-IFE-25-001414","pour":"Amira","tache":"Unifilaire","date":"2026-07-27","mois":"7"},{"hors":"","cp":"PGU","aff":"RAC-IFE-25-001414","pour":"Amira","tache":"DMEO","date":"2026-07-27","mois":"7"},{"hors":"","cp":"PGU","aff":"RAC-25-2FB59UUIGY","pour":"Amira","tache":"DMEO","date":"2026-07-27","mois":"7"},{"hors":"","cp":"PGU","aff":"RAC-IFE-25-000288","pour":"Amira","tache":"OCB","date":"2026-08-04","mois":"8"},{"hors":"","cp":"PGU","aff":"RAC-24-2DOKX4L002","pour":"Amira","tache":"OCB","date":"2026-08-04","mois":"8"},{"hors":"","cp":"PGU","aff":"RAC-24-2E9JOOYKMU","pour":"Amira","tache":"OCB","date":"2026-08-04","mois":"8"},{"hors":"","cp":"PGU","aff":"RAC-25-2FXVP6ES1V","pour":"Amira","tache":"OCB","date":"2026-08-04","mois":"8"},{"hors":"","cp":"PGU","aff":"RAC-25-2H23PHKRB5","pour":"Amira","tache":"OCB","date":"2026-08-04","mois":"8"},{"hors":"","cp":"PGU","aff":"RAC-IFE-25-000309","pour":"Amira","tache":"OCB","date":"2026-08-04","mois":"8"},{"hors":"","cp":"PGU","aff":"RAC-IFE-25-002936","pour":"Amira","tache":"OCB","date":"2026-08-04","mois":"8"},{"hors":"","cp":"PGU","aff":"RAC-IFE-25-003876","pour":"Amira","tache":"OCB","date":"2026-08-04","mois":"8"},{"hors":"","cp":"PGU","aff":"RAC-IFE-25-002977","pour":"Amira","tache":"OCB","date":"2026-08-04","mois":"8"},{"hors":"","cp":"PGU","aff":"RAC-IFE-25-002152","pour":"Amira","tache":"OCB","date":"2026-08-04","mois":"8"},{"hors":"","cp":"PGU","aff":"RAC-25-2GHWOL9BXJ","pour":"Amira","tache":"DMEO","date":"2026-08-04","mois":"8"},{"hors":"","cp":"PGU","aff":"RAC-25-2GHWOL9BXJ","pour":"Amira","tache":"Unifilaire","date":"2026-08-04","mois":"8"},{"hors":"","cp":"PGU","aff":"RAC-25-2GHWOL9BXJ","pour":"Amira","tache":"1000/200","date":"2026-08-04","mois":"8"},{"hors":"","cp":"PGU","aff":"RAC-IFE-25-005096","pour":"JALEL","tache":"DMR EXT","date":"2026-08-11","mois":"8"},{"hors":"","cp":"PGU","aff":"RAC-25-2GZ4NX80B5","pour":"Amira","tache":"DMR EXT","date":"2026-08-11","mois":"8"},{"hors":"","cp":"ADU","aff":"RAC-IFE-25-000675","pour":"Amira","tache":"PPS","date":"2026-08-12","mois":"8"},{"hors":"","cp":"ADU","aff":"RAC-24-2BEQ8J6BH5","pour":"Amira","tache":"PPS","date":"2026-08-12","mois":"8"},{"hors":"","cp":"ADU","aff":"RAC-24-28YBB5Y5ZR","pour":"Amira","tache":"PPS","date":"2026-08-12","mois":"8"},{"hors":"","cp":"ADU","aff":"RAC-25-2FB59UUIGY","pour":"Amira","tache":"PPS","date":"2026-08-12","mois":"8"},{"hors":"","cp":"PGU","aff":"RAC-IFE-25-000288","pour":"Amira","tache":"DMR","date":"2026-08-17","mois":"8"},{"hors":"","cp":"PGU","aff":"RAC-IFE-25-000288","pour":"Amira","tache":"commande presta","date":"2026-08-17","mois":""},{"hors":"","cp":"PGU","aff":"RAC-24-2AXJBFAEVK","pour":"Amira","tache":"commande presta","date":"2026-08-17","mois":""},{"hors":"","cp":"ADU","aff":"RAC-24-2DOKX4L002","pour":"Amira","tache":"commande étude","date":"2026-08-17","mois":""},{"hors":"","cp":"ADU","aff":"RAC-25-2GHWOL9BXJ","pour":"Amira","tache":"PPS","date":"2026-08-17","mois":""},{"hors":"","cp":"ADU","aff":"RAC-24-28VHMF85N4","pour":"Amira","tache":"PPS","date":"2026-08-17","mois":""},{"hors":"","cp":"ADU","aff":"RAC-25-2FO34ERPSJ","pour":"Amira","tache":"PPS","date":"2026-08-17","mois":""},{"hors":"","cp":"ADU","aff":"RAC-24-2E9JOOYKMU","pour":"Amira","tache":"PPS","date":"2026-08-17","mois":""},{"hors":"","cp":"ADU","aff":"RAC-25-2FXVP6ES1V","pour":"Amira","tache":"PPS","date":"2026-08-17","mois":""},{"hors":"","cp":"ADU","aff":"RAC-24-2EZB7JFOQB","pour":"Amira","tache":"PPS","date":"2026-08-17","mois":""},{"hors":"","cp":"ADU","aff":"RAC-IFE-25-000309","pour":"Amira","tache":"PPS","date":"2026-08-17","mois":""},{"hors":"","cp":"ADU","aff":"RAC-IFE-25-001414","pour":"Amira","tache":"PPS","date":"2026-08-17","mois":""},{"hors":"","cp":"ADU","aff":"RAC-IFE-25-002341","pour":"Amira","tache":"PPS","date":"2026-08-17","mois":""},{"hors":"","cp":"ADU","aff":"RAC-IFE-25-002936","pour":"Amira","tache":"PPS","date":"2026-08-17","mois":""},{"hors":"","cp":"ADU","aff":"RAC-IFE-25-003876","pour":"Amira","tache":"PPS","date":"2026-08-17","mois":""},{"hors":"","cp":"ADU","aff":"RAC-IFE-25-002977","pour":"Amira","tache":"PPS","date":"2026-08-17","mois":""},{"hors":"","cp":"ADU","aff":"RAC-24-2DOLJ18Q6A","pour":"Amira","tache":"CMD INT","date":"2026-08-19","mois":""},{"hors":"","cp":"ADU","aff":"RAC-24-2DEJI94ZIT","pour":"Amira","tache":"CMD INT","date":"2026-08-19","mois":""},{"hors":"","cp":"ADU","aff":"RAC-24-2DOKX4L002","pour":"Amira","tache":"CMD INT","date":"2026-08-19","mois":""},{"hors":"","cp":"ADU","aff":"RAC-24-2DOKNUS102","pour":"Amira","tache":"CMD INT","date":"2026-08-19","mois":""},{"hors":"","cp":"ADU","aff":"RAC-IFE-25-005096","pour":"Jallel","tache":"OCB","date":"2026-08-18","mois":""},{"hors":"","cp":"PGU","aff":"RAC-24-2DOKENZZ6A","pour":"Amira","tache":"CMD INT","date":"2026-08-19","mois":""},{"hors":"","cp":"PGU","aff":"RAC-25-2H23PHKRB5","pour":"Amira","tache":"CMD INT","date":"2026-08-20","mois":""},{"hors":"","cp":"ADU","aff":"RAC-25-2FI7LJH6R7","pour":"Amira","tache":"ECOME + PMEO","date":"A FAIRE","mois":""},{"hors":"","cp":"ADU","aff":"RAC-24-2DOLJ18Q6A","pour":"Amira","tache":"PPS","date":"A FAIRE","mois":""},{"hors":"","cp":"ADU","aff":"RAC-24-2DEJI94ZIT","pour":"Amira","tache":"PPS","date":"A FAIRE","mois":""},{"hors":"","cp":"ADU","aff":"RAC-24-2DOKX4L002","pour":"Amira","tache":"PPS","date":"A FAIRE","mois":""},{"hors":"","cp":"ADU","aff":"RAC-24-2DOKNUS102","pour":"Amira","tache":"PPS","date":"A FAIRE","mois":""},{"hors":"","cp":"ADU","aff":"RAC-24-2DOKENZZ6A","pour":"Amira","tache":"PPS","date":"A FAIRE","mois":""},{"hors":"","cp":"ADU","aff":"RAC-25-2H23PHKRB5","pour":"Amira","tache":"PPS","date":"A FAIRE","mois":""},{"hors":"","cp":"ADU","aff":"RAC-IFE-25-002152","pour":"Amira","tache":"PPS","date":"A FAIRE","mois":""},{"hors":"","cp":"PGU","aff":"RAC-25-2FKP3KO2R7","pour":"Amira","tache":"CLIN/ PDL","date":"2026-08-21","mois":""},{"hors":"","cp":"PGU","aff":"RAC-25-2FKLY599R7","pour":"Amira","tache":"CLIN/ PDL","date":"2026-08-21","mois":""},{"hors":"","cp":"PGU","aff":"RAC-25-2G7J97T3RP","pour":"Amira","tache":"CLIN/ PDL","date":"2026-08-21","mois":""},{"hors":"","cp":"PGU","aff":"RAC-IFE-26-001748","pour":"Amira","tache":"CLIN/ PDL","date":"2026-08-21","mois":""},{"hors":"","cp":"PGU","aff":"RAC-24-2ARTT808RO","pour":"Amira","tache":"CLIN/ PDL","date":"2026-08-21","mois":""},{"hors":"","cp":"PGU","aff":"_RAC-24-2DU40YZX6A","pour":"Amira","tache":"CLIN/ PDL","date":"2026-08-21","mois":""},{"hors":"","cp":"PGU","aff":".RAC-25-2GZ4NX80B5","pour":"Amira","tache":"CLIN/ PDL","date":"2026-08-21","mois":""},{"hors":"","cp":"PGU","aff":"RAC-25-2GHWOL9BXJ","pour":"Amira","tache":"CLIN/ PDL","date":"2026-08-21","mois":""},{"hors":"","cp":"PGU","aff":"RAC-IFE-25-000484","pour":"Amira","tache":"CLIN/ PDL","date":"2026-08-21","mois":""},{"hors":"","cp":"PGU","aff":"RAC-IFE-25-005096","pour":"DJA","tache":"CLIN/ PDL","date":"2026-08-24","mois":""},{"hors":"","cp":"ADU","aff":"RAC-IFE-26-001608","pour":"Amira","tache":"DMR","date":"2026-08-26","mois":""},{"hors":"","cp":"ADU","aff":"RAC-25-2GHWOL9BXJ","pour":"Amira","tache":"FDO","date":"2026-08-26","mois":""},{"hors":"","cp":"PGU","aff":"RAC-IFE-25-000484","pour":"Amira","tache":"DMR EXT","date":"2026-08-25","mois":""},{"hors":"","cp":"ADU","aff":"RAC-25-2FKLY599R7","pour":"Amira","tache":"DMR EXT","date":"2026-08-26","mois":""},{"hors":"","cp":"ADU","aff":"RAC-IFE-25-000484","pour":"Amira","tache":"FDO","date":"Att Amira car FDO déjà rédigée","mois":""},{"hors":"","cp":"ADU","aff":"RAC-25-2FKLY599R7","pour":"Amira","tache":"FDO","date":"2026-08-26","mois":""},{"hors":"","cp":"ADU","aff":"RAC-24-2DWOOMU402","pour":"Amira","tache":"FDO","date":"2026-08-27","mois":""},{"hors":"","cp":"PGU","aff":"RAC-IFE-25-002258","pour":"Jallel","tache":"Prog FDO","date":"","mois":""},{"hors":"","cp":"PGU","aff":"RAC-IFE-25-002832","pour":"Jallel","tache":"Prog FDO","date":"","mois":""},{"hors":"","cp":"PGU","aff":"RAC-25-2GHWOL9BXJ","pour":"Amira","tache":"DMR EXT","date":"","mois":""},{"hors":"","cp":"PGU","aff":"RAC-25-2GHWOL9BXJ","pour":"Amira","tache":"DMR INT","date":"","mois":""},{"hors":"","cp":"PGU","aff":"RAC-25-2GHWOL9BXJ","pour":"Amira","tache":"COMMANDE EXT","date":"","mois":""},{"hors":"","cp":"PGU","aff":"RAC-25-2GHWOL9BXJ","pour":"Amira","tache":"COommande INT","date":"","mois":""}];
+// Base des tâches telle que livrée dans le code, gardée à part : la reprise
+// du 24/09 s'en sert pour savoir si une ligne a été modifiée dans RADAR.
+var IRVE_TACHES_BASE = JSON.parse(JSON.stringify(IRVE_TACHES));
 var TACHE_TYPES = ['Synoptique','EOTP/OCB','Plans 200e+1000e','DMEO','CMD Ext','CMD Int',
                    'DMR','ICP/PPS','Contr\u00f4le N1','Autre'];
 var TACHE_MONTANT = 100;    // montant factur\u00e9 par t\u00e2che, en euros
@@ -13361,9 +13378,410 @@ function rep0924Detail(){
   var dbl=(r.irveDoublons||[]).concat(r.armaDoublons||[]);
   if(dbl.length) t+='\n\nDoublons créés dans l’app, laissés tels quels : '+dbl.join(', ')+'.';
   t+='\n\nLes valeurs d’avant la reprise sont gardées dans chaque affaire touchée.';
+  var tb=MIGR.tachesBo0924Rapport;
+  if(tb) t+='\n\nTâches back-office : '+tb.total+' dont '+(tb.total-tb.ouvertes)+' faites. '
+    +tb.communes+' déjà dans RADAR, '+tb.ajoutees+' ajoutées, '+tb.remplacees
+    +' anciennes lignes remplacées par leur détail'
+    +(tb.gardees.length?', '+tb.gardees.length+' saisies de RADAR gardées':'')+'.';
   uiAlert('Reprise de la facturation du 24/09/2026', t);
 }
 try{ window.rep0924Detail=rep0924Detail; }catch(e){}
+
+// ══════════════════════════════════════════════════════════════
+// TÂCHES BACK-OFFICE IRVE, reprise du 24/09/2026
+// Onglet TACHES BO du fichier MAJ IRVE d'Alexis : 280 lignes, la liste de
+// référence. RADAR n'en avait que 238, issues de son ancien fichier, et
+// beaucoup restaient « à faire » alors qu'elles sont faites.
+// Règles :
+//  - une ligne jamais modifiée depuis le chargement (identique à la base du
+//    code) prend les valeurs du fichier ;
+//  - une ligne touchée dans RADAR garde sa saisie, on ne remplit que ce qui
+//    manque, dont le statut « faite » quand elle était encore ouverte ;
+//  - une ligne de l'ancienne base que le fichier ne reprend plus est
+//    remplacée par son détail (PPS devenu PPS INT et PPS EXT) ;
+//  - une ligne ajoutée à la main dans RADAR est gardée.
+// La liste d'avant reste dans l'état : annulerTachesBo0924() la remet.
+// ══════════════════════════════════════════════════════════════
+// Ligne : CP, n° d'affaire, pour qui, tâche, date de réalisation ou état
+var TACHES_BO_0924 = [
+ ["ADU/PGU", "RAC-24-23L17GS5V6", "?", "CMD Ext", "FAIT"],
+ ["PGU", "RAC-24-28VHMF85N4", "Amira", "Plans 200e+1000e", "2026-05-12"],
+ ["PGU", "RAC-24-28VHMF85N4", "Amira", "DMEO", "2026-05-12"],
+ ["PGU", "RAC-24-28VHMF85N4", "Amira", "Synoptique", "2026-05-12"],
+ ["PGU", "RAC-24-28VHMF85N4", "Amira", "OCB", "2026-05-12"],
+ ["ADU", "RAC-24-28Y0686EZR", "?", "FDO", "FAIT"],
+ ["ADU", "RAC-24-28Y0686EZR", "?", "DMEO", "FAIT"],
+ ["PGU", "RAC-24-28Y0686EZR", "Amira", "Plans 200e+1000e", "2026-03-26"],
+ ["PGU", "RAC-24-28Y0686EZR", "Amira", "Synoptique", "2026-03-26"],
+ ["PGU", "RAC-24-28Y0686EZR", "Amira", "PPS", "2026-04-08"],
+ ["ADU", "RAC-24-28Y0686EZR", "?", "FDO", "FAIT"],
+ ["ADU/PGU", "RAC-24-28Y0686EZR", "?", "DMR", "FAIT"],
+ ["ADU/PGU", "RAC-24-28Y0686EZR", "?", "CMD", "FAIT"],
+ ["PGU", "RAC-24-28Y0686EZR", "?", "OCB/PDL", "FAIT"],
+ ["ADU/PGU", "RAC-24-28Y0686EZR", "?", "DMR Ext", "FAIT"],
+ ["PGU", "RAC-24-29U8ILY691", "Amira", "Plans 200e+1000e", "2026-03-26"],
+ ["PGU", "RAC-24-29U8ILY691", "Amira", "Synoptique", "2026-03-26"],
+ ["PGU", "RAC-24-29U8ILY691", "Amira", "PPS", "2026-03-26"],
+ ["ADU", "RAC-24-29U8ILY691", "?", "DMEO", "FAIT"],
+ ["ADU", "RAC-24-29U8ILY691", "?", "FDO", "FAIT"],
+ ["PGU", "RAC-24-29U8ILY691", "?", "OCB/PDL", "FAIT"],
+ ["ADU/PGU", "RAC-24-29U8ILY691", "?", "CMD", "FAIT"],
+ ["PGU", "RAC-24-2ARTT808RO", "Amira", "Plans 200e+1000e", "2026-03-26"],
+ ["PGU", "RAC-24-2ARTT808RO", "Amira", "Synoptique", "2026-03-26"],
+ ["ADU/PGU", "RAC-24-2ARTT808RO", "?", "CMD Ext", "FAIT"],
+ ["ADU", "RAC-24-2ARTT808RO", "?", "DMEO", "FAIT"],
+ ["ADU", "RAC-24-2ARTT808RO", "?", "FDO", "FAIT"],
+ ["PGU", "RAC-24-2ARTT808RO", "?", "OCB", "FAIT"],
+ ["PGU", "RAC-24-2AS25SOJVK", "Amira", "Plans 200e+1000e", "2026-03-26"],
+ ["PGU", "RAC-24-2AS25SOJVK", "Amira", "Synoptique", "2026-03-24"],
+ ["PGU", "RAC-24-2AS25SOJVK", "Amira", "PPS", "2026-04-09"],
+ ["ADU/PGU", "RAC-24-2AS25SOJVK", "?", "OCB/PDL", "FAIT"],
+ ["ADU/PGU", "RAC-24-2AS25SOJVK", "?", "DMR Ext", "FAIT"],
+ ["ADU", "RAC-24-2AS25SOJVK", "?", "FDO", "FAIT"],
+ ["ADU", "RAC-24-2AS25SOJVK", "?", "DMEO", "FAIT"],
+ ["ADU/PGU", "RAC-24-2AS25SOJVK", "?", "PPS", "FAIT"],
+ ["PGU", "RAC-24-2AS5IRKFVK", "Amira", "Plans 200e+1000e", "2026-03-30"],
+ ["PGU", "RAC-24-2AS5IRKFVK", "Amira", "Synoptique", "2026-03-26"],
+ ["PGU", "RAC-24-2AS5IRKFVK", "Amira", "PPS", "2026-04-01"],
+ ["ADU", "RAC-24-2AS5IRKFVK", "?", "FDO", "FAIT"],
+ ["ADU", "RAC-24-2AS5IRKFVK", "?", "DMEO", "FAIT"],
+ ["PGU", "RAC-24-2AS5IRKFVK", "?", "OCB/PDL", "FAIT"],
+ ["ADU/PGU", "RAC-24-2AS5IRKFVK", "?", "CMD Int", "FAIT"],
+ ["ADU", "RAC-24-2AXJBFAEVK", "Amira", "FDO", "2026-03-31"],
+ ["PGU", "RAC-24-2AXJBFAEVK", "Amira", "Plans 200e+1000e", "2026-03-26"],
+ ["PGU", "RAC-24-2AXJBFAEVK", "Amira", "Synoptique", "2026-03-24"],
+ ["PGU", "RAC-24-2AXJBFAEVK", "Amira", "PPS", "2026-04-08"],
+ ["ADU", "RAC-24-2AXJBFAEVK", "?", "DMEO", "FAIT"],
+ ["PGU", "RAC-24-2AXJBFAEVK", "?", "OCB/PDL", "FAIT"],
+ ["ADU/PGU", "RAC-24-2AXJBFAEVK", "?", "DMR Ext", "FAIT"],
+ ["PGU", "RAC-24-2B4X49WHH5", "Tiphaine/Amira", "PPS", "2026-04-09"],
+ ["PGU", "RAC-24-2BLR277W3Q", "Tiphaine/Amira", "PPS", "2026-04-09"],
+ ["PGU", "RAC-24-2BM36VSBH5", "Tiphaine/Amira", "PPS", "2026-04-09"],
+ ["ADU", "RAC-24-2DU40YZX6A", "Amira", "FDO", "2026-03-31"],
+ ["PGU", "RAC-24-2DU40YZX6A", "Amira", "Plans 200e+1000e", "2026-03-31"],
+ ["PGU", "RAC-24-2DU40YZX6A", "Amira", "Synoptique", "2026-04-01"],
+ ["PGU", "RAC-24-2DU40YZX6A", "Amira", "PPS", "2026-04-08"],
+ ["ADU", "RAC-24-2DU40YZX6A", "Amira", "DMEO", "FAIT"],
+ ["PGU", "RAC-24-2DU40YZX6A", "Amira", "OCB/PDL", "FAIT"],
+ ["ADU/PGU", "RAC-24-2DU40YZX6A", "Amira", "CMD", "FAIT"],
+ ["PGU", "RAC-24-2DWOOMU402", "Amira", "DMEO", "2026-06-03"],
+ ["PGU", "RAC-24-2DWOOMU402", "Amira", "OCB", "2026-06-03"],
+ ["PGU", "RAC-24-2DWOOMU402", "Amira", "Unifillaire", "2026-06-03"],
+ ["PGU", "RAC-25-2FI7LJH6R7", "Amira", "Plans 200e+1000e", "2026-03-26"],
+ ["PGU", "RAC-25-2FI7LJH6R7", "Amira", "Synoptique", "2026-03-26"],
+ ["PGU", "RAC-25-2FI7LJH6R7", "Amira", "PPS", "2026-03-26"],
+ ["ADU/PGU", "RAC-25-2FI7LJH6R7", "Amira", "CMD INT", "FAIT"],
+ ["ADU", "RAC-25-2FI7LJH6R7", "Amira", "FDO", "FAIT"],
+ ["ADU", "RAC-25-2FI7LJH6R7", "Amira", "DMEO", "FAIT"],
+ ["PGU", "RAC-25-2FI7LJH6R7", "Amira", "OCB/PDL", "FAIT"],
+ ["PGU", "RAC-25-2FKLY599R7", "Amira", "Plans 200e+1000e", "2026-05-12"],
+ ["PGU", "RAC-25-2FKLY599R7", "Amira", "Synoptique", "2026-05-12"],
+ ["PGU", "RAC-25-2FKLY599R7", "Amira", "DMEO", "2026-05-12"],
+ ["PGU", "RAC-25-2FKLY599R7", "Amira", "OCB", "2026-05-12"],
+ ["PGU", "RAC-25-2FS1OFAWSJ", "Amira", "Plans 200e+1000e", "2026-03-30"],
+ ["PGU", "RAC-25-2FS1OFAWSJ", "Amira", "Synoptique", "2026-04-10"],
+ ["ADU", "RAC-25-2FS1OFAWSJ", "Amira", "FDO", "FAIT"],
+ ["ADU", "RAC-25-2FS1OFAWSJ", "Amira", "DMEO", "FAIT"],
+ ["PGU", "RAC-25-2FS1OFAWSJ", "Amira", "OCB/PDL", "FAIT"],
+ ["PGU", "RAC-25-2FS1OFAWSJ", "Amira", "DMR", "2026-05-12"],
+ ["PGU", "RAC-25-2G5AVZMK1V", "?", "OCB/PDL", "FAIT"],
+ ["PGU", "RAC-25-2G5AVZMK1V", "?", "Plans 200e+1000e", "FAIT"],
+ ["PGU", "RAC-25-2G5AVZMK1V", "?", "Synoptique", "FAIT"],
+ ["ADU", "RAC-25-2G5AVZMK1V", "?", "FDO", "FAIT"],
+ ["ADU", "RAC-25-2G5AVZMK1V", "?", "DMEO", "FAIT"],
+ ["PGU", "RAC-25-2G7J97T3RP", "Amira", "Plans 200e+1000e", "2026-05-12"],
+ ["PGU", "RAC-25-2G7J97T3RP", "Amira", "Synoptique", "2026-05-12"],
+ ["PGU", "RAC-25-2G7J97T3RP", "Amira", "OCB", "2026-05-12"],
+ ["PGU", "RAC-25-2G7J97T3RP", "Amira", "PPS", "2026-05-12"],
+ ["PGU", "RAC-25-2G7J97T3RP", "Amira", "Commande", "2026-06-03"],
+ ["PGU", "RAC-25-2G7J97T3RP", "Amira", "DMR int", "2026-06-03"],
+ ["PGU", "RAC-25-2G7J97T3RP", "Amira", "DMR Ext", "2026-06-03"],
+ ["PGU", "RAC-IFE-25-000484", "Amira", "Plans 200e+1000e", "2026-05-12"],
+ ["PGU", "RAC-IFE-25-000484", "Amira", "OCB", "2026-05-12"],
+ ["PGU", "RAC-IFE-25-000484", "Amira", "Synoptique", "2026-05-12"],
+ ["ADU", "RAC-24-2AXK5281VK", "Amira", "Avenant DIE", "2026-06-08"],
+ ["ADU", "RAC-24-2ATNWH4FRO", "Amira", "Avenant DIE", "2026-06-08"],
+ ["ADU", "RAC-24-2AS25SOJVK", "Amira", "Avenant DIE", "2026-06-08"],
+ ["ADU", "RAC-25-2G5AVZMK1V", "Amira", "Avenant DIE", "2026-06-08"],
+ ["ADU", "RAC-24-2ARTT808RO", "Amira", "Avenant DIE", "2026-06-08"],
+ ["ADU", "RAC-24-2AXJBFAEVK", "Amira", "Avenant DIE", "2026-06-08"],
+ ["ADU", "RAC-24-2AS5IRKFVK", "Amira", "Avenant DIE", "2026-06-08"],
+ ["ADU", "RAC-24-29U8ILY691", "Amira", "Avenant DIE", "2026-06-08"],
+ ["ADU", "RAC-25-2FI7LJH6R7", "Amira", "Avenant DIE", "2026-06-08"],
+ ["ADU", "RAC-25-2FS1OFAWSJ", "Amira", "Avenant DIE", "2026-06-08"],
+ ["ADU", "RAC-24-2DU40YZX6A", "Amira", "Avenant DIE", "2026-06-08"],
+ ["ADU", "RAC-25-2FKLY599R7", "Amira", "Avenant DIE", "2026-06-08"],
+ ["ADU", "RAC-25-2G7J97T3RP", "Amira", "Avenant DIE", "2026-06-08"],
+ ["ADU", "RAC-IFE-25-000484", "Amira", "Avenant DIE", "2026-06-08"],
+ ["PGU", "RAC-25-2FKP3KO2R7", "Amira", "1000/200", "2026-06-24"],
+ ["PGU", "RAC-25-2FKP3KO2R7", "Amira", "Unifillaire", "2026-06-24"],
+ ["PGU", "RAC-25-2FKP3KO2R7", "Amira", "DMEO", "2026-06-24"],
+ ["PGU", "RAC-IFE-25-000675", "Amira", "1000/200", "2026-06-24"],
+ ["PGU", "RAC-IFE-25-000675", "Amira", "Unifillaire", "2026-06-24"],
+ ["PGU", "RAC-IFE-25-000675", "Amira", "DMEO", "2026-06-24"],
+ ["PGU", "RAC-24-2BEQ8J6BH5", "Amira", "1000/200", "2026-06-24"],
+ ["PGU", "RAC-24-2BEQ8J6BH5", "Amira", "Unifillaire", "2026-06-24"],
+ ["PGU", "RAC-24-259FM1Q2T1", "Amira", "1000/200", "2026-06-24"],
+ ["PGU", "RAC-24-259FM1Q2T1", "Amira", "Unifillaire", "2026-06-24"],
+ ["PGU", "RAC-24-28YBB5Y5ZR", "Amira", "1000/200", "2026-06-24"],
+ ["PGU", "RAC-24-28YBB5Y5ZR", "Amira", "Unifillaire", "2026-06-24"],
+ ["PGU", "RAC-24-28YBB5Y5ZR", "Amira", "DMEO", "2026-06-24"],
+ ["PGU", "RAC-24-2EZB7JFOQB", "Amira", "Unifillaire", "2026-06-24"],
+ ["PGU", "RAC-24-2EZB7JFOQB", "Amira", "DMEO", "2026-06-24"],
+ ["PGU", "RAC-24-2EZB7JFOQB", "Amira", "OCB", "2026-06-24"],
+ ["PGU", "RAC-25-2FKP3KO2R7", "Amira", "OCB", "2026-06-24"],
+ ["PGU", "RAC-24-2DWOOMU402", "Amira", "1000/200", "2026-06-24"],
+ ["PGU", "RAC-24-2DEJI94ZIT", "Amira", "DMEO", "2026-06-24"],
+ ["PGU", "RAC-24-2DEJI94ZIT", "Amira", "1000/200", "2026-06-24"],
+ ["PGU", "RAC-24-2DEJI94ZIT", "Amira", "Unifillaire", "2026-06-24"],
+ ["PGU", "RAC-24-2BEQ8J6BH5", "Amira", "DMEO", "2026-06-25"],
+ ["PGU", "RAC-25-2FO34ERPSJ", "Amira", "OCB", "2026-06-25"],
+ ["PGU", "RAC-25-2FO34ERPSJ", "Amira", "Unifillaire", "2026-06-25"],
+ ["PGU", "RAC-24-2DOLJ18Q6A", "Amira", "1000/200", "2026-06-29"],
+ ["PGU", "RAC-24-2DOLJ18Q6A", "Amira", "OCB", "2026-06-29"],
+ ["PGU", "RAC-24-2DOLJ18Q6A", "Amira", "Unifillaire", "2026-06-29"],
+ ["PGU", "RAC-24-2DOLJ18Q6A", "Amira", "DMEO", "2026-06-29"],
+ ["PGU", "RAC-24-28YBB5Y5ZR", "Amira", "GECO", "2026-06-29"],
+ ["PGU", "RAC-24-2DODWE6Y6A", "Amira", "1000/200", "2026-07-07"],
+ ["PGU", "RAC-24-2DODWE6Y6A", "Amira", "Unifilaire", "2026-07-07"],
+ ["PGU", "RAC-24-2DODWE6Y6A", "Amira", "DMEO", "2026-07-07"],
+ ["PGU", "RAC-24-2DODWE6Y6A", "Amira", "GECO", "2026-07-07"],
+ ["ADU/PGU", "Analyse de l'avancement des 23 affaires en phase étude de Jennifer", "Jennifer", "Analyse", "2026-07-02"],
+ ["PGU", "RAC-IFE-25-002936", "Amira", "commande presta", "2026-07-09"],
+ ["PGU", "RAC-IFE-25-002341", "Amira", "OCB", "2026-07-15"],
+ ["PGU", "RAC-IFE-25-001414", "Amira", "OCB", "2026-07-15"],
+ ["PGU", "RAC-25-2FB59UUIGY", "Amira", "OCB", "2026-07-15"],
+ ["PGU", "RAC-24-2DOKENZZ6A", "Amira", "OCB", "2026-07-15"],
+ ["PGU", "RAC-IFE-25-002341", "Amira", "1000/200", "2026-07-15"],
+ ["PGU", "RAC-IFE-25-002341", "Amira", "Unifilaire", "2026-07-15"],
+ ["PGU", "RAC-IFE-25-002341", "Amira", "DMEO", "2026-07-15"],
+ ["PGU", "RAC-25-2FB59UUIGY", "Amira", "Unifilaire", "2026-07-15"],
+ ["ADU", "RAC-25-2FS1OFAWSJ", "Amira", "commande TRX EXT", "2026-07-21"],
+ ["ADU", "RAC-IFE-25-000484", "Amira", "commande TRX EXT", "2026-07-21"],
+ ["PGU", "RAC-24-2DWOOMU402", "Amira", "PPS", "2026-07-21"],
+ ["PGU", "RAC-IFE-25-000484", "Amira", "Fond de plan", "2026-07-27"],
+ ["PGU", "RAC-25-2FS1OFAWSJ", "Amira", "Fond de plan", "2026-07-27"],
+ ["PGU", "RAC-25-2FKLY599R7", "Amira", "Fond de plan", "2026-07-27"],
+ ["PGU", "RAC-24-2DOKENZZ6A", "Amira", "1000/200", "2026-07-27"],
+ ["PGU", "RAC-24-2DOKENZZ6A", "Amira", "Unifilaire", "2026-07-27"],
+ ["PGU", "RAC-24-2DOKENZZ6A", "Amira", "DMEO", "2026-07-27"],
+ ["PGU", "RAC-IFE-25-001414", "Amira", "1000/200", "2026-07-27"],
+ ["PGU", "RAC-IFE-25-001414", "Amira", "Unifilaire", "2026-07-27"],
+ ["PGU", "RAC-IFE-25-001414", "Amira", "DMEO", "2026-07-27"],
+ ["PGU", "RAC-25-2FB59UUIGY", "Amira", "DMEO", "2026-07-27"],
+ ["PGU", "RAC-25-2GHWOL9BXJ", "Amira", "OCB", "2026-08-04"],
+ ["PGU", "RAC-IFE-25-000288", "Amira", "OCB", "2026-08-04"],
+ ["PGU", "RAC-24-2DOKX4L002", "Amira", "OCB", "2026-08-04"],
+ ["PGU", "RAC-24-2E9JOOYKMU", "Amira", "OCB", "2026-08-04"],
+ ["PGU", "RAC-25-2FXVP6ES1V", "Amira", "OCB", "2026-08-04"],
+ ["PGU", "RAC-25-2H23PHKRB5", "Amira", "OCB", "2026-08-04"],
+ ["PGU", "RAC-IFE-25-000309", "Amira", "OCB", "2026-08-04"],
+ ["PGU", "RAC-IFE-25-002936", "Amira", "OCB", "2026-08-04"],
+ ["PGU", "RAC-IFE-25-003876", "Amira", "OCB", "2026-08-04"],
+ ["PGU", "RAC-IFE-25-002977", "Amira", "OCB", "2026-08-04"],
+ ["PGU", "RAC-IFE-25-002152", "Amira", "OCB", "2026-08-04"],
+ ["PGU", "RAC-25-2GHWOL9BXJ", "Amira", "DMEO", "2026-08-04"],
+ ["PGU", "RAC-25-2GHWOL9BXJ", "Amira", "Unifilaire", "2026-08-04"],
+ ["PGU", "RAC-25-2GHWOL9BXJ", "Amira", "1000/200", "2026-08-04"],
+ ["PGU", "RAC-IFE-25-005096", "Jallel", "DMR EXT", "2026-08-11"],
+ ["PGU", "RAC-25-2GZ4NX80B5", "Amira", "DMR EXT", "2026-08-11"],
+ ["ADU", "RAC-IFE-25-000675", "Amira", "PPS INT", "2026-08-12"],
+ ["ADU", "RAC-24-2BEQ8J6BH5", "Amira", "PPS INT", "2026-08-12"],
+ ["ADU", "RAC-24-28YBB5Y5ZR", "Amira", "PPS INT", "2026-08-12"],
+ ["ADU", "RAC-25-2FB59UUIGY", "Amira", "PPS INT", "2026-08-12"],
+ ["PGU", "RAC-IFE-25-000288", "Amira", "DMR", "2026-08-17"],
+ ["PGU", "RAC-IFE-25-000288", "Amira", "commande presta", "2026-08-17"],
+ ["PGU", "RAC-24-2AXJBFAEVK", "Amira", "commande presta", "2026-08-17"],
+ ["ADU", "RAC-24-2DOKX4L002", "Amira", "commande étude", "2026-08-17"],
+ ["ADU", "RAC-25-2GHWOL9BXJ", "Amira", "PPS INT", "2026-08-17"],
+ ["ADU", "RAC-24-28VHMF85N4", "Amira", "PPS INT", "2026-08-17"],
+ ["ADU", "RAC-25-2FO34ERPSJ", "Amira", "PPS INT", "2026-08-17"],
+ ["ADU", "RAC-24-2E9JOOYKMU", "Amira", "PPS INT", "2026-08-17"],
+ ["ADU", "RAC-25-2FXVP6ES1V", "Amira", "PPS INT", "2026-08-17"],
+ ["ADU", "RAC-24-2EZB7JFOQB", "Amira", "PPS INT", "2026-08-17"],
+ ["ADU", "RAC-IFE-25-000309", "Amira", "PPS INT", "2026-08-17"],
+ ["ADU", "RAC-IFE-25-001414", "Amira", "PPS INT", "2026-08-17"],
+ ["ADU", "RAC-IFE-25-002341", "Amira", "PPS INT", "2026-08-17"],
+ ["ADU", "RAC-IFE-25-002936", "Amira", "PPS INT", "2026-08-17"],
+ ["ADU", "RAC-IFE-25-003876", "Amira", "PPS INT", "2026-08-17"],
+ ["ADU", "RAC-IFE-25-002977", "Amira", "PPS INT", "2026-08-17"],
+ ["ADU", "RAC-24-2DOLJ18Q6A", "Amira", "CMD INT", "2026-08-19"],
+ ["ADU", "RAC-24-2DEJI94ZIT", "Amira", "CMD INT", "2026-08-19"],
+ ["ADU", "RAC-24-2DOKX4L002", "Amira", "CMD INT", "2026-08-19"],
+ ["ADU", "RAC-24-2DOKNUS102", "Amira", "CMD INT", "2026-08-19"],
+ ["ADU", "RAC-IFE-25-005096", "Jallel", "OCB", "2026-08-18"],
+ ["PGU", "RAC-24-2DOKENZZ6A", "Amira", "CMD INT", "2026-08-19"],
+ ["PGU", "RAC-25-2H23PHKRB5", "Amira", "CMD INT", "2026-08-20"],
+ ["PGU", "RAC-25-2FKP3KO2R7", "Amira", "CLIN/ PDL", "2026-08-21"],
+ ["PGU", "RAC-25-2FKLY599R7", "Amira", "CLIN/ PDL", "2026-08-21"],
+ ["PGU", "RAC-25-2G7J97T3RP", "Amira", "CLIN/ PDL", "2026-08-21"],
+ ["PGU", "RAC-24-2ARTT808RO", "Amira", "CLIN/ PDL", "2026-08-21"],
+ ["PGU", "_RAC-24-2DU40YZX6A", "Amira", "CLIN/ PDL", "2026-08-21"],
+ ["PGU", ".RAC-25-2GZ4NX80B5", "Amira", "CLIN/ PDL", "2026-08-21"],
+ ["PGU", "RAC-25-2GHWOL9BXJ", "Amira", "CLIN/ PDL", "2026-08-21"],
+ ["PGU", "RAC-IFE-25-000484", "Amira", "CLIN/ PDL", "2026-08-21"],
+ ["PGU", "RAC-IFE-25-005096", "DJA", "CLIN/ PDL", "2026-08-24"],
+ ["ADU", "RAC-IFE-26-001608", "Amira", "DMR", "2026-08-26"],
+ ["ADU", "RAC-25-2GHWOL9BXJ", "Amira", "FDO", "2026-08-26"],
+ ["PGU", "RAC-IFE-25-000484", "Amira", "DMR EXT", "2026-08-25"],
+ ["ADU", "RAC-25-2FKLY599R7", "Amira", "DMR EXT", "2026-08-26"],
+ ["ADU", "RAC-25-2FKLY599R7", "Amira", "FDO", "2026-08-26"],
+ ["ADU", "RAC-24-2DWOOMU402", "Amira", "FDO", "2026-08-27"],
+ ["PGU", "RAC-24-2DODWE6Y6A", "Amira", "COommande INT", "2026-08-31"],
+ ["ADU", "RAC-24-2DODWE6Y6A", "Amira", "DMR INT", "2026-09-02"],
+ ["ADU", "RAC-25-2GZ4NX80B5", "Amira", "Avenant DIE", "2026-09-15"],
+ ["ADU", "RAC-25-2FO34ERPSJ", "Amira", "Avenant DIE", "2026-09-15"],
+ ["ADU", "RAC-IFE-25-000675", "Amira", "Avenant DIE", "2026-09-15"],
+ ["ADU", "RAC-IFE-25-000288", "Amira", "Avenant DIE", "2026-09-15"],
+ ["ADU", "RAC-24-2ARTT808RO", "Amira", "Création PDL", "2026-09-15"],
+ ["ADU", "RAC-24-28VHMF85N4", "Amira", "FDO", "2026-09-15"],
+ ["ADU", "RAC-24-2DOLJ18Q6A", "Amira", "FDO", "2026-09-15"],
+ ["ADU", "RAC-IFE-25-000675", "Amira", "FDO", "2026-09-15"],
+ ["ADU", "RAC-IFE-25-000288", "Amira", "FDO", "2026-09-15"],
+ ["ADU", "RAC-25-2FO34ERPSJ", "Amira", "FDO", "2026-09-15"],
+ ["PGU", "RAC-IFE-25-001414", "Amira", "DMR INT", "2026-09-09"],
+ ["PGU", "RAC-IFE-25-002936", "Amira", "1000/200", "2026-09-10"],
+ ["PGU", "RAC-IFE-25-002937", "Amira", "Unifilaire", "2026-09-11"],
+ ["PGU", "RAC-IFE-25-002938", "Amira", "DMEO", "2026-09-12"],
+ ["ADU", "RAC-24-2DODWE6Y6A", "Amira", "FDO", "2026-09-16"],
+ ["ADU", "RAC-25-2FB59UUIGY", "Amira", "FDO", "2026-09-16"],
+ ["ADU", "RAC-IFE-25-002341", "Amira", "FDO", "2026-09-17"],
+ ["ADU", "RAC-IFE-25-001414", "Amira", "FDO", "2026-09-17"],
+ ["ADU", "RAC-24-2DOKENZZ6A", "Amira", "FDO", "2026-09-17"],
+ ["ADU", "RAC-IFE-25-000288", "Amira", "PPS INT", "2026-09-22"],
+ ["ADU", "RAC-IFE-25-000288", "Amira", "PPS EXT", "2026-09-22"],
+ ["PGU", "RAC-25-2GHWOL9BXJ", "Amira", "DMR EXT", "2026-09-22"],
+ ["PGU", "RAC-25-2GHWOL9BXJ", "Amira", "DMR INT", "2026-09-22"],
+ ["PGU", "RAC-25-2GHWOL9BXJ", "Amira", "CMD EXT", "2026-09-22"],
+ ["PGU", "RAC-25-2GHWOL9BXJ", "Amira", "CMD INT", "2026-09-22"],
+ ["ADU", "RAC-24-2DOLJ18Q6A", "Amira", "PPS INT", "2026-09-24"],
+ ["ADU", "RAC-24-2DOKX4L002", "Amira", "PPS INT", "2026-09-24"],
+ ["ADU", "RAC-24-2DOKNUS102", "Amira", "PPS INT", "2026-09-24"],
+ ["ADU", "RAC-24-2DOKENZZ6A", "Amira", "PPS INT", "2026-09-24"],
+ ["ADU", "RAC-25-2FO34ERPSJ", "Amira", "PPS EXT", "2026-09-24"],
+ ["ADU", "RAC-24-2DEJI94ZIT", "Amira", "PPS INT", "2026-09-24"],
+ ["ADU", "RAC-24-2DEJI94ZIT", "Amira", "PPS EXT", "2026-09-24"],
+ ["ADU", "RAC-25-2FXVP6ES1V", "Amira", "PPS EXT", "2026-09-24"],
+ ["ADU", "RAC-IFE-26-006218", "Amira", "PPS INT", "2026-09-24"],
+ ["ADU", "RAC-IFE-26-006218", "Amira", "PPS EXT", "2026-09-24"],
+ ["ADU", "RAC-25-2H23PHKRB5", "Amira", "PPS INT", "2026-09-24"],
+ ["ADU", "RAC-25-2H23PHKRB5", "Amira", "PPS EXT", "2026-09-24"],
+ ["ADU", "RAC-24-2EZB7JFOQB", "Amira", "PPS INT", "2026-09-24"],
+ ["ADU", "RAC-IFE-25-000309", "Amira", "PPS INT", "2026-09-24"],
+ ["ADU", "RAC-IFE-25-001414", "Amira", "PPS INT", "2026-09-24"],
+ ["ADU", "RAC-IFE-25-002341", "Amira", "PPS INT", "2026-09-24"],
+ ["ADU", "RAC-IFE-25-002936", "Amira", "PPS INT", "2026-09-24"],
+ ["ADU", "RAC-IFE-25-002152", "Amira", "PPS EXT", "2026-09-24"],
+ ["ADU", "RAC-IFE-25-001414", "Amira", "CMD INT", "A FAIRE"],
+ ["ADU", "RAC-IFE-25-001414", "Amira", "DMR INT", "A FAIRE"],
+ ["ADU", "RAC-25-2FKP3KO2R7", "Amira", "PARKBRIDGE", "A FAIRE"],
+ ["ADU", "RAC-24-2DOLJ18Q6A", "Amira", "CMD INT", "A FAIRE"],
+ ["ADU", "RAC-24-2DOKENZZ6A", "Amira", "CMD INT", "A FAIRE"],
+ ["ADU", "RAC-24-2DOKNUS102", "Amira", "CMD INT", "A FAIRE"],
+ ["ADU", "RAC-24-2DOKX4L002", "Amira", "CMD INT", "A FAIRE"],
+ ["ADU", "RAC-24-2DOLJ18Q6A", "Amira", "DMR INT", "A FAIRE"],
+ ["ADU", "RAC-24-2DOKENZZ6A", "Amira", "DMR INT", "A FAIRE"],
+ ["ADU", "RAC-24-2DOKNUS102", "Amira", "DMR INT", "A FAIRE"],
+ ["ADU", "RAC-24-2DOKX4L002", "Amira", "DMR INT", "A FAIRE"],
+ ["ADU", "RAC-25-2FI7LJH6R7", "Amira", "ECOME + PMEO", "A FAIRE ? (att rep Amira)"]
+];
+function tacheBoCle(s){ return String(s||'').replace(/\s+/g,' ').trim().toUpperCase(); }
+function tacheBoEmpreinte(t){
+  return [tacheBoCle(t.aff), tacheBoCle(t.tache), String(t.date||'').trim(),
+          tacheBoCle(t.cp), tacheBoCle(t.pour)].join('|');
+}
+// Date de réalisation, « FAIT » sans date, ou un état ouvert (A FAIRE...)
+function tacheBoStatut(t, st){
+  st=String(st||'').trim();
+  if(/^\d{4}-\d{2}-\d{2}$/.test(st)){ delete t.fait; t.date=st; t.mois=String(+st.slice(5,7)); return; }
+  if(st.toUpperCase()==='FAIT'){ tacheFaire(t, ''); return; }
+  delete t.fait; t.date=st;
+}
+function repriseTachesBo0924(){
+  if(MIGR.tachesBo0924) return '';
+  // Déjà passée, puis drapeau perdu dans une fusion : on ne double rien
+  if(IRVE_TACHES.some(function(t){ return String(t.src||'').indexOf('0924|')===0; })){
+    MIGR.tachesBo0924=true;
+    return '';
+  }
+  sauvegardeSecours('avant la reprise des tâches back-office du 24/09/2026');
+  MIGR.tachesBo0924Avant=JSON.parse(JSON.stringify(IRVE_TACHES));
+  var base={};
+  IRVE_TACHES_BASE.forEach(function(b){ var k=tacheBoEmpreinte(b); base[k]=(base[k]||0)+1; });
+  // Intacte = telle que chargée depuis le code, personne n'y a touché
+  function intacte(t){
+    if(t.fait || t.crd) return false;
+    return (base[tacheBoEmpreinte(t)]||0)>0;
+  }
+  var libres={};
+  IRVE_TACHES.forEach(function(t){
+    var k=tacheBoCle(t.aff)+'|'+tacheBoCle(t.tache);
+    (libres[k]=libres[k]||[]).push(t);
+  });
+  var rap={communes:0, ajoutees:0, remplacees:0, gardees:[], nonRetro:[]};
+  var liste=[];
+  TACHES_BO_0924.forEach(function(r, i){
+    var k=tacheBoCle(r[1])+'|'+tacheBoCle(r[3]);
+    var t=(libres[k]||[]).shift();
+    var st=String(r[4]||'').trim();
+    var faiteFichier=/^\d{4}-\d{2}-\d{2}$/.test(st) || st.toUpperCase()==='FAIT';
+    if(t){
+      rap.communes++;
+      if(intacte(t)){
+        if(r[0]) t.cp=r[0];
+        if(r[2]) t.pour=r[2];
+        tacheBoStatut(t, st);
+      } else {
+        // Saisie faite dans RADAR : on ne remplit que ce qui manque
+        if(!t.cp && r[0]) t.cp=r[0];
+        if(!t.pour && r[2]) t.pour=r[2];
+        if(tacheOuverte(t) && faiteFichier) tacheBoStatut(t, st);
+        else if(!tacheOuverte(t) && !faiteFichier) rap.nonRetro.push((t.aff||'?')+' '+(t.tache||''));
+      }
+    } else {
+      t={hors:'', cp:r[0], aff:r[1], pour:r[2], tache:r[3]};
+      tacheBoStatut(t, st);
+      tacheId(t);
+      rap.ajoutees++;
+    }
+    t.src='0924|'+i;
+    liste.push(t);
+  });
+  Object.keys(libres).forEach(function(k){
+    libres[k].forEach(function(t){
+      if(intacte(t)){ rap.remplacees++; return; }
+      liste.push(t);
+      rap.gardees.push((t.aff||'?')+' '+(t.tache||''));
+    });
+  });
+  IRVE_TACHES.length=0;
+  liste.forEach(function(t){ IRVE_TACHES.push(t); });
+  var ouv=IRVE_TACHES.filter(tacheOuverte).length;
+  MIGR.tachesBo0924=true;
+  MIGR.tachesBo0924Rapport={quand:new Date().toISOString(), fichier:TACHES_BO_0924.length,
+    communes:rap.communes, ajoutees:rap.ajoutees, remplacees:rap.remplacees,
+    gardees:rap.gardees, nonRetro:rap.nonRetro, total:IRVE_TACHES.length, ouvertes:ouv};
+  try{ console.info('Reprise tâches BO 24/09', MIGR.tachesBo0924Rapport); }catch(e){}
+  return 'Tâches back-office : '+IRVE_TACHES.length+' dont '+(IRVE_TACHES.length-ouv)
+    +' faites, reprises du fichier d’Alexis';
+}
+// Remettre la liste de tâches d'avant la reprise. Retour arrière d'urgence :
+// ce qui aurait été saisi depuis sur les tâches serait remplacé.
+// Depuis la console : annulerTachesBo0924()
+function annulerTachesBo0924(){
+  var av=MIGR.tachesBo0924Avant;
+  if(!Array.isArray(av)){ showToast('Aucune liste d’avant à remettre'); return 0; }
+  sauvegardeSecours('avant annulation de la reprise des tâches du 24/09/2026');
+  IRVE_TACHES.length=0;
+  JSON.parse(JSON.stringify(av)).forEach(function(t){ IRVE_TACHES.push(t); });
+  // Le drapeau reste posé : la reprise ne se rejoue pas toute seule
+  MIGR.tachesBo0924Annulee=new Date().toISOString();
+  SYNC_REV++; sbSave();
+  try{ buildTabs(); renderAll(); }catch(e){}
+  showToast('Tâches back-office remises comme avant le 24/09');
+  return IRVE_TACHES.length;
+}
+try{ window.annulerTachesBo0924=annulerTachesBo0924; }catch(e){}
 
 // Ancien décalage relatif, gardé en repli pour ne rien perdre
 function decalUo(a,k){ return ((a.decal||{})[k])||0; }
@@ -23650,7 +24068,7 @@ window.addEventListener('beforeunload', function(e){
 // On ne recharge jamais de force, une saisie en cours serait perdue :
 // on propose, la personne choisit son moment.
 // ══════════════════════════════════════════════════════════════
-var APP_VERSION='2026-09-24-1';
+var APP_VERSION='2026-09-24-2';
 var MAJ_VUE=false;
 function bandeauMaj(v){
   if(MAJ_VUE || document.getElementById('maj-banner')) return;
