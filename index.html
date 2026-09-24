@@ -3014,7 +3014,30 @@ function rMecaGrid(){
       reaffecterModal(cpA, a, function(){ rMecaGrid(); });
     });
   });
-  row('Lot',function(c,a){ c.textContent=(a.meca||{}).groupe||'\u2014'; });
+  row('Lot',function(c,a){
+    c.textContent=(a.meca||{}).groupe||'\u2014';
+    // Date de livraison du lot, reprise du fichier d'Alexis du 24/09/2026.
+    // Elle se modifie en cliquant, comme la station et la ville.
+    var dl=document.createElement('div');
+    dl.style.cssText='font-size:7.5px;font-weight:700;color:var(--t3);cursor:pointer';
+    function peindreLiv(){
+      var v=(a.meca||{}).livraison;
+      dl.textContent=v?('livraison '+dFR(v)):'+ date de livraison';
+      dl.style.color=v?'var(--t3)':'var(--b2)';
+    }
+    peindreLiv();
+    dl.title='Date de livraison du lot\nCliquer pour la modifier';
+    dl.addEventListener('click',function(e){
+      e.stopPropagation();
+      uiPrompt(((a.meca||{}).station||a.code)+' \u2014 Date de livraison', dFR((a.meca||{}).livraison), function(nv){
+        var iso=frToISO(nv);
+        if(!a.meca) a.meca={};
+        if(iso) a.meca.livraison=iso; else delete a.meca.livraison;
+        peindreLiv(); sbSave();
+      },{placeholder:'JJ/MM/AAAA'});
+    });
+    c.appendChild(dl);
+  });
   // Bandeau des livrables
   var trU=document.createElement('tr'); trU.className='ag-band-bud ag-band';
   var tdU=document.createElement('td'); tdU.className='ag-lbl';
@@ -4078,6 +4101,8 @@ function sbLoad(){
           try{ var nI=importerAffairesIrveSept26()+importerAffairesIrveSept26B();
                if(nI) msg.push(nI+' affaires IRVE ajoutées en étude chez Paul');
           }catch(e2){ console.warn('irveSept26',e2); }
+          // Facturation à date des fichiers d'Alexis, 24/09/2026
+          try{ var rF=repriseFactu0924(); if(rF) msg.push(rF); }catch(e2){ console.warn('factu0924',e2); }
           var nA=annulerAout26(), nC=0;
           try{ nC=importerActionsCommentaires(); }catch(e2){ console.warn('actionsCom',e2); }
           if(bascule) msg.push(bascule.doublons+' doublons IRVE retirés du portefeuille d’Alexis'
@@ -12671,6 +12696,675 @@ function importerAffairesIrveSept26B(){
   MIGR.irveSept26b=true;
   return n;
 }
+// ══════════════════════════════════════════════════════════════
+// FACTURATION À DATE, reprise du 24/09/2026
+// Fichiers d'Alexis transmis par Steve : MAJ IRVE, MAJ RATP, MAJ ARMA.
+//  - IRVE : les colonnes K à U donnent la facturation qu'on devrait avoir à
+//    date. Elle passe en « facture demandée », mois de septembre 2026, à
+//    confirmer. L'avancement et le commentaire viennent du même fichier. Un
+//    commentaire vide dans le fichier n'efface pas celui de RADAR.
+//  - RATP : les 9 livrables des 6 stations prennent les valeurs du fichier.
+//    Les OK passent en facture demandée, septembre 2026. Dates de livraison
+//    des lots : 3.1 le 30/10/2026, 3.2 le 02/10/2026.
+//  - ARMA : la facturation réalisée, reprise telle quelle comme facturée.
+//    Les mentions libres (BLOC, A PROG...) restent, elles ne comptent pas.
+// Rien n'est créé ni supprimé : une affaire absente de RADAR est signalée.
+// Chaque affaire traitée porte rep0924 : si la reprise se rejouait après une
+// fusion, elle ne repasserait pas sur ce qui a été saisi depuis.
+// Les numéros de téléphone des commentaires ont été retirés : ce fichier est
+// public.
+// ══════════════════════════════════════════════════════════════
+var REP0924_DATE='2026-09-24', REP0924_MOIS='2026-09';
+// Ligne : n°, avancement, dernière action, resp., commentaire,
+// O (historique) ou N (nouveau), facturation {groupe_UO: valeur}
+var IRVE_FACTU_0924 = [
+ ["RAC-IFE-26-006218", "1 - APS", "27/07/2026", "CP", "Si pas de retour avant la fin de la semaine cloture", "N", {}],
+ ["RAC-IFE-26-007065", "1 - APS", "21/09/2026", "CC", "lancer tous le bordel", "N", {}],
+ ["RAC-IFE-26-002162", "1 - APS", "11/09/2026", "CP", "dgiovanni", "N", {}],
+ ["RAC-IFE-25-006532", "1 - APS", "11/09/2026", "CP", "dgiovanni", "N", {}],
+ ["RAC-IFE-26-005020", "1 - APS", "11/09/2026", "CP", "", "N", {}],
+ ["RAC-IFE-26-003861", "1 - APS", "11/09/2026", "CC", "en attente APS ( commande faite)", "N", {}],
+ ["RAC-IFE-26-007991", "1 - APS", "11/09/2026", "CP", "LOLO RAPPEL + JEN", "N", {}],
+ ["RAC-IFE-26-007744", "1 - APS", "23/09/2026", "CP", "en attente APS", "N", {}],
+ ["RAC-IFE-26-007829", "1 - APS", "11/09/2026", "CC", "reprise RAC-25-000180 voir si l'étude est toujours valide", "N", {}],
+ ["RAC-IFE-26-001335", "2 - Etude", "15/09/2026", "Presta", "en attente de la programmation de la VT", "N", {}],
+ ["RAC-IFE-26-001965", "2 - Etude", "11/09/2026", "Presta étude", "programmer la visite technique avec electro mob", "N", {}],
+ ["RAC-IFE-26-004244", "2 - Etude", "03/09/2026", "CP", "transmettre la commande à A3S", "N", {}],
+ ["RAC-IFE-26-004843", "2 - Etude", "22/09/2026", "CP", "en attendre de la VT ( dupliquer l'affaire une fois qu'on à la VT )", "N", {}],
+ ["RAC-IFE-26-005505", "2 - Etude", "01/09/2026", "Presta", "en attente de la VT", "N", {}],
+ ["RAC-IFE-26-003858", "2 - Etude", "15/09/2026", "CC", "en attente d'un retour du presta afin de programmer la visite technique", "N", {}],
+ ["RAC-IFE-26-005730", "2 - Etude", "15/09/2026", "Presta", "en attente de la programmation de la VT", "N", {}],
+ ["RAC-IFE-26-005775", "2 - Etude", "10/08/2026", "CC", "en attente visite technique (copro relou)", "N", {}],
+ ["RAC-IFE-26-006312", "2 - Etude", "22/09/2026", "Presta", "en attente de la VT", "N", {}],
+ ["RAC-IFE-26-005985", "2 - Etude", "22/09/2026", "CC", "En attente pour savoir si l'ancienne étude est toujours valide", "N", {}],
+ ["RAC-IFE-26-006269", "2 - Etude", "11/08/2026", "CC", "en attente de l'étude", "N", {}],
+ ["RAC-IFE-26-006181", "2 - Etude", "02/09/2026", "Presta", "en attente de la VT", "N", {}],
+ ["RAC-IFE-26-004840", "2 - Etude", "06/08/2026", "CC", "en attente visite technique", "N", {}],
+ ["RAC-IFE-26-006279", "2 - Etude", "07/09/2026", "Presta", "attente de la programmation de l'étude", "N", {}],
+ ["RAC-IFE-26-005516", "2 - Etude", "02/09/2026", "Presta", "en attente de la VT", "N", {}],
+ ["RAC-IFE-26-006008", "2 - Etude", "22/09/2026", "Presta", "en attente de la VT", "N", {}],
+ ["RAC-IFE-26-007055", "2 - Etude", "09/09/2026", "Presta", "en attente de la VT", "N", {}],
+ ["RAC-IFE-26-006060", "2 - Etude", "22/09/2026", "Presta", "en attente de la date de VT, client à informer une fois la date obtenue", "N", {}],
+ ["RAC-IFE-26-007223", "2 - Etude", "14/09/2026", "Presta", "en attente de la date de VT", "N", {}],
+ ["RAC-IFE-26-007615", "2 - Etude", "03/09/2026", "Presta", "en attente de l'étude", "N", {}],
+ ["RAC-IFE-26-004879", "2 - Etude", "21/09/2026", "CC", "attente de la visite technique", "N", {}],
+ ["RAC-IFE-25-009582", "2 - Etude", "21/09/2026", "CC", "en attente organisation de la visite technique", "N", {}],
+ ["RAC-IFE-26-003122", "2 - Etude", "15/09/2026", "CP", "Commande envoyée pour validation, programmer la VT", "N", {}],
+ ["RAC-IFE-26-007866", "2 - Etude", "22/09/2026", "CC", "EN attente de la programmation de la VT", "N", {}],
+ ["RAC-IFE-26-005489", "2 - Etude", "21/09/2026", "Presta", "Aller sur site pour ouvrir le poste + VT à programmer", "N", {}],
+ ["RAC-IFE-26-008481", "2 - Etude", "22/09/2026", "CC", "EN attente de la programmation de la VT", "N", {}],
+ ["RAC-IFE-26-008514", "2 - Etude", "21/09/2026", "CP", "en attente de la date de VT", "N", {}],
+ ["RAC-IFE-25-004534", "2 - Etude", "10/09/2026", "CP", "Une commande à été faite par djibi en FEVRIER voir ou ça en est avec spie", "N", {}],
+ ["RAC-IFE-25-007547", "2 - Etude", "10/09/2026", "CC", "en attente du retour du BE pour la convention (faire le point avec le client pour être sur que c'est toujours d'actualité )", "N", {}],
+ ["RAC-IFE-25-006867", "2 - Etude", "10/09/2026", "CP", "refaire une visite sur site pour lever les questions de weimin ( amira y est déjà aller )", "N", {}],
+ ["RAC-24-28FF26EHXF", "2 - Etude", "22/09/2026", "CP", "en attente de la MAJ de FCELEC", "O", {"H_TRX": "NA"}],
+ ["RAC-24-23NZK8IYUR", "2 - Etude", "06/05/2026", "CP", "Voir avec Lucas sur SGE si possible de fusionner des départs pour en libérer 4 + mutation à 1000kVA possible ? --> Si impossible, réaliser étude pour création de poste --> Si possible, MAJ des études actuelles avec restructuration des CM", "O", {"H_TRX": "NA"}],
+ ["RAC-24-2BGDNYMQ3Q", "5 - ODR", "", "CP", "faire la demande de cloture à nico", "O", {"H_ETD": "0,75", "H_TRX": "NA"}],
+ ["RAC-IFE-26-004971", "2 - Etude", "22/09/2026", "CC", "EN attente de la programmation de la VT", "N", {}],
+ ["RAC-IFE-25-006845", "2 - Etude", "22/09/2026", "Presta", "en attente de l'étude", "N", {}],
+ ["RAC-IFE-26-004433", "2 - Etude", "22/09/2026", "CC", "EN attente de la programmation de la VT", "N", {}],
+ ["RAC-IFE-26-003137", "2.5 - Etude programmer", "11/09/2026", "Presta", "attendre l'étude (VT le 09/09/2026)", "N", {}],
+ ["RAC-IFE-26-003591", "2.5 - Etude programmer", "23/09/2026", "CLIENT", "attendre l'étude signé", "N", {}],
+ ["RAC-IFE-26-003086", "2.5 - Etude programmer", "09/09/2026", "Presta", "en attente de la VT le 21 septembre", "N", {}],
+ ["RAC-IFE-26-003905", "2.5 - Etude programmer", "07/09/2026", "Presta", "en attente du retour de BETEP pour les modifs", "N", {}],
+ ["RAC-IFE-26-003906", "2.5 - Etude programmer", "10/08/2026", "Presta", "visite le 29 septembre", "N", {}],
+ ["RAC-IFE-26-003902", "2.5 - Etude programmer", "11/09/2026", "Presta", "PRIO / en attente de l'étude ) y aller pour ouvrir le poste le 29 septembre 2026", "N", {}],
+ ["RAC-IFE-26-002789", "2.5 - Etude programmer", "24/07/2026", "Presta", "attendre l'étude vt le 28 septembre", "N", {}],
+ ["RAC-IFE-26-003904", "2.5 - Etude programmer", "11/09/2026", "Presta", "TC : attente de l'étude de travaux conseil", "N", {}],
+ ["RAC-IFE-26-004428", "2.5 - Etude programmer", "23/09/2026", "Presta", "attente la reprise d'étude du presta", "N", {}],
+ ["RAC-IFE-26-003382", "2.5 - Etude programmer", "22/09/2026", "CP", "Valider l'étude avec Lucas", "N", {}],
+ ["RAC-IFE-26-001857", "2.5 - Etude programmer", "23/09/2026", "CLIENT", "attendre l'étude signé", "N", {}],
+ ["RAC-IFE-26-004181", "2.5 - Etude programmer", "11/09/2026", "Presta", "VT lundi 14 septembre", "N", {}],
+ ["RAC-IFE-26-003947", "2.5 - Etude programmer", "22/09/2026", "Presta", "VT prévu le 06/10", "N", {}],
+ ["RAC-IFE-26-004175", "2.5 - Etude programmer", "11/09/2026", "Presta", "VT le 25 septembre", "N", {}],
+ ["RAC-IFE-26-004907", "2.5 - Etude programmer", "16/09/2026", "CC", "en attente de l'étude VT réalisé le 14 septembre", "N", {}],
+ ["RAC-IFE-26-004563", "2.5 - Etude programmer", "23/09/2026", "CLIENT", "attendre l'étude signé", "N", {}],
+ ["RAC-IFE-26-005706", "2.5 - Etude programmer", "21/09/2026", "CP", "verifier l'étude avec Lucas", "N", {}],
+ ["RAC-IFE-26-001833", "2.5 - Etude programmer", "23/09/2026", "CLIENT", "attendre l'étude signé", "N", {}],
+ ["RAC-IFE-26-005984", "2.5 - Etude programmer", "06/08/2026", "CC", "en attente de l'étude VT le 1 oct", "N", {}],
+ ["RAC-IFE-26-005986", "2.5 - Etude programmer", "02/09/2026", "CC", "VT le lundi 28 septembre (aller a la visite car ouverture de poste)", "N", {}],
+ ["RAC-IFE-26-006036", "2.5 - Etude programmer", "11/09/2026", "CP", "Vérifier l'étude technique", "N", {}],
+ ["RAC-IFE-26-004187", "2.5 - Etude programmer", "23/09/2026", "CLIENT", "attendre l'étude signé", "N", {}],
+ ["RAC-IFE-26-006184", "2.5 - Etude programmer", "22/09/2026", "CP", "Vérifier l'étude technique", "N", {}],
+ ["RAC-IFE-26-001964", "2.5 - Etude programmer", "10/09/2026", "Presta", "en attente de la VT", "N", {}],
+ ["RAC-IFE-26-006260", "2.5 - Etude programmer", "15/09/2026", "Presta", "en attente de la VT le 21/09/2026", "N", {}],
+ ["RAC-IFE-26-006488", "2.5 - Etude programmer", "22/09/2026", "CP", "Vérifier l'étude technique", "N", {}],
+ ["RAC-IFE-26-006180", "2.5 - Etude programmer", "16/09/2026", "CC", "VT le 29 OCTOBRE", "N", {}],
+ ["RAC-IFE-26-007707", "2.5 - Etude programmer", "24/08/2026", "Presta", "en attente de l'étude 16 septembre", "N", {}],
+ ["RAC-IFE-26-006708", "2.5 - Etude programmer", "01/09/2026", "Presta", "VT le lundi 28 septembre (aller a la visite car ouverture de poste)", "N", {}],
+ ["RAC-IFE-26-007459", "3 - Convention", "17/09/2026", "CP", "faire signer la convention et tous les éléments ADV", "N", {"S_ETD": "1"}],
+ ["RAC-IFE-26-007596", "3 - Convention", "14/09/2026", "Client", "en attente de la convention signé etc", "N", {"M_ETD": "1"}],
+ ["RAC-IFE-26-004040", "3 - Convention", "19/08/2026", "CC", "revoir aves désiré", "N", {"M_ETD": "1"}],
+ ["RAC-IFE-26-004044", "3 - Convention", "19/08/2026", "CC", "revoir avec désiré", "N", {"M_ETD": "1"}],
+ ["RAC-25-2GP0BY4UXJ", "3 - Convention", "21/07/2026", "Presta", "attendre le retour de sogetrel", "N", {"M_ETD": "1"}],
+ ["RAC-IFE-25-003518", "3 - Convention", "10/09/2026", "CP", "faire signé la convention", "N", {"S_ETD": "0,5"}],
+ ["RAC-IFE-25-006419", "3 - Convention", "10/09/2026", "CP", "faire le point avec izi sur comment c'est passer l'AG en début Oct", "N", {}],
+ ["RAC-IFE-25-006947", "3 - Convention", "10/09/2026", "CP", "faire le point avec capborne sur les liste mandat et pv ag", "N", {}],
+ ["RAC-IFE-25-008366", "3 - Convention", "10/09/2026", "CP", "faire signer la convention appel Capborne pour savoir ou ça en est", "N", {"S_ETD": "0,5"}],
+ ["RAC-IFE-25-008482", "3 - Convention", "10/09/2026", "CP", "faire signer la convention appel IZI", "N", {"M_ETD": "0,5"}],
+ ["RAC-IFE-26-002540", "3 - Convention", "10/09/2026", "CP", "faire signer la convention Electromob", "N", {"M_ETD": "0,5"}],
+ ["RAC-24-234F7L83SW", "3 - Convention", "15/04/2026", "Presta", "BETEP : Cobalt intérieur et extérieur ; attente BETEP", "O", {"H_ETD": "0,75", "H_TRX": "NA"}],
+ ["RAC-24-27FUQY8X87", "3 - Convention", "26/03/2026", "CP", "voir avec lucas la reprise d'étude", "O", {"H_ETD": "0,75", "H_TRX": "NA"}],
+ ["RAC-24-282UROE1BB", "3 - Convention", "01/09/2026", "Client", "attente des mandat et liste si pas de réponse avant vendredi cloture", "O", {"H_ETD": "0,75", "H_TRX": "NA"}],
+ ["RAC-IFE-25-008798", "3 - Convention", "10/08/2026", "Client", "en attente de la fin du recensement Si pas de retour avant le 22 clôture", "O", {"H_ETD": "0,75", "H_TRX": "NA"}],
+ ["RAC-IFE-25-001825", "4 - ADVENIR", "10/09/2026", "CP", "obtenir les mandats et liste appel Laurent Debe", "N", {"S_ETD": "0,5"}],
+ ["RAC-IFE-25-008612", "4 - ADVENIR", "10/09/2026", "CP", "obtenir les éléments pour advenir yann", "N", {"S_ETD": "0,5"}],
+ ["RAC-IFE-25-007883", "4 - ADVENIR", "10/09/2026", "CP", "obtenir les éléments pour advenir yann", "N", {"M_ETD": "0,5"}],
+ ["RAC-24-24SGGQKFI8", "4 - ADVENIR", "01/09/2026", "CP", "faire un mail a la cliente pour lasuite du projet", "O", {"H_ETD": "0,75", "H_TRX": "NA"}],
+ ["RAC-24-28YEQBAIZR", "4 - ADVENIR", "06/08/2026", "Client", "en attente advenir", "O", {"H_ETD": "0,75", "H_TRX": "NA"}],
+ ["RAC-25-2GHIRTXV69", "4 - ADVENIR", "10/09/2026", "BY3", "BY3 : La faire contresigné ( convention)", "O", {"H_ETD": "0,75", "H_TRX": "NA"}],
+ ["RAC-IFE-25-000700", "5 - ODR", "17/09/2026", "CP", "en attente de l'ODR", "N", {"S_ETD": "0,5"}],
+ ["RAC-25-2HU3VWCNJ9", "5 - ODR", "10/09/2026", "CP", "faire signé l'ODR appel benjamin", "N", {"M_ETD": "0,5"}],
+ ["RAC-IFE-25-001861", "5 - ODR", "10/09/2026", "CP", "faire signé l'ODR", "N", {"M_ETD": "0,5"}],
+ ["RAC-IFE-25-003143", "5 - ODR", "10/09/2026", "CP", "faire signé l'ODR appel electromob", "N", {"M_ETD": "0,5"}],
+ ["RAC-IFE-26-004169", "5 - ODR", "21/09/2026", "CC", "en attente nouvelle ODR", "O", {"H_ETD": "0,75", "H_TRX": "NA"}],
+ ["RAC-IFE-26-005894", "5 - ODR", "09/09/2026", "CC", "en attente édition de l'ODR", "O", {"H_ETD": "0,75", "H_TRX": "NA"}],
+ ["RAC-IFE-25-009360", "5 - ODR", "15/07/2026", "Client", "ODR signé par mail voir si la compta leur donne une facture", "O", {"H_ETD": "0,75", "H_TRX": "NA"}],
+ ["RAC-IFE-25-001761", "5 - ODR", "16/09/2026", "Client", "en attente du payement", "O", {"H_ETD": "0,75", "H_TRX": "NA"}],
+ ["RAC-25-2GYXBJ5I8K", "5 - ODR", "16/09/2026", "Client", "attendre le payement et les appelé pour signer sur le pracma", "O", {"H_ETD": "0,75", "H_TRX": "NA"}],
+ ["RAC-24-28ECC7N13M", "5 - ODR", "09/09/2026", "Client", "appel pour savoir si: ODR pas loin d'être signé + Signature de la nouvelle convention sur le pracma", "O", {"H_ETD": "0,75", "H_TRX": "NA"}],
+ ["RAC-24-23CY06UNO8", "5 - ODR", "01/09/2026", "Client", "en attente du retour client", "O", {"H_ETD": "0,75", "H_TRX": "NA"}],
+ ["RAC-24-23VDJOZ1V6", "5 - ODR", "01/06/2026", "CP", "modification de l'ODR demander. voir avec quelqu'un pour les autres demandes (princesse) voir avec quelqu'un de IZI", "O", {"H_ETD": "0,75", "H_TRX": "NA"}],
+ ["RAC-24-269J4I1AQ8", "5 - ODR", "04/08/2026", "Client", "en attente du retour client", "O", {"H_ETD": "0,75", "H_TRX": "NA"}],
+ ["RAC-25-2HGAJT1Z3P", "6 - En travaux", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "1", "H_TRX": "NA"}],
+ ["RAC-IFE-26-000434", "6 - En travaux", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "1", "H_TRX": "NA"}],
+ ["DA21/066193", "6 - En travaux", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "1", "H_TRX": "NA"}],
+ ["RAC-IFE-26-001748", "6 - En travaux", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "1", "H_TRX": "NA"}],
+ ["RAC-25-2GYWJFN5B5", "6 - En travaux", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "1", "H_TRX": "1"}],
+ ["RAC-IFE-25-005306", "6 - En travaux", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "1", "H_TRX": "1"}],
+ ["RAC-IFE-25-005109", "6 - En travaux", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "1", "H_TRX": "1"}],
+ ["RAC-24-23EAZABFV6", "6 - En travaux", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "1", "H_TRX": "1"}],
+ ["RAC-24-24800EOD9C", "6 - En travaux", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "1", "H_TRX": "1"}],
+ ["RAC-25-2HR8LJH0J9", "6 - En travaux", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "1", "H_TRX": "1"}],
+ ["RAC-IFE-25-002575", "6 - En travaux", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "1", "H_TRX": "1"}],
+ ["RAC-24-282K190ULW", "6 - En travaux", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "1", "H_TRX": "1"}],
+ ["RAC-24-28FGH8JR3M", "6 - En travaux", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "1", "H_TRX": "1"}],
+ ["RAC-25-2F9505FEVN", "6 - En travaux", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "1", "H_TRX": "1"}],
+ ["RAC-24-23L17GS5V6", "6 - En travaux", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "1", "H_TRX": "1"}],
+ ["DA21/065905", "6 - En travaux", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "1", "H_TRX": "1"}],
+ ["DA21/063496", "6 - En travaux", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "1", "H_TRX": "1"}],
+ ["RAC-24-26EO027GET", "6 - En travaux", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "1", "H_TRX": "1"}],
+ ["RAC-IFE-25-004664", "6 - En travaux", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "1", "H_TRX": "1"}],
+ ["RAC-24-2D9UFRJ80G", "6 - En travaux", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "1", "H_TRX": "NA"}],
+ ["RAC-24-23EEOTA2V6", "6 - En travaux", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "1", "H_TRX": "1"}],
+ ["RAC-24-27FYDQMT87", "6 - En travaux", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "1", "H_TRX": "1"}],
+ ["DA21/061698", "6 - En travaux", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "1", "H_TRX": "1"}],
+ ["RAC-IFE-25-004659", "6 - En travaux", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "1", "H_TRX": "1"}],
+ ["RAC-IFE-25-008990", "6 - En travaux", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "1", "H_TRX": "1"}],
+ ["RAC-IFE-25-003661", "6 - En travaux", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "1", "H_TRX": "1"}],
+ ["RAC-24-27U7QGTSF9", "6 - En travaux", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "1", "H_TRX": "NA"}],
+ ["RAC-25-2G67ZCJATZ", "6 - En travaux", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "1", "H_TRX": "NA"}],
+ ["RAC-24-231KS4JQZ8", "6 - En travaux", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "1", "H_TRX": "NA"}],
+ ["RAC-24-24ZHXMYKI8", "6 - En travaux", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "1", "H_TRX": "NA"}],
+ ["RAC-24-239YP42DSW", "6 - En travaux", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "1", "H_TRX": "1"}],
+ ["RAC-24-26UPI2WH20", "6 - En travaux", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "1", "H_TRX": "1"}],
+ ["RAC-IFE-25-009358", "6 - En travaux", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "1", "H_TRX": "NA"}],
+ ["RAC-25-2G4P3680TZ", "6 - En travaux", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "1", "H_TRX": "NA"}],
+ ["RAC-24-22VTV21OS7", "6 - En travaux", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "1", "H_TRX": "1"}],
+ ["RAC-IFE-25-000955", "6 - En travaux", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "1", "H_TRX": "1"}],
+ ["RAC-IFE-25-004716", "6 - En travaux", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "1", "H_TRX": "1"}],
+ ["DA21/065717", "6 - En travaux", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "1", "H_TRX": "1"}],
+ ["RAC-IFE-25-004695", "6 - En travaux", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "1", "H_TRX": "1"}],
+ ["RAC-25-2FKSRNCKVT", "6 - en travaux", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "1", "H_TRX": "NA"}],
+ ["RAC-24-263KA7XG28", "6 - en travaux", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "1", "H_TRX": "NA"}],
+ ["RAC-24-23L31G8KUR", "6 - en travaux", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "1", "H_TRX": "NA"}],
+ ["RAC-24-23MYEL8BV6", "6 - en travaux", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "1", "H_TRX": "NA"}],
+ ["RAC-24-271RB689WI", "6 - en travaux", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "1", "H_TRX": "NA"}],
+ ["RAC-24-24IMZK8TI8", "6 - En travaux", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "1", "H_TRX": "NA"}],
+ ["RAC-IFE-25-003049", "6 - En travaux", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "1", "H_TRX": "NA"}],
+ ["RAC-IFE-26-004638", "99 - a suppr", "NA", "NA", "", "N", {"S_ETD": "NA", "S_CRD": "NA", "S_TRX": "NA", "S_RCP": "NA"}],
+ ["RAC-IFE-26-005151", "99 - a suppr", "NA", "NA", "", "N", {"M_ETD": "NA", "M_CRD": "NA", "M_TRX": "NA", "M_RCP": "NA"}],
+ ["RAC-25-2HKCVREE3P", "99 - a suppr", "", "", "", "N", {"S_ETD": "NA", "S_CRD": "NA", "S_TRX": "NA", "S_RCP": "NA"}],
+ ["RAC-IFE-25-000922", "99 - a suppr", "NA", "NA", "", "N", {"M_ETD": "NA", "M_CRD": "NA", "M_TRX": "NA", "M_RCP": "NA"}],
+ ["RAC-IFE-25-000296", "99 - a suppr", "NA", "NA", "", "N", {"S_ETD": "NA", "S_CRD": "NA", "S_TRX": "NA", "S_RCP": "NA"}],
+ ["RAC-IFE-25-007033", "99 - a suppr", "NA", "NA", "", "N", {"S_ETD": "NA", "S_CRD": "NA", "S_TRX": "NA", "S_RCP": "NA"}],
+ ["RAC-25-2GC3DRXRW9", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-IFE-25-005065", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "NA", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-24-2488XJ0DET", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-24-23Y431T0ET", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-24-259JZLTCT1", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-24-2BOZL9B2NO", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-24-23ZWEHU89C", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-24-2D43WQVPVS", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-24-23LFAG1HUR", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-24-2ES6SOW4VK", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-24-2BVTARIES0", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-24-25WCSSOO9I", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-24-28ZQMPBFZR", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-25-2H0E74KB8K", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,75", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-25-2FCI3TAVVN", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-24-22VZZLO3Z8", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-24-22W098EYZ8", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-24-22VZRCLIS7", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-24-2DZQQVHM02", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-24-2CIRTMO955", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-IFE-25-001106", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-IFE-25-000168", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-24-2DPKYZJK6A", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-24-24831QDJET", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-IFE-25-001763", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-25-2FWEAX4A1V", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["DA21/066367 (création poste) / RAC-IFE-25-007885", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["DA21/066368 (création poste) / RAC-IFE-25-007886", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-24-23O0DWLVV6", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-24-23NZFQH7V6", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-24-2ETP3ABTVN", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-24-28ZR491LZR", "99 - A suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-IFE-25-002592", "99 - A suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-24-257MGDGVT1", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-24-26D5XFVFQ8", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-IFE-25-002468", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-24-259JM3OXT1", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-IFE-25-005066", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "NA", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-IFE-25-005074", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "NA", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-24-29S5NED4S1", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-24-281A9UCHBB/RAC-IFE-26-000211", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-24-285TEGY7XF", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-24-27BNCR3N04", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-24-2BC443Q21S", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "NA", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-25-2FI4VFPWVT", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-24-233ZQ5RGS7", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-24-23XZ5AWAET", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-24-24DXJ4DVET", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-24-25J91180KJ", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-24-25TGKXBXVP", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-IFE-25-009207", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-24-271TH0A004", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-24-2BOYK4R6NO", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-24-2DPRKLV9PD", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-24-2EFJMSSDMU", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-IFE-25-000655", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-25-2FWBDL4ETZ", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-25-2HILDY5M3P", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-IFE-25-002286", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-25-2FAZC63LVN", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-25-2FDG54MXVT", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-24-24RZL5Y8I8", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-24-24Z0Z904I8", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-24-25XKWQP228", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-24-267VT21GQ8", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-24-2EDX0TODMU", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-24-24JEBCYLI8", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "NA", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-IFE-25-003638", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["DA21/061267", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["DA21/065904", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["DA21/065834", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["DA21/064209", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["DA21/065045", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "NA", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-24-2DPQWCV46A", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-24-2BXJ4ACXI0", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-24-23O7NMREV6", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-24-24O1Z407I8", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-24-26GFYVZFH3", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "NA", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-24-24DU0Y219C", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "NA", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-25-2GC4OATFRP", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "NA", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-24-26C399LG28", "99 - a suppr", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-24-2D43FK30VS", "99 - Reprise ENEDIS", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-25-2FJNCTG5PC", "99 - Reprise ENEDIS", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["DA21/055312", "99 - Reprise ENEDIS", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["DA21/061822", "99 - Reprise ENEDIS", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-IFE-25-002579", "99 - Reprise ENEDIS", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}],
+ ["RAC-IFE-25-009090", "99 - Reprise ENEDIS", "NA", "NA", "", "O", {"H_ETD": "0,5", "H_CRD": "NA", "H_TRX": "NA"}]
+];
+var ARMA_FACTU_0924 = [
+ ["RAC-24-2B694A25H5", "CP1", "1", "1", "1", "NA", ""],
+ ["RAC-PAR-26-000345", "CP1", "1", "", "", "", ""],
+ ["RAC-PAR-25-000498", "CP1", "2", "NA", "1", "NA", "NA"],
+ ["RAC-PAR-25-000343", "CP1", "2", "NA", "1", "NA", "NA"],
+ ["RAC-25-2F7U2YUNVK", "CP1", "", "", "", "", ""],
+ ["RAC-PAR-25-000602", "CP1", "", "", "", "", ""],
+ ["RAC-PAR-25-000911", "CP1", "1", "1", "1", "1", "1"],
+ ["RAC-24-2EI6C77DVN", "CP1", "1", "1", "1", "1", "1"],
+ ["RAC-23-1ZJR73F0W8", "CP1", "NA", "NA", "NA", "NA", "NA"],
+ ["RAC-24-29PEUXKVNK", "CP1", "1", "NA", "0,5", "NA", "NA"],
+ ["RAC-24-2CSYESFM2B", "CP1", "1", "NA", "0,5", "NA", "NA"],
+ ["RAC-25-2HHJ47Z2J9", "CP1", "1", "NA", "NA", "NA", "NA"],
+ ["DC21/027068", "CP1", "NA", "1", "1", "1", "1"],
+ ["DC21/027012", "CP1", "NA", "1", "NA", "NA", "NA"],
+ ["RAC-24-2BLT5YURH5", "CP1", "1", "NA", "0,5", "NA", "NA"],
+ ["RAC-24-2ATEDSWARO", "CP1", "1", "NA", "NA", "NA", "NA"],
+ ["RAC-24-2BXGQFMRNO", "CP1", "1", "NA", "0,5", "NA", "NA"],
+ ["RAC-24-2B4XIXKO3Q", "CP1", "1", "NA", "0,5", "NA", "NA"],
+ ["AC21/101385", "CP1", "NA", "1", "1", "1", "1"],
+ ["AC21/112057", "CP1", "NA", "1", "1", "1", "1"],
+ ["RAC-24-25UT6LTQT1", "CP1", "NA", "1", "1", "1", "1"],
+ ["RAC-24-27H81RLS87", "CP1", "NA", "NA", "0,5", "NA", "NA"],
+ ["RAC-24-24E4JOM49C", "CP1", "1", "NA", "NA", "NA", "NA"],
+ ["DC21/027452", "CP1", "1", "NA", "0,5", "NA", "NA"],
+ ["DC21/027453", "CP1", "1", "NA", "0,5", "NA", "NA"],
+ ["RAC-24-2761Y53N87", "CP1", "1", "NA", "NA", "NA", "NA"],
+ ["RAC-24-2AT4EJ9FBT", "CP1", "1", "1", "1", "1", "1"],
+ ["RAC-24-2B6BERPG3Q", "CP1", "1", "1", "1", "1", "1"],
+ ["AC21/084303", "CP1", "NA", "NA", "1", "1", "1"],
+ ["RAC-24-2A221WLRO6", "CP1", "1", "1", "1", "1", "1"],
+ ["AC21/126646", "CP1", "1", "1", "1", "1", "1"],
+ ["RAC-23-FS1MBMM460", "CP1", "NA", "NA", "1", "NA", "NA"],
+ ["RAC-24-2598VNFNJL", "CP1", "NA", "NA", "1", "NA", "NA"],
+ ["RAC-24-299MYXZBN4", "CP1", "1", "NA", "0,5", "NA", "NA"],
+ ["RAC-24-2BOYXZUJI0", "CP1", "NA", "NA", "NA", "NA", "NA"],
+ ["DC21/026375", "CP1", "NA", "NA", "NA", "NA", "NA"],
+ ["RAC-PAR-25-000662", "CP1", "NA", "NA", "NA", "NA", "NA"],
+ ["RAC-24-2EP9LFGOVK", "CP1", "NA", "NA", "NA", "NA", "NA"],
+ ["RAC-25-2GW7IIKPYE", "CP1", "NA", "NA", "NA", "NA", "NA"],
+ ["RAC-24-250KCZO991", "CP1", "NA", "NA", "NA", "NA", "NA"],
+ ["DC21/022455", "CP1", "NA", "NA", "NA", "NA", "NA"],
+ ["RAC-22-QX1KXM9IRV", "CP1", "NA", "NA", "NA", "NA", "NA"],
+ ["RAC-23-1WOSF0XWS5", "CP1", "NA", "NA", "NA", "NA", "NA"],
+ ["DC21/027426", "CP1", "NA", "NA", "NA", "NA", "NA"],
+ ["RAC-24-2B6CBRJS1S", "CP1", "NA", "NA", "NA", "NA", "NA"],
+ ["RAC-23-1SIGQUTZPI", "CP1", "NA", "NA", "NA", "NA", "NA"],
+ ["RAC-24-259E84ZLJL", "CP1", "NA", "NA", "NA", "NA", "NA"],
+ ["RAC-24-25JJW5Z7JL", "CP1", "NA", "NA", "NA", "NA", "NA"],
+ ["RAC-24-2A98GAIEO6", "CP1", "NA", "NA", "NA", "NA", "NA"],
+ ["RAC-23-1X8UDHVG2T", "CP1", "NA", "NA", "NA", "NA", "NA"],
+ ["RAC-23-FP1QT30XYG", "CP1", "NA", "NA", "NA", "NA", "NA"],
+ ["DC21/019589", "CP1", "NA", "NA", "NA", "NA", "NA"],
+ ["DC21/021059", "CP1", "NA", "NA", "NA", "NA", "NA"],
+ ["DC21/025753", "CP1", "NA", "NA", "NA", "NA", "NA"],
+ ["DC21/026381", "CP1", "NA", "NA", "NA", "NA", "NA"],
+ ["DC21/026676", "CP1", "NA", "NA", "NA", "NA", "NA"],
+ ["RAC-24-20JK0S775D", "CP1", "NA", "NA", "NA", "NA", "NA"],
+ ["RAC-24-2277WWVZXE", "CP1", "NA", "NA", "NA", "NA", "NA"],
+ ["RAC-24-23V6B1W3V6", "CP1", "NA", "NA", "NA", "NA", "NA"],
+ ["RAC-24-26RQ4N7MSK", "CP1", "NA", "NA", "NA", "NA", "NA"],
+ ["AC21/126631", "CP1", "NA", "NA", "NA", "NA", "NA"],
+ ["RAC-PAR-25-006184", "CP1", "NA", "NA", "NA", "NA", "NA"],
+ ["RAC-PAR-26-001354", "CP1", "NA", "NA", "NA", "NA", "NA"],
+ ["RAC-PAR-26-001355", "CP1", "NA", "NA", "NA", "NA", "NA"],
+ ["RAC-PAR-26-001633", "CP1", "1", "NA", "NA", "NA", "NA"],
+ ["RAC-PAR-26-001945", "CP1", "NA", "NA", "NA", "NA", "NA"],
+ ["RAC-PAR-26-001718", "CP1", "NA", "NA", "NA", "NA", "NA"],
+ ["RAC-24-2AMFX4LZRO", "CP2", "1", "1", "1", "1", "1"],
+ ["RAC-PAR-25-000080", "CP2", "1", "1", "1", "1", "1"],
+ ["RAC-24-2BYY356JNO", "CP2", "1", "1", "1", "1", "1"],
+ ["RAC-24-2AJ8QHOZVK", "CP2", "1", "1", "1", "1", "1"],
+ ["RAC-PAR-25-000231", "CP2", "1", "1", "1", "NA", "NA"],
+ ["RAC-24-2E9ICVVBLI", "CP2", "1", "1", "1", "", ""],
+ ["RAC-PAR-26-001208", "CP2", "1", "1", "1", "", ""],
+ ["RAC-24-27IUTCVE04", "CP2", "1", "1", "1", "1", ""],
+ ["RAC-PAR-25-000554", "CP2", "1", "1", "1", "1", "1"],
+ ["RAC-24-27IVSFQS04", "CP2", "1", "1", "1", "1", ""],
+ ["RAC-24-26Q0VIX3H3", "CP2", "1", "1", "1", "", ""],
+ ["RAC-24-2B39QLGQ1S", "CP2", "1", "1", "1", "1", ""],
+ ["RAC-PAR-25-002770", "CP2", "NA", "1", "1", "1", "1"],
+ ["RAC-24-2B5BJI3DH5", "CP2", "1", "1", "1", "", ""],
+ ["RAC-24-2AJ8HP8HRO", "CP2", "1", "1", "1", "", ""],
+ ["RAC-25-2HACZGB1D1", "CP2", "1", "1", "1", "", ""],
+ ["RAC-PAR-25-001161", "CP2", "1", "1", "1", "", ""],
+ ["RAC-PAR-25-000673", "CP2", "1", "1", "1", "", ""],
+ ["RAC-PAR-25-000813", "CP2", "1", "1", "1", "", ""],
+ ["RAC-PAR-25-001732", "CP2", "1", "1", "1", "1", ""],
+ ["RAC-PAR-25-001733", "CP2", "1", "1", "1", "1", ""],
+ ["RAC-PAR-25-004063", "CP2", "1", "NA", "0,5", "NA", "NA"],
+ ["RAC-PAR-25-003890", "CP2", "1", "1", "1", "1", "1"],
+ ["RAC-PAR-25-003328", "CP2", "1", "1", "1", "", ""],
+ ["RAC-PAR-25-004450", "CP2", "1", "1", "1", "", ""],
+ ["RAC-PAR-25-003596", "CP2", "1", "NA", "0,5", "NA", "NA"],
+ ["RAC-24-2AS0GU8VVK", "CP2", "1", "1", "1", "1", "1"],
+ ["RAC-PAR-25-001984", "CP2", "1", "NA", "NA", "NA", "NA"],
+ ["DC21/028706", "CP2", "NA", "NA", "NA", "NA", "NA"],
+ ["RAC-24-2BC4194J1S", "CP2", "1", "1", "1", "1", "1"],
+ ["RAC-24-26RVHLCJW8", "CP2", "NA", "1", "1", "1", "1"],
+ ["RAC-24-257KF7DZT1", "CP2", "NA", "1", "1", "1", "1"],
+ ["RAC-24-2A3KZVA4O6", "CP2", "1", "1", "1", "1", "1"],
+ ["RAC-PAR-25-005919", "CP2", "1", "NA", "0,5", "1", ""],
+ ["RAC-PAR-25-006091", "CP2", "", "", "", "", ""],
+ ["RAC-PAR-25-005585", "CP2", "1", "1", "1", "", ""],
+ ["RAC-PAR-25-005688", "CP2", "1", "NA", "0,3", "NA", "NA"],
+ ["RAC-PAR-26-000870", "CP2", "1", "1", "1", "", ""],
+ ["RAC-PAR-26-000916", "CP2", "1", "NA", "0,5", "NA", "NA"],
+ ["RAC-PAR-26-000269", "CP2", "1", "", "", "", ""],
+ ["RAC-PAR-26-001719", "CP2", "1", "", "", "", ""],
+ ["RAC-PAR-26-002403", "CP2", "1", "1", "1", "", ""],
+ ["RAC-PAR-26-002623", "CP2", "1", "1", "1", "", ""],
+ ["RAC-PAR-26-001867", "CP2", "", "", "", "", ""],
+ ["RAC-PAR-26-002540", "CP2", "", "", "", "", ""],
+ ["RAC-PAR-26-000521", "CP2", "", "", "", "", ""],
+ ["RAC-PAR-26-002615", "CP2", "NA", "", "", "", ""],
+ ["RAC-PAR-26-003065", "CP2", "1", "", "", "", ""],
+ ["RAC-PAR-26-003439", "CP2", "1", "", "", "", ""],
+ ["RAC-25-2F7XYQFWVN", "CP3", "1", "1", "1", "1", "1"],
+ ["RAC-25-2H1Z7HNTYE", "CP3", "1", "1", "1", "1", ""],
+ ["RAC-24-2B6NCIPOH5", "CP3", "1", "1", "1", "1", ""],
+ ["DC21/028607", "CP3", "1", "1", "1", "1", "1"],
+ ["RAC-24-2AV4YCHARO", "CP3", "1", "1", "1", "1", "1"],
+ ["RAC-24-2B3IB1TK3Q", "CP3", "1", "1", "1", "", ""],
+ ["RAC-24-2EGOR7N1GG", "CP3", "1", "1", "1", "", ""],
+ ["RAC-25-2G2BEBH41V", "CP3", "1", "1", "1", "1", "1"],
+ ["DC21/027342", "CP3", "1", "1", "1", "1", "1"],
+ ["DC21/026573", "CP3", "1", "1", "1", "NA", "NA"],
+ ["RAC-PAR-25-001010", "CP3", "1", "1", "1", "", ""],
+ ["RAC-PAR-25-000694", "CP3", "1", "1", "1", "", ""],
+ ["RAC-25-2HT0DJN43P", "CP3", "1", "1", "1", "1", "1"],
+ ["RAC-PAR-25-001029", "CP3", "1", "1", "1", "1", "1"],
+ ["RAC-PAR-25-001024", "CP3", "1", "1", "1", "1", "1"],
+ ["RAC-PAR-25-002931", "CP3", "1", "", "1", "", ""],
+ ["RAC-PAR-25-000386", "CP3", "1", "NA", "0,5", "NA", "NA"],
+ ["RAC-PAR-25-004667", "CP3", "1", "1", "1", "", ""],
+ ["RAC-PAR-25-004986", "CP3", "1", "1", "1", "", ""],
+ ["RAC-PAR-25-004804", "CP3", "1", "1", "1", "1", ""],
+ ["RAC-PAR-25-004534", "CP3", "1", "1", "1", "", ""],
+ ["DC21/026805", "CP3", "1", "1", "1", "1", "1"],
+ ["RAC-25-2FJDYW0BVT", "CP3", "1", "NA", "NA", "NA", "NA"],
+ ["RAC-PAR-25-000681", "CP3", "1", "NA", "NA", "NA", "NA"],
+ ["RAC-24-2CSQNSL52B", "CP3", "NA", "NA", "NA", "NA", "NA"],
+ ["RAC-PAR-25-001063", "CP3", "1", "NA", "NA", "NA", "NA"],
+ ["RAC-24-2C1T8FTW1I", "CP3", "NA", "NA", "NA", "NA", "NA"],
+ ["RAC-PAR-25-001387", "CP3", "NA", "NA", "NA", "NA", "NA"],
+ ["RAC-PAR-25-001388", "CP3", "NA", "NA", "NA", "NA", "NA"],
+ ["RAC-PAR-25-001389", "CP3", "NA", "NA", "NA", "NA", "NA"],
+ ["RAC-PAR-25-004742", "CP3", "1", "1", "1", "", ""],
+ ["RAC-PAR-25-005728", "CP3", "1", "NA", "0,5", "NA", "NA"],
+ ["RAC-PAR-25-005975", "CP3", "NA", "NA", "NA", "NA", "NA"],
+ ["RAC-PAR-25-005489", "CP3", "1", "1", "1", "", ""],
+ ["RAC-PAR-25-006344", "CP3", "1", "NA", "0,5", "NA", "NA"],
+ ["RAC-PAR-26-000462", "CP3", "NA", "1", "1", "", ""],
+ ["RAC-PAR-25-005938", "CP3", "1", "NA", "NA", "NA", "NA"],
+ ["RAC-PAR-26-001047", "CP3", "1", "NA", "0,5", "NA", "NA"],
+ ["RAC-PAR-26-001198", "CP3", "NA", "NA", "NA", "", ""],
+ ["RAC-PAR-25-006021", "CP3", "1", "NA", "0,5", "NA", "NA"],
+ ["RAC-PAR-26-001637", "CP3", "NA", "NA", "NA", "NA", "NA"],
+ ["RAC-PAR-26-001201", "CP3", "1", "NA", "0,5", "NA", "NA"],
+ ["RAC-PAR-26-000910", "CP3", "1", "1", "1", "", ""],
+ ["RAC-PAR-26-001708", "CP3", "1", "1", "1", "", ""],
+ ["RAC-PAR-26-001705", "CP3", "1", "1", "1", "", ""],
+ ["RAC-PAR-26-000939", "CP3", "", "", "", "", ""],
+ ["RAC-PAR-26-001609", "CP3", "1", "", "", "", ""],
+ ["RAC-PAR-26-001515", "CP3", "1", "1", "1", "", ""],
+ ["RAC-PAR-25-006076", "CP3", "1", "1", "1", "1", ""],
+ ["RAC-PAR-26-002221", "CP3", "1", "1", "1", "", ""],
+ ["RAC-PAR-26-001678", "CP3", "1", "NA", "0,5", "NA", "NA"],
+ ["RAC-PAR-26-002350", "CP3", "", "", "", "", ""],
+ ["RAC-PAR-26-003907", "CP3", "1", "", "", "", ""],
+ ["RAC-PAR-26-003918", "CP3", "1", "1", "1", "", ""],
+ ["RAC-PAR-26-003594", "CP3", "1", "", "", "", ""]
+];
+// Stations RATP : lot, date de livraison du lot, livrables OK
+var RATP_FACTU_0924 = [
+ {st:'Porte de Clignancourt', lot:'3.1', liv:'2026-10-30', ok:['IDC']},
+ {st:'Porte de Versailles',   lot:'3.1', liv:'2026-10-30', ok:['IDC']},
+ {st:'Goncourt',              lot:'3.1', liv:'2026-10-30', ok:['IDC']},
+ {st:'Stalingrad',            lot:'3.2', liv:'2026-10-02', ok:['IDC']},
+ {st:'Aubervilliers',         lot:'3.2', liv:'2026-10-02', ok:['IDC']},
+ {st:'Croix de Chavaux',      lot:'3.2', liv:'2026-10-02', ok:['IDC']}
+];
+function rep0924Cle(s){ return String(s||'').replace(/\s+/g,'').toUpperCase(); }
+// UO passé en facture demandée par la reprise. Annuler la demande le remet
+// à « non facturé » : av est vide exprès.
+function rep0924Demande(a, k, q){
+  if(!a.fdem) a.fdem={};
+  a.fdem[k]={d:REP0924_DATE, m:REP0924_MOIS, q:q, av:{}, pv:'', rep:'0924'};
+  setPrevUo(a, k, REP0924_MOIS);
+}
+function rep0924Index(svc){
+  var idx={};
+  cpsOfSvc(svc).forEach(function(cp){
+    (gAff(cp)||[]).forEach(function(a){
+      var k=rep0924Cle(a.no);
+      (idx[k]=idx[k]||[]).push(a);
+    });
+  });
+  return idx;
+}
+// Valeurs d'avant la reprise, gardées dans l'affaire elle-même. L'historique
+// reste ainsi dans RADAR, sur le serveur, et la reprise peut se défaire sans
+// fichier extérieur : annulerReprise0924().
+function rep0924Copie(o){ return (o===undefined||o===null) ? null : JSON.parse(JSON.stringify(o)); }
+function rep0924Garder(a){
+  if(a.rep0924avant) return;
+  var g={quand:new Date().toISOString(), fdem:rep0924Copie(a.fdem), prev:rep0924Copie(a.prev),
+         facture_uo:rep0924Copie(a.facture_uo)};
+  if(a.irve) g.irve={avancement:rep0924Copie(a.irve.avancement), derniere:rep0924Copie(a.irve.derniere),
+    resp:rep0924Copie(a.irve.resp), soustache:rep0924Copie(a.irve.soustache),
+    majcom:rep0924Copie(a.irve.majcom), complex:rep0924Copie(a.irve.complex), fa:rep0924Copie(a.irve.fa)};
+  if(a.meca) g.meca={uo:rep0924Copie(a.meca.uo), fa:rep0924Copie(a.meca.fa),
+    livraison:rep0924Copie(a.meca.livraison)};
+  a.rep0924avant=g;
+}
+function repriseFactu0924(){
+  if(MIGR.factu0924) return '';
+  sauvegardeSecours('avant la reprise de facturation du 24/09/2026');
+  var rap={irveAff:0, irveUo:0, irveEur:0, irveAbs:[], irveProfil:[], irveAband:0, irveDoublons:[],
+           ratp:0, ratpAbs:[], armaAff:0, armaAbs:[], armaDoublons:[]};
+
+  // ── IRVE ────────────────────────────────────────────────────
+  var idxI=rep0924Index('IRVE'), profilVu={};
+  IRVE_FACTU_0924.forEach(function(r){
+    var liste=idxI[rep0924Cle(r[0])];
+    if(!liste){ rap.irveAbs.push(r[0]); return; }
+    // Une ligne créée dans l'app (code NEW...) qui reprend le numéro d'un
+    // dossier existant est un doublon : elle n'est pas touchée, elle est
+    // signalée. Vu en ligne le 24/09 sur quatre dossiers en travaux.
+    var vraies=liste.filter(function(a){ return !/^NEW\d/i.test(String(a.code||'')); });
+    if(!vraies.length) vraies=[liste[0]];
+    liste.forEach(function(a){ if(vraies.indexOf(a)<0) rap.irveDoublons.push(a.no+' ('+a.code+')'); });
+    vraies.forEach(function(a, rang){
+      if(a.rep0924) return;
+      rep0924Garder(a);
+      // La facturation ne s'écrit que sur une seule ligne par numéro, sinon
+      // elle compterait deux fois. Les autres reçoivent l'avancement.
+      var avecFactu=(rang===0);
+      if(!a.irve) a.irve={};
+      var iv=a.irve;
+      if(r[1]) iv.avancement=r[1];
+      if(r[2]) iv.derniere=r[2];
+      if(r[3]) iv.resp=r[3];
+      if(r[4]){ iv.soustache=r[4]; iv.majcom=frToISO(r[2])||REP0924_DATE; }
+      if(!avecFactu){ a.rep0924=1; rap.irveAff++; return; }
+      if(!iv.fa) iv.fa={};
+      // Un historique à étude 0,5 sans coordination ni travaux est un
+      // historique abandonné : c'est ce que dit le fichier. Sans cette
+      // complexité, le prévisionnel garderait 0,25 d'étude à facturer.
+      // Une complexité déjà choisie dans RADAR n'est pas touchée.
+      if(r[5]==='O' && r[6].H_ETD==='0,5' && r[6].H_CRD==='NA' && r[6].H_TRX==='NA' && !iv.complex){
+        setIrveComplex(a, 'H_ABAND'); rap.irveAband++;
+      }
+      var prof=irveProfil(a);
+      ['ETD','CRD','TRX','RCP'].forEach(function(uo){
+        // Valeur du fichier pour cet UO, quel que soit le groupe qui la porte
+        var v='', grp='';
+        Object.keys(r[6]).forEach(function(kf){
+          if(kf.slice(-3)===uo && r[6][kf]){ v=r[6][kf]; grp=kf.charAt(0); }
+        });
+        // Le fichier n'a pas de colonne réception pour les historiques
+        if(!v && uo==='RCP' && r[5]==='O') return;
+        var cle=prof+'_'+uo;
+        // uoFacture lit le plus haut de tous les préfixes : on les retire tous
+        Object.keys(iv.fa).forEach(function(x){ if(x.slice(-3)===uo) delete iv.fa[x]; });
+        if(a.fdem) Object.keys(a.fdem).forEach(function(x){ if(x.slice(-3)===uo) delete a.fdem[x]; });
+        if(!v) return;                          // rien de facturé à date
+        if(grp && grp!==prof && !profilVu[a.no]){
+          profilVu[a.no]=1;
+          rap.irveProfil.push(a.no+' ('+grp+' dans le fichier, '+prof+' dans RADAR)');
+        }
+        if(v==='NA'){ iv.fa[cle]='NA'; return; }
+        iv.fa[cle]=v;
+        rep0924Demande(a, cle, irveCoef(v));
+        rap.irveUo++;
+        rap.irveEur+=irveCoef(v)*irvePrixUoAff(a, uo);
+      });
+      if(a.fdem && !Object.keys(a.fdem).length) delete a.fdem;
+      a.rep0924=1; rap.irveAff++;
+    });
+  });
+
+  // ── RATP ────────────────────────────────────────────────────
+  var vusR={};
+  cpsOfSvc('MECA').forEach(function(cp){
+    (gAff(cp)||[]).forEach(function(a){
+      if(a.rep0924) return;
+      var nom=rep0924Cle(((a.meca||{}).station)||a.no);
+      var r=RATP_FACTU_0924.filter(function(x){ return nom.indexOf(rep0924Cle(x.st))>=0; })[0];
+      if(!r) return;
+      rep0924Garder(a);
+      if(!a.meca) a.meca={};
+      // Le tableau du fichier remplace l'avancement et la facturation
+      a.meca.uo={}; a.meca.fa={};
+      a.meca.livraison=r.liv;
+      if(a.fdem){
+        MECA_UOS.forEach(function(u){ delete a.fdem[u.k]; });
+        if(!Object.keys(a.fdem).length) delete a.fdem;
+      }
+      r.ok.forEach(function(k){
+        a.meca.uo[k]=100; a.meca.fa[k]='1';
+        rep0924Demande(a, k, 1);
+      });
+      a.rep0924=1; rap.ratp++; vusR[r.st]=1;
+    });
+  });
+  RATP_FACTU_0924.forEach(function(x){ if(!vusR[x.st]) rap.ratpAbs.push(x.st); });
+
+  // ── ARMA ────────────────────────────────────────────────────
+  var idxA=rep0924Index('ARMA'), UOA=['PRIMO','ETD','CRD','TRX','RCP'];
+  ARMA_FACTU_0924.forEach(function(r){
+    var liste=idxA[rep0924Cle(r[0])];
+    if(!liste){ rap.armaAbs.push(r[0]); return; }
+    // Même règle qu'IRVE : une seule ligne par numéro reçoit la facturation,
+    // une ligne créée dans l'app (code NEW...) en double est signalée.
+    var vraies=liste.filter(function(a){ return !/^NEW\d/i.test(String(a.code||'')); });
+    if(!vraies.length) vraies=[liste[0]];
+    liste.forEach(function(a){ if(a!==vraies[0]) rap.armaDoublons.push(a.no+' ('+a.code+')'); });
+    [vraies[0]].forEach(function(a){
+      if(a.rep0924) return;
+      rep0924Garder(a);
+      UOA.forEach(function(u,i){
+        var v=r[2+i];
+        if(v){ faSetVal(a,u,v); return; }
+        // Vide dans le fichier : rien de facturé. On retire une part
+        // facturée, on garde une mention libre ou une intention (BLOC, ~OK).
+        var brut=(a.facture_uo||{})[FA_KEY[u]];
+        if(brut===undefined||brut===null) return;
+        if(faCoef(String(brut).trim())>0) faSetVal(a,u,'');
+      });
+      a.rep0924=1; rap.armaAff++;
+    });
+  });
+
+  MIGR.factu0924=true;
+  MIGR.factu0924Rapport={quand:new Date().toISOString(), irveAff:rap.irveAff, irveUo:rap.irveUo,
+    irveEur:Math.round(rap.irveEur), irveAbs:rap.irveAbs, irveProfil:rap.irveProfil, irveAband:rap.irveAband,
+    irveDoublons:rap.irveDoublons, ratp:rap.ratp, ratpAbs:rap.ratpAbs, armaAff:rap.armaAff,
+    armaAbs:rap.armaAbs, armaDoublons:rap.armaDoublons};
+  try{ console.info('Reprise facturation 24/09', MIGR.factu0924Rapport); }catch(e){}
+  var msg='Facturation du 24/09 reprise : IRVE '+rap.irveAff+' affaires, '+rap.irveUo
+    +' UO en facture demandée ; RATP '+rap.ratp+' stations ; ARMA '+rap.armaAff+' affaires';
+  var abs=rap.irveAbs.length+rap.ratpAbs.length+rap.armaAbs.length;
+  if(abs) msg+=' ; '+abs+' ligne(s) du fichier absente(s) de RADAR';
+  var dbl=rap.irveDoublons.length+rap.armaDoublons.length;
+  if(dbl) msg+=' ; '+dbl+' doublon(s) laissé(s) de côté';
+  return msg;
+}
+// Défaire la reprise avec les valeurs gardées dans chaque affaire. Retour
+// arrière d'urgence, juste après la mise en ligne : ce qui aurait été saisi
+// depuis sur les mêmes champs serait remplacé. Depuis la console :
+// annulerReprise0924()
+function annulerReprise0924(){
+  sauvegardeSecours('avant annulation de la reprise du 24/09/2026');
+  function remettre(o, k, v){ if(v===null || v===undefined) delete o[k]; else o[k]=v; }
+  var n=0;
+  Object.keys(DATA).forEach(function(cp){
+    (gAff(cp)||[]).forEach(function(a){
+      var g=a.rep0924avant;
+      if(!g) return;
+      remettre(a, 'fdem', g.fdem);
+      remettre(a, 'prev', g.prev);
+      if(g.facture_uo) a.facture_uo=g.facture_uo;
+      if(g.irve){ if(!a.irve) a.irve={}; Object.keys(g.irve).forEach(function(k){ remettre(a.irve, k, g.irve[k]); }); }
+      if(g.meca){ if(!a.meca) a.meca={}; Object.keys(g.meca).forEach(function(k){ remettre(a.meca, k, g.meca[k]); }); }
+      delete a.rep0924avant; delete a.rep0924;
+      n++;
+    });
+  });
+  // Le drapeau reste posé : la reprise ne se rejoue pas toute seule
+  MIGR.factu0924Annulee=new Date().toISOString();
+  SYNC_REV++; sbSave();
+  try{ buildTabs(); renderAll(); }catch(e){}
+  showToast('Reprise du 24/09 annulée sur '+n+' affaires');
+  return n;
+}
+try{ window.annulerReprise0924=annulerReprise0924; }catch(e){}
+// Détail de la reprise, pour le relire après coup
+function rep0924Detail(){
+  var r=MIGR.factu0924Rapport;
+  if(!r){ uiAlert('Reprise du 24/09','La reprise n’a pas encore été jouée.'); return; }
+  var t='Jouée le '+new Date(r.quand).toLocaleString('fr')+'\n\n'
+    +'IRVE : '+r.irveAff+' affaires mises à jour, '+r.irveUo+' UO en facture demandée ('
+    +fmtEur(r.irveEur)+' au barème RADAR).\n'
+    +(r.irveAband?'IRVE : '+r.irveAband+' historiques à étude 0,5 passés en « Historique abandonné ».\n':'')
+    +'RATP : '+r.ratp+' stations.\n'
+    +'ARMA : '+r.armaAff+' affaires.\n';
+  if(r.irveAbs.length) t+='\nIRVE, absentes de RADAR : '+r.irveAbs.join(', ')+'.';
+  if(r.ratpAbs.length) t+='\nRATP, stations non trouvées : '+r.ratpAbs.join(', ')+'.';
+  if(r.armaAbs.length) t+='\nARMA, absentes de RADAR : '+r.armaAbs.join(', ')+'.';
+  if(r.irveProfil.length) t+='\n\nIRVE, profil différent entre le fichier et RADAR (le montant suit RADAR) : '
+    +r.irveProfil.join(', ')+'.';
+  var dbl=(r.irveDoublons||[]).concat(r.armaDoublons||[]);
+  if(dbl.length) t+='\n\nDoublons créés dans l’app, laissés tels quels : '+dbl.join(', ')+'.';
+  t+='\n\nLes valeurs d’avant la reprise sont gardées dans chaque affaire touchée.';
+  uiAlert('Reprise de la facturation du 24/09/2026', t);
+}
+try{ window.rep0924Detail=rep0924Detail; }catch(e){}
+
 // Ancien décalage relatif, gardé en repli pour ne rien perdre
 function decalUo(a,k){ return ((a.decal||{})[k])||0; }
 function setDecalUo(a,k,v){
@@ -13725,6 +14419,414 @@ function rSynthFactu(){
   try{ makeCollapsibleRef(hdr, body, 'synthfactu_referent'); }catch(e){}
 }
 
+// ══════════════════════════════════════════════════════════════
+// CIRCUIT DE FACTURATION, demandé par Alexis le 24/09/2026
+// Trois temps par UO :
+//  1. À facturer : l'UO est à 100 % et n'est ni facturé ni demandé.
+//  2. Facture demandée : un bouton la pose, avec la date et le mois.
+//  3. Facturée : un second bouton la valide au retour de la FSS ou du
+//     paiement.
+// Le but : savoir ce qui est parti et quand, voir les régules, et ne plus
+// renvoyer chaque mois tout l'historique à ENEDIS.
+// a.fdem = { <clé UO> : {d, m, q, av, pv, v, rep} }
+//   d : date de la demande     m : mois de facturation   q : part demandée
+//   v : date de validation, vide tant qu'on attend le retour
+//   av, pv : facturé et mois prévu d'avant la demande, pour l'annuler
+// Une demande écrit la part dans le facturé : l'UO sort du prévisionnel et
+// ne revient pas le mois suivant. Annuler la demande remet l'état d'avant.
+// ══════════════════════════════════════════════════════════════
+var CIRC_ONGLET='afact';     // afact | dem | val
+var CIRC_SEL={};
+var CIRC_MOIS='';            // mois de facturation de la demande, vide = mois courant
+var CIRC_IRVE_LIB={ETD:'Étude', CRD:'Coordination', TRX:'Travaux', RCP:'Réception'};
+function fdemDe(a,k){ return (a && a.fdem && a.fdem[k]) || null; }
+function circOublier(a,k){
+  if(a.fdem && a.fdem[k]){ delete a.fdem[k]; if(!Object.keys(a.fdem).length) delete a.fdem; }
+}
+// Clés d'UO d'une affaire, les mêmes que a.prev et a.cmd
+function circCles(cp,a){
+  var svc=svcOf(cp);
+  if(svc==='ARMA') return FA_UOS.slice();
+  if(svc==='IRVE'){
+    var p=irveProfil(a);
+    return ['ETD','CRD','TRX','RCP'].map(function(u){ return p+'_'+u; });
+  }
+  return MECA_UOS.map(function(u){ return u.k; });
+}
+function circLib(cp,k){
+  var svc=svcOf(cp);
+  if(svc==='ARMA') return FA_LABEL[k]||k;
+  if(svc==='IRVE') return CIRC_IRVE_LIB[k.slice(-3)]||k;
+  var m=MECA_UOS.filter(function(x){ return x.k===k; })[0];
+  return m?(MECA_COURT[k]||m.l):k;
+}
+// Avancement de l'UO en %, null quand il est sans objet. Même lecture que
+// la colonne Facturé du tableau.
+function circAv(cp,a,k){
+  var svc=svcOf(cp);
+  if(svc==='ARMA'){ var p=null; try{ p=uoPct(a, FA_KEY[k]); }catch(e){} return p===null?null:p*100; }
+  if(svc==='IRVE'){
+    var n=irvePhaseNum(a), u=k.slice(-3);
+    if(u==='ETD') return n>=3?100:(n>=2?50:0);
+    if(u==='CRD') return n>=6?100:0;
+    if(u==='TRX'){ var q=irvePhasePct(a,'Travaux'); return q===null?0:q; }
+    if(u==='RCP'){ var r=irvePhasePct(a,'Réception'); return r===null?0:r; }
+    return 0;
+  }
+  return mecaPctUo(a,k);
+}
+function circPlafond(cp,a,k){ return svcOf(cp)==='IRVE' ? irvePlafond(a,k.slice(-3)) : 1; }
+function circPrix(cp,a,k){ try{ return uoPrixRestant(cp,a,{k:k})||0; }catch(e){ return 0; } }
+function circPart(x){ return String(Math.round(x*100)/100).replace('.',','); }
+// Les trois listes du circuit, pour un périmètre et un CP (facultatif)
+function circLignes(svc, cpFiltre){
+  var out={afact:[], dem:[], val:[]};
+  cpsOfSvc(svc).forEach(function(cp){
+    if(cpFiltre && cpFiltre!=='all' && cp!==cpFiltre) return;
+    (gAff(cp)||[]).forEach(function(a){
+      // Une affaire supprimée ne propose plus rien à facturer, mais ses
+      // demandes en cours restent à suivre jusqu'au retour.
+      var supprime=(svc==='IRVE' && irvePhaseNum(a)===0);
+      circCles(cp,a).forEach(function(k){
+        var px=circPrix(cp,a,k), f=fdemDe(a,k);
+        var l={cp:cp, a:a, k:k, lib:circLib(cp,k), px:px};
+        if(f){
+          l.part=+f.q||0; l.montant=l.part*px; l.d=f.d||''; l.m=f.m||''; l.v=f.v||''; l.rep=f.rep||'';
+          (l.v?out.val:out.dem).push(l);
+          return;
+        }
+        if(supprime) return;
+        var fact=0; try{ fact=uoFacture(cp,a,k); }catch(e){}
+        if(fact<0) return;                                  // sans objet
+        var plaf=circPlafond(cp,a,k);
+        if(plaf<=0 || fact>=plaf-0.001) return;             // rien à facturer
+        if(svc==='ARMA' && faLibre(a,k)) return;            // mention du suivi (BLOC...)
+        var av=circAv(cp,a,k);
+        if(av===null || av<100) return;                     // pas encore acquis
+        l.part=plaf-fact; l.montant=l.part*px; l.av=av;
+        out.afact.push(l);
+      });
+    });
+  });
+  function ini(l){ return (DATA[l.cp]||{}).ini||l.cp; }
+  function parAff(x,y){ return ini(x).localeCompare(ini(y)) || String(x.a.no||x.a.code).localeCompare(String(y.a.no||y.a.code)); }
+  out.afact.sort(parAff);
+  out.dem.sort(function(x,y){ return String(y.m).localeCompare(String(x.m)) || parAff(x,y); });
+  out.val.sort(function(x,y){ return String(y.v).localeCompare(String(x.v)) || parAff(x,y); });
+  return out;
+}
+// Poser la demande de facture. La part s'écrit dans le facturé, l'ancien
+// état est gardé pour pouvoir annuler.
+function circDemander(lignes, mois){
+  var d=dISO(), n=0;
+  lignes.forEach(function(l){
+    var a=l.a, k=l.k, svc=svcOf(l.cp);
+    if(fdemDe(a,k)) return;
+    var av={}, plaf=circPlafond(l.cp,a,k);
+    if(svc==='ARMA'){
+      var b=(a.facture_uo||{})[FA_KEY[k]];
+      if(b!==undefined && b!==null && b!=='') av.v=b;
+      faSetVal(a,k, circPart(plaf));
+    } else if(svc==='IRVE'){
+      if(!a.irve) a.irve={};
+      if(!a.irve.fa) a.irve.fa={};
+      var uo=k.slice(-3);
+      Object.keys(a.irve.fa).forEach(function(x){ if(x.slice(-3)===uo) av[x]=a.irve.fa[x]; });
+      a.irve.fa[k]=circPart(plaf);
+    } else {
+      if(!a.meca) a.meca={};
+      if(!a.meca.fa) a.meca.fa={};
+      if(a.meca.fa[k]) av.v=a.meca.fa[k];
+      a.meca.fa[k]='1';
+    }
+    if(!a.fdem) a.fdem={};
+    a.fdem[k]={d:d, m:mois, q:l.part, av:av, pv:prevUo(a,k)};
+    setPrevUo(a,k,mois);
+    n++;
+  });
+  return n;
+}
+function circValider(lignes){
+  var d=dISO(), n=0;
+  lignes.forEach(function(l){ var f=fdemDe(l.a,l.k); if(f && !f.v){ f.v=d; n++; } });
+  return n;
+}
+function circRouvrir(lignes){
+  var n=0;
+  lignes.forEach(function(l){ var f=fdemDe(l.a,l.k); if(f && f.v){ delete f.v; n++; } });
+  return n;
+}
+// Annuler la demande : le facturé et le mois prévu reviennent à l'état d'avant
+function circAnnuler(lignes){
+  var n=0;
+  lignes.forEach(function(l){
+    var a=l.a, k=l.k, svc=svcOf(l.cp), f=fdemDe(a,k);
+    if(!f) return;
+    var av=f.av||{};
+    if(svc==='ARMA'){
+      faSetVal(a,k, av.v!==undefined ? av.v : '');
+    } else if(svc==='IRVE'){
+      if(!a.irve) a.irve={};
+      if(!a.irve.fa) a.irve.fa={};
+      var uo=k.slice(-3);
+      Object.keys(a.irve.fa).forEach(function(x){ if(x.slice(-3)===uo) delete a.irve.fa[x]; });
+      Object.keys(av).forEach(function(x){ a.irve.fa[x]=av[x]; });
+    } else if(a.meca){
+      if(!a.meca.fa) a.meca.fa={};
+      if(av.v) a.meca.fa[k]=av.v; else delete a.meca.fa[k];
+    }
+    setPrevUo(a,k, f.pv||'');
+    circOublier(a,k);
+    n++;
+  });
+  return n;
+}
+// Redessine le seul bloc du circuit, à sa place
+function circRedessiner(){
+  var ancien=document.getElementById('fa-circuit');
+  if(!ancien || !ancien.parentNode) return;
+  ancien.parentNode.replaceChild(circBloc(FA_SVC, FA_CP_FILTER), ancien);
+}
+// Après une action : le tableau et le prévisionnel changent aussi
+function circApres(n, quoi){
+  CIRC_SEL={};
+  sbSave();
+  sansBouger(function(){ rFactu(); try{ rPrevFactu(); }catch(e){} try{ rPrevCharge(); }catch(e){} });
+  showToast(n+' UO '+quoi);
+}
+function circBloc(svc, cpFiltre){
+  var box=document.createElement('div');
+  box.id='fa-circuit';
+  box.style.cssText='margin:4px 10px 8px;border:1.5px solid var(--b);border-radius:10px;overflow:hidden;background:var(--s)';
+  var L=circLignes(svc, cpFiltre);
+  function somme(l){ return l.reduce(function(s,x){ return s+(x.montant||0); },0); }
+  function eur(v){ return fmtEur(v); }
+
+  // En-tête : titre et trois onglets
+  var hd=document.createElement('div');
+  hd.style.cssText='display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:7px 10px;'
+    +'background:var(--s2);border-bottom:1px solid var(--b)';
+  var ti=document.createElement('span');
+  ti.style.cssText='font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.05em;color:var(--t2);margin-right:4px';
+  ti.textContent='Circuit de facturation';
+  hd.appendChild(ti);
+  var ONG=[
+    {k:'afact', l:'À facturer', fg:'#B45309', bg:'#FEF3C7',
+     t:'UO terminés à 100 %, ni facturés ni demandés'},
+    {k:'dem',   l:'Demandées',  fg:'#1D4ED8', bg:'#DBEAFE',
+     t:'Facture demandée, en attente du retour (FSS ou paiement)'},
+    {k:'val',   l:'Facturées',  fg:'#047857', bg:'#D1FAE5',
+     t:'Retour reçu, facturation validée'}
+  ];
+  ONG.forEach(function(o){
+    var on=(CIRC_ONGLET===o.k), l=L[o.k];
+    var b=document.createElement('button');
+    b.style.cssText='font-size:9.5px;font-weight:800;padding:4px 10px;border-radius:8px;cursor:pointer;font-family:inherit;'
+      +'border:1.5px solid '+(on?o.fg:'var(--b2)')+';background:'+(on?o.bg:'var(--s)')+';color:'+(on?o.fg:'var(--t3)');
+    b.textContent=o.l+' '+l.length+(l.length?' ('+eur(somme(l))+')':'');
+    b.title=o.t;
+    b.addEventListener('click',function(){
+      CIRC_ONGLET=o.k; CIRC_SEL={};
+      sansBouger(function(){ circRedessiner(); });
+    });
+    hd.appendChild(b);
+  });
+  var sp=document.createElement('span'); sp.style.flex='1'; hd.appendChild(sp);
+  if(MIGR.factu0924Rapport){
+    var bR=document.createElement('button');
+    bR.style.cssText='border:none;background:transparent;color:var(--blue);font-size:9px;font-weight:700;'
+      +'cursor:pointer;font-family:inherit;text-decoration:underline';
+    bR.textContent='Reprise du 24/09';
+    bR.title='Ce que la reprise des fichiers d’Alexis a changé';
+    bR.addEventListener('click',function(){ rep0924Detail(); });
+    hd.appendChild(bR);
+  }
+  box.appendChild(hd);
+
+  var lignes=L[CIRC_ONGLET]||[];
+  var aide=document.createElement('div');
+  aide.style.cssText='padding:5px 10px;font-size:9.5px;color:var(--t3);line-height:1.45';
+  aide.textContent = CIRC_ONGLET==='afact'
+    ? 'UO terminés à 100 %. Cochez ce que vous envoyez, choisissez le mois, puis Demander la facture.'
+    : CIRC_ONGLET==='dem'
+    ? 'Factures parties, en attente du retour. Validez quand la FSS ou le paiement revient.'
+    : 'Retour reçu. Remettre en attente si une validation a été faite par erreur.';
+  box.appendChild(aide);
+
+  // Liste
+  var wrap=document.createElement('div');
+  wrap.id='fa-circ-liste';
+  wrap.style.cssText='max-height:260px;overflow-y:auto;overflow-x:auto;border-top:1px solid var(--b)';
+  var tbl=document.createElement('table'); tbl.className='fa-tbl';
+  var th=document.createElement('thead'), trh=document.createElement('tr');
+  var cols=['','N° affaire','CP','UO','Part','Montant',
+    CIRC_ONGLET==='afact'?'Avancement':(CIRC_ONGLET==='dem'?'Demandée le':'Validée le')];
+  cols.forEach(function(c,i){
+    var h=document.createElement('th'); h.textContent=c;
+    if(i===1||i===3) h.className='l';
+    trh.appendChild(h);
+  });
+  th.appendChild(trh); tbl.appendChild(th);
+  var tb=document.createElement('tbody');
+  var cases=[];
+  if(!lignes.length){
+    var tr0=document.createElement('tr'), td0=document.createElement('td');
+    td0.colSpan=cols.length;
+    td0.style.cssText='padding:12px;text-align:center;font-style:italic;color:var(--t3)';
+    td0.textContent = CIRC_ONGLET==='afact' ? 'Aucun UO à facturer'
+                    : CIRC_ONGLET==='dem' ? 'Aucune facture en attente' : 'Aucune facture validée';
+    tr0.appendChild(td0); tb.appendChild(tr0);
+  }
+  var moisCourant=null;
+  lignes.forEach(function(l){
+    // Les demandes se lisent par mois de facturation
+    if(CIRC_ONGLET==='dem' && l.m!==moisCourant){
+      moisCourant=l.m;
+      var duMois=lignes.filter(function(x){ return x.m===l.m; });
+      var trm=document.createElement('tr'), tdm=document.createElement('td');
+      tdm.colSpan=cols.length;
+      tdm.style.cssText='padding:4px 8px;font-size:9px;font-weight:900;color:#1D4ED8;background:#EFF6FF;text-align:left';
+      var lblM=l.m ? moisLabel(moisIndex(l.m)) : 'mois non précisé';
+      tdm.textContent='Facturation de '+lblM+' : '+duMois.length+' UO, '+eur(somme(duMois));
+      trm.appendChild(tdm); tb.appendChild(trm);
+    }
+    var tr=document.createElement('tr');
+    var cle=faSelCle(l.cp, l.a, l.k);
+    var tdc=document.createElement('td');
+    var cb=document.createElement('input'); cb.type='checkbox';
+    cb.style.cssText='width:12px;height:12px;cursor:pointer';
+    cb.checked=!!CIRC_SEL[cle];
+    cb.addEventListener('change',function(){
+      if(cb.checked) CIRC_SEL[cle]=l; else delete CIRC_SEL[cle];
+      majBoutons();
+    });
+    cases.push({cb:cb, cle:cle, l:l});
+    tdc.appendChild(cb); tr.appendChild(tdc);
+    var tdN=document.createElement('td'); tdN.className='l';
+    tdN.style.cssText='font-weight:700;font-size:9.5px;color:var(--blue);cursor:pointer';
+    tdN.textContent=l.a.no||l.a.code;
+    tdN.title=(l.a.addr||((l.a.irve||{}).commune)||'')+'\nCliquer pour copier le numéro';
+    tdN.addEventListener('click',function(){ if(l.a.no) copyNo(l.a.no); });
+    tr.appendChild(tdN);
+    var tdC=document.createElement('td');
+    var avc=AVC[l.cp]||['#6B7280','#F9FAFB'];
+    tdC.innerHTML='<span style="display:inline-block;padding:1px 7px;border-radius:6px;font-size:9px;'
+      +'font-weight:800;background:'+avc[1]+';color:'+avc[0]+'">'+((DATA[l.cp]||{}).ini||l.cp)+'</span>';
+    tr.appendChild(tdC);
+    var tdU=document.createElement('td'); tdU.className='l';
+    tdU.style.cssText='font-size:9.5px;font-weight:700';
+    tdU.textContent=l.lib;
+    tr.appendChild(tdU);
+    var tdP=document.createElement('td'); tdP.style.fontSize='9.5px';
+    tdP.textContent=circPart(l.part);
+    tr.appendChild(tdP);
+    var tdM=document.createElement('td');
+    tdM.style.cssText='font-size:9.5px;font-weight:800;white-space:nowrap';
+    tdM.textContent=eur(l.montant);
+    tdM.title=circPart(l.part)+' x '+eur(l.px);
+    tr.appendChild(tdM);
+    var tdI=document.createElement('td');
+    tdI.style.cssText='font-size:9px;color:var(--t2);white-space:nowrap';
+    if(CIRC_ONGLET==='afact') tdI.textContent=Math.round(l.av)+' %';
+    else if(CIRC_ONGLET==='dem'){
+      tdI.textContent=dFR(l.d);
+      tdI.title=l.rep==='0924' ? 'Reprise du fichier d’Alexis du 24/09/2026, à confirmer fin septembre'
+                               : 'Demandée le '+dFR(l.d);
+    } else {
+      tdI.textContent=dFR(l.v);
+      tdI.title='Demandée le '+dFR(l.d)+', validée le '+dFR(l.v);
+    }
+    tr.appendChild(tdI);
+    tb.appendChild(tr);
+  });
+  tbl.appendChild(tb); wrap.appendChild(tbl); box.appendChild(wrap);
+
+  // Barre d'actions
+  var bar=document.createElement('div');
+  bar.style.cssText='display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:7px 10px;border-top:1px solid var(--b);background:var(--s2)';
+  var STB='border-radius:8px;padding:5px 12px;font-size:10px;font-weight:800;cursor:pointer;font-family:inherit;';
+  var bTout=document.createElement('button');
+  bTout.style.cssText=STB+'border:1.5px solid var(--b2);background:var(--s);color:var(--t2)';
+  bTout.addEventListener('click',function(){
+    var tous=cases.length && cases.every(function(c){ return CIRC_SEL[c.cle]; });
+    cases.forEach(function(c){
+      c.cb.checked=!tous;
+      if(!tous) CIRC_SEL[c.cle]=c.l; else delete CIRC_SEL[c.cle];
+    });
+    majBoutons();
+  });
+  bar.appendChild(bTout);
+  var info=document.createElement('span');
+  info.style.cssText='flex:1;min-width:120px;font-size:9.5px;font-weight:700;color:var(--t3)';
+  bar.appendChild(info);
+  var actions=[];
+  function bouton(txt, fg, bg, fn){
+    var b=document.createElement('button');
+    b.style.cssText=STB+'border:1.5px solid '+fg+';background:'+bg+';color:'+fg;
+    b.addEventListener('click',function(){
+      var sel=Object.keys(CIRC_SEL).map(function(k){ return CIRC_SEL[k]; });
+      if(!sel.length){ showToast('Aucun UO coché'); return; }
+      fn(sel);
+    });
+    bar.appendChild(b);
+    actions.push({b:b, txt:txt});
+    return b;
+  }
+  if(CIRC_ONGLET==='afact'){
+    var selMo=document.createElement('select');
+    selMo.style.cssText='border:1.5px solid var(--b2);border-radius:7px;padding:4px 7px;font-size:10px;'
+      +'font-weight:700;font-family:inherit;background:var(--bg);color:var(--t)';
+    for(var mm=-3; mm<=3; mm++){
+      var o=document.createElement('option'); o.value=moisISO(mm); o.textContent=moisLabel(mm);
+      selMo.appendChild(o);
+    }
+    selMo.value=CIRC_MOIS||moisISO(0);
+    selMo.title='Mois de facturation porté par la demande';
+    selMo.addEventListener('change',function(){ CIRC_MOIS=selMo.value; });
+    bar.insertBefore(selMo, info.nextSibling);
+    bouton('Demander la facture', '#B45309', '#FEF3C7', function(sel){
+      var mois=selMo.value||moisISO(0);
+      uiConfirm('Demander la facture',
+        sel.length+' UO, '+eur(somme(sel))+', facturation de '+moisLabel(moisIndex(mois))+'.\n'
+        +'Ils passent en « facture demandée » datée d’aujourd’hui et sortent du prévisionnel.',
+        function(){ circApres(circDemander(sel, mois), 'en facture demandée'); });
+    });
+  } else if(CIRC_ONGLET==='dem'){
+    bouton('Valider, retour reçu', '#047857', '#D1FAE5', function(sel){
+      uiConfirm('Valider la facturation',
+        sel.length+' UO, '+eur(somme(sel))+'.\nLa FSS ou le paiement est revenu : ils passent en facturé.',
+        function(){ circApres(circValider(sel), 'validés'); });
+    });
+    bouton('Annuler la demande', '#B91C1C', '#FEE2E2', function(sel){
+      uiConfirm('Annuler la demande',
+        sel.length+' UO, '+eur(somme(sel))+'.\nIls reviennent à leur état d’avant la demande et repassent dans le prévisionnel.',
+        function(){ circApres(circAnnuler(sel), 'remis à facturer'); }, true);
+    });
+  } else {
+    bouton('Remettre en attente', '#1D4ED8', '#DBEAFE', function(sel){
+      uiConfirm('Remettre en attente',
+        sel.length+' UO repassent en facture demandée, en attente du retour.',
+        function(){ circApres(circRouvrir(sel), 'remis en attente'); });
+    });
+  }
+  function majBoutons(){
+    var sel=Object.keys(CIRC_SEL).map(function(k){ return CIRC_SEL[k]; });
+    var tous=cases.length && cases.every(function(c){ return CIRC_SEL[c.cle]; });
+    bTout.textContent=tous?'Tout décocher':'Tout cocher';
+    bTout.disabled=!cases.length;
+    info.textContent = sel.length ? (sel.length+' UO coché'+(sel.length>1?'s':'')+', '+eur(somme(sel))) : '';
+    actions.forEach(function(x){
+      x.b.textContent=x.txt+(sel.length?' ('+sel.length+')':'');
+      x.b.disabled=!sel.length;
+      x.b.style.opacity=sel.length?'1':'.5';
+      x.b.style.cursor=sel.length?'pointer':'not-allowed';
+    });
+  }
+  majBoutons();
+  box.appendChild(bar);
+  return box;
+}
+
 function rFactu(){
   var host=document.getElementById('ref-factu');
   if(!host) return;
@@ -13837,6 +14939,9 @@ function rFactu(){
 
   var sp=document.createElement('span'); sp.style.flex='1'; bar.appendChild(sp);
   body.appendChild(bar);
+  // Circuit de facturation : à facturer, demandée, facturée. Demandé par
+  // Alexis le 24/09/2026. Il suit le périmètre et le CP choisis au-dessus.
+  try{ body.appendChild(circBloc(FA_SVC, FA_CP_FILTER)); }catch(e){ console.warn('circuit',e); }
 
   // Colonnes selon le périmètre
   var UOS, entetes, valUo, setUo, avUo;
@@ -13976,6 +15081,7 @@ function rFactu(){
   }
 
   var wrap=document.createElement('div');
+  wrap.id='fa-tbl-wrap';
   wrap.style.cssText='overflow-x:auto;max-height:430px;overflow-y:auto';
   var tbl=document.createElement('table'); tbl.className='fa-tbl';
   // En-t\u00eate \u00e0 deux niveaux : les dates pr\u00e9visionnelles d'abord, la
@@ -14179,6 +15285,9 @@ function rFactu(){
       var td=document.createElement('td'); td.className='fa-uo';
       if(ui===0) td.style.borderLeft='2px solid #04785755';
       var box=document.createElement('div'); box.className='fa-cell';
+      // État du circuit de facturation sur cet UO
+      var cleF=(FA_SVC==='IRVE') ? (irveProfil(a)+'_'+u) : u;
+      var bdg=null;
       // Avancement r\u00e9el : sert de libell\u00e9 \u00e0 l'option \u00ab non factur\u00e9 \u00bb
       var avPct=null;
       try{ avPct=avUo(a,u); }catch(e){}
@@ -14200,6 +15309,7 @@ function rFactu(){
         selM.title=u+' \u2014 avancement '+avLbl+'\nPasser \u00e0 1 quand l\u2019UO est factur\u00e9';
         selM.addEventListener('change',function(){
           setUo(a,u,selM.value);
+          if(!selM.value){ circOublier(a, cleF); if(bdg){ bdg.remove(); bdg=null; } }
           selM.className=faSelClass(selM.value);
           selM.style.color = selM.value?'':'var(--t3)';
           selM.style.fontWeight = selM.value?'':'600';
@@ -14207,7 +15317,7 @@ function rFactu(){
           // Facturer un UO le retire du prévisionnel : les mois calculés
           // de la ligne changent, on les remet à jour sur place.
           majDatesLigne(); majAcquis();
-          sansBouger(function(){ rPrevFactu(); });
+          sansBouger(function(){ rPrevFactu(); circRedessiner(); });
         });
         box.appendChild(selM);
       } else {
@@ -14234,15 +15344,27 @@ function rFactu(){
           +(cur?('\nFactur\u00e9 : '+cur):'\nNon encore factur\u00e9');
         sel.addEventListener('change',function(){
           setUo(a,u,sel.value);
+          if(!sel.value || sel.value==='NA'){ circOublier(a, cleF); if(bdg){ bdg.remove(); bdg=null; } }
           sel.className=faSelClass(sel.value);
           sel.style.color = sel.value?'':'var(--t3)';
           sel.style.fontWeight = sel.value?'':'600';
           sbSave();
           // Voir plus haut : la facturation d'un UO déplace les mois calculés
           majDatesLigne(); majAcquis();
-          sansBouger(function(){ rPrevFactu(); });
+          sansBouger(function(){ rPrevFactu(); circRedessiner(); });
         });
         box.appendChild(sel);
+      }
+      var fd=fdemDe(a, cleF);
+      if(fd){
+        bdg=document.createElement('span');
+        bdg.style.cssText='display:inline-block;margin-left:2px;font-size:8px;font-weight:900;padding:0 3px;'
+          +'border-radius:4px;vertical-align:middle;'+(fd.v?'background:#D1FAE5;color:#047857':'background:#DBEAFE;color:#1D4ED8');
+        bdg.textContent=fd.v?'\u2713':'\u23f3';
+        bdg.title=(fd.v ? 'Factur\u00e9, retour valid\u00e9 le '+dFR(fd.v)+'\n' : 'Facture demand\u00e9e, en attente du retour\n')
+          +'Demand\u00e9e le '+dFR(fd.d)+(fd.m?', facturation de '+moisLabel(moisIndex(fd.m)):'')
+          +(fd.rep==='0924'?'\nReprise du fichier d\u2019Alexis du 24/09/2026':'');
+        box.appendChild(bdg);
       }
       td.appendChild(box); tr.appendChild(td);
     });
@@ -22528,7 +23650,7 @@ window.addEventListener('beforeunload', function(e){
 // On ne recharge jamais de force, une saisie en cours serait perdue :
 // on propose, la personne choisit son moment.
 // ══════════════════════════════════════════════════════════════
-var APP_VERSION='2026-09-10-2';
+var APP_VERSION='2026-09-24-1';
 var MAJ_VUE=false;
 function bandeauMaj(v){
   if(MAJ_VUE || document.getElementById('maj-banner')) return;
