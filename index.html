@@ -6216,7 +6216,8 @@ function rIrveTaches(){
   bFait.disabled=!nSel;
   bFait.title='Marquer r\u00e9alis\u00e9es les t\u00e2ches coch\u00e9es';
   bFait.addEventListener('click',function(){
-    var choisies=IRVE_TACHES.filter(function(t,i){ return TACHE_SEL[i]; });
+    // La sélection est rangée par identifiant de tâche, pas par rang
+    var choisies=IRVE_TACHES.filter(function(t){ return TACHE_SEL[tacheId(t)]; });
     if(!choisies.length) return;
     var d=new Date();
     var auj=String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear();
@@ -6309,7 +6310,8 @@ function rIrveTaches(){
     sel.title='Avancement 100 % \u2014 la t\u00e2che est r\u00e9alis\u00e9e'
       +'\nPasser \u00e0 0,1 quand l\u2019UO coordination est factur\u00e9';
     sel.addEventListener('change',function(){
-      if(sel.value) t.crd='0,1'; else delete t.crd;
+      // Décocher le facturé retire aussi la demande du circuit
+      if(sel.value) t.crd='0,1'; else { delete t.crd; delete t.fdem; }
       sel.className=cls(t.crd);
       sel.style.color = t.crd?'':'var(--t3)';
       sel.style.fontWeight = t.crd?'':'600';
@@ -6353,7 +6355,8 @@ function rIrveTaches(){
       uiConfirm('Supprimer la tâche',
         (t.tache||'Cette tâche')+(t.aff?(' sur '+t.aff):'')+' sera retirée de la liste.',
         function(){
-          IRVE_TACHES.splice(i,1);
+          // Par identité : « i » n'existait pas ici, la croix plantait
+          supprimerTache(t);
           TACHE_SEL={};
           sbSave();
           sansBouger(function(){ rIrveTaches(); });
@@ -6368,6 +6371,8 @@ function rIrveTaches(){
 
   host.appendChild(card);
   try{ makeCollapsibleRef(hdr, body, 'taches_referent'); }catch(e){}
+  // Une tâche passée en Fait ou facturée change le circuit : il suit
+  try{ if(FA_SVC==='IRVE_BO') circRedessiner(); }catch(e){}
 }
 
 function tacheModal(idx){
@@ -14898,6 +14903,7 @@ function circPrix(cp,a,k){ try{ return uoPrixRestant(cp,a,{k:k})||0; }catch(e){ 
 function circPart(x){ return String(Math.round(x*100)/100).replace('.',','); }
 // Les trois listes du circuit, pour un périmètre et un CP (facultatif)
 function circLignes(svc, cpFiltre){
+  if(svc==='IRVE_BO') return circLignesBo();
   var out={afact:[], dem:[], val:[]};
   cpsOfSvc(svc).forEach(function(cp){
     if(cpFiltre && cpFiltre!=='all' && cp!==cpFiltre) return;
@@ -14933,11 +14939,55 @@ function circLignes(svc, cpFiltre){
   out.val.sort(function(x,y){ return String(y.v).localeCompare(String(x.v)) || parAff(x,y); });
   return out;
 }
+// Clé de sélection d'une ligne du circuit, UO ou tâche
+function circCle(l){ return l.bo ? ('BO|'+tacheId(l.t)) : faSelCle(l.cp, l.a, l.k); }
+// Tâches back-office dans le circuit, demandé par Steve le 24/09/2026. Une
+// tâche faite et pas encore facturée est à facturer, au prix d'une tâche.
+// Facturée = t.crd, la même marque que la colonne CRD du tableau des tâches.
+// t.fdem porte la demande, comme a.fdem pour les UO.
+function circLignesBo(){
+  var out={afact:[], dem:[], val:[]}, px=tacheMontant();
+  IRVE_TACHES.forEach(function(t){
+    var l={bo:true, t:t, a:{no:t.aff||'', code:t.aff||''}, cp:'', k:'BO',
+           lib:t.tache||'Tâche', px:px, part:1, montant:px};
+    var f=t.fdem||null;
+    if(f){
+      l.d=f.d||''; l.m=f.m||''; l.v=f.v||''; l.rep=f.rep||'';
+      (l.v?out.val:out.dem).push(l);
+      return;
+    }
+    // Facturée avant le circuit, par la colonne CRD : pas de dates connues
+    if(t.crd){ l.d=''; l.m=''; l.v=''; l.avant=true; out.val.push(l); return; }
+    if(tacheOuverte(t)) return;                         // pas encore faite
+    l.av=100;
+    out.afact.push(l);
+  });
+  function no(l){ return String(l.a.no||''); }
+  out.afact.sort(function(x,y){ return no(x).localeCompare(no(y)); });
+  out.dem.sort(function(x,y){ return String(y.m).localeCompare(String(x.m)) || no(x).localeCompare(no(y)); });
+  out.val.sort(function(x,y){ return String(y.v).localeCompare(String(x.v)) || no(x).localeCompare(no(y)); });
+  return out;
+}
+// Demande et annulation pour une tâche : la marque CRD suit la demande
+function circBoDemander(t, d, mois){
+  if(t.fdem) return false;
+  t.fdem={d:d, m:mois, q:1, av:{crd:t.crd||''}};
+  t.crd='0,1';
+  return true;
+}
+function circBoAnnuler(t){
+  var f=t.fdem;
+  if(!f) return false;
+  if((f.av||{}).crd) t.crd=f.av.crd; else delete t.crd;
+  delete t.fdem;
+  return true;
+}
 // Poser la demande de facture. La part s'écrit dans le facturé, l'ancien
 // état est gardé pour pouvoir annuler.
 function circDemander(lignes, mois){
   var d=dISO(), n=0;
   lignes.forEach(function(l){
+    if(l.bo){ if(circBoDemander(l.t, d, mois)) n++; return; }
     var a=l.a, k=l.k, svc=svcOf(l.cp);
     if(fdemDe(a,k)) return;
     var av={}, plaf=circPlafond(l.cp,a,k);
@@ -14966,18 +15016,19 @@ function circDemander(lignes, mois){
 }
 function circValider(lignes){
   var d=dISO(), n=0;
-  lignes.forEach(function(l){ var f=fdemDe(l.a,l.k); if(f && !f.v){ f.v=d; n++; } });
+  lignes.forEach(function(l){ var f=l.bo ? (l.t.fdem||null) : fdemDe(l.a,l.k); if(f && !f.v){ f.v=d; n++; } });
   return n;
 }
 function circRouvrir(lignes){
   var n=0;
-  lignes.forEach(function(l){ var f=fdemDe(l.a,l.k); if(f && f.v){ delete f.v; n++; } });
+  lignes.forEach(function(l){ var f=l.bo ? (l.t.fdem||null) : fdemDe(l.a,l.k); if(f && f.v){ delete f.v; n++; } });
   return n;
 }
 // Annuler la demande : le facturé et le mois prévu reviennent à l'état d'avant
 function circAnnuler(lignes){
   var n=0;
   lignes.forEach(function(l){
+    if(l.bo){ if(circBoAnnuler(l.t)) n++; return; }
     var a=l.a, k=l.k, svc=svcOf(l.cp), f=fdemDe(a,k);
     if(!f) return;
     var av=f.av||{};
@@ -15010,7 +15061,7 @@ function circApres(n, quoi){
   CIRC_SEL={};
   sbSave();
   sansBouger(function(){ rFactu(); try{ rPrevFactu(); }catch(e){} try{ rPrevCharge(); }catch(e){} });
-  showToast(n+' UO '+quoi);
+  showToast(n+(FA_SVC==='IRVE_BO'?' tâche(s) ':' UO ')+quoi);
 }
 function circBloc(svc, cpFiltre){
   var box=document.createElement('div');
@@ -15065,7 +15116,9 @@ function circBloc(svc, cpFiltre){
   var aide=document.createElement('div');
   aide.style.cssText='padding:5px 10px;font-size:9.5px;color:var(--t3);line-height:1.45';
   aide.textContent = CIRC_ONGLET==='afact'
-    ? 'UO terminés à 100 %. Cochez ce que vous envoyez, choisissez le mois, puis Demander la facture.'
+    ? (svc==='IRVE_BO'
+       ? 'Tâches faites, pas encore facturées, '+eur(tacheMontant())+' la tâche. Cochez ce que vous envoyez, choisissez le mois, puis Demander la facture.'
+       : 'UO terminés à 100 %. Cochez ce que vous envoyez, choisissez le mois, puis Demander la facture.')
     : CIRC_ONGLET==='dem'
     ? 'Factures parties, en attente du retour. Validez quand la FSS ou le paiement revient.'
     : 'Retour reçu. Remettre en attente si une validation a été faite par erreur.';
@@ -15077,8 +15130,8 @@ function circBloc(svc, cpFiltre){
   wrap.style.cssText='max-height:260px;overflow-y:auto;overflow-x:auto;border-top:1px solid var(--b)';
   var tbl=document.createElement('table'); tbl.className='fa-tbl';
   var th=document.createElement('thead'), trh=document.createElement('tr');
-  var cols=['','N° affaire','CP','UO','Part','Montant',
-    CIRC_ONGLET==='afact'?'Avancement':(CIRC_ONGLET==='dem'?'Demandée le':'Validée le')];
+  var cols=['','N° affaire','CP',(svc==='IRVE_BO'?'Tâche':'UO'),'Part','Montant',
+    CIRC_ONGLET==='afact'?(svc==='IRVE_BO'?'Faite le':'Avancement'):(CIRC_ONGLET==='dem'?'Demandée le':'Validée le')];
   cols.forEach(function(c,i){
     var h=document.createElement('th'); h.textContent=c;
     if(i===1||i===3) h.className='l';
@@ -15091,7 +15144,7 @@ function circBloc(svc, cpFiltre){
     var tr0=document.createElement('tr'), td0=document.createElement('td');
     td0.colSpan=cols.length;
     td0.style.cssText='padding:12px;text-align:center;font-style:italic;color:var(--t3)';
-    td0.textContent = CIRC_ONGLET==='afact' ? 'Aucun UO à facturer'
+    td0.textContent = CIRC_ONGLET==='afact' ? (svc==='IRVE_BO'?'Aucune tâche à facturer':'Aucun UO à facturer')
                     : CIRC_ONGLET==='dem' ? 'Aucune facture en attente' : 'Aucune facture validée';
     tr0.appendChild(td0); tb.appendChild(tr0);
   }
@@ -15105,11 +15158,11 @@ function circBloc(svc, cpFiltre){
       tdm.colSpan=cols.length;
       tdm.style.cssText='padding:4px 8px;font-size:9px;font-weight:900;color:#1D4ED8;background:#EFF6FF;text-align:left';
       var lblM=l.m ? moisLabel(moisIndex(l.m)) : 'mois non précisé';
-      tdm.textContent='Facturation de '+lblM+' : '+duMois.length+' UO, '+eur(somme(duMois));
+      tdm.textContent='Facturation de '+lblM+' : '+duMois.length+(svc==='IRVE_BO'?' tâche(s), ':' UO, ')+eur(somme(duMois));
       trm.appendChild(tdm); tb.appendChild(trm);
     }
     var tr=document.createElement('tr');
-    var cle=faSelCle(l.cp, l.a, l.k);
+    var cle=circCle(l);
     var tdc=document.createElement('td');
     var cb=document.createElement('input'); cb.type='checkbox';
     cb.style.cssText='width:12px;height:12px;cursor:pointer';
@@ -15129,7 +15182,7 @@ function circBloc(svc, cpFiltre){
     var tdC=document.createElement('td');
     var avc=AVC[l.cp]||['#6B7280','#F9FAFB'];
     tdC.innerHTML='<span style="display:inline-block;padding:1px 7px;border-radius:6px;font-size:9px;'
-      +'font-weight:800;background:'+avc[1]+';color:'+avc[0]+'">'+((DATA[l.cp]||{}).ini||l.cp)+'</span>';
+      +'font-weight:800;background:'+avc[1]+';color:'+avc[0]+'">'+(l.bo ? (l.t.cp||'-') : ((DATA[l.cp]||{}).ini||l.cp))+'</span>';
     tr.appendChild(tdC);
     var tdU=document.createElement('td'); tdU.className='l';
     tdU.style.cssText='font-size:9.5px;font-weight:700';
@@ -15145,14 +15198,17 @@ function circBloc(svc, cpFiltre){
     tr.appendChild(tdM);
     var tdI=document.createElement('td');
     tdI.style.cssText='font-size:9px;color:var(--t2);white-space:nowrap';
-    if(CIRC_ONGLET==='afact') tdI.textContent=Math.round(l.av)+' %';
+    if(CIRC_ONGLET==='afact') tdI.textContent = l.bo
+      ? (/^\d{4}-\d{2}-\d{2}/.test(String(l.t.date||'')) ? dFR(l.t.date) : 'faite')
+      : (Math.round(l.av)+' %');
     else if(CIRC_ONGLET==='dem'){
       tdI.textContent=dFR(l.d);
       tdI.title=l.rep==='0924' ? 'Reprise du fichier d’Alexis du 24/09/2026, à confirmer fin septembre'
                                : 'Demandée le '+dFR(l.d);
     } else {
-      tdI.textContent=dFR(l.v);
-      tdI.title='Demandée le '+dFR(l.d)+', validée le '+dFR(l.v);
+      tdI.textContent=l.avant ? 'avant le circuit' : dFR(l.v);
+      tdI.title=l.avant ? 'Facturée avant la mise en place du circuit (colonne CRD)'
+                        : ('Demandée le '+dFR(l.d)+', validée le '+dFR(l.v));
     }
     tr.appendChild(tdI);
     tb.appendChild(tr);
@@ -15205,25 +15261,25 @@ function circBloc(svc, cpFiltre){
     bouton('Demander la facture', '#B45309', '#FEF3C7', function(sel){
       var mois=selMo.value||moisISO(0);
       uiConfirm('Demander la facture',
-        sel.length+' UO, '+eur(somme(sel))+', facturation de '+moisLabel(moisIndex(mois))+'.\n'
+        sel.length+(svc==='IRVE_BO'?' tâche(s), ':' UO, ')+eur(somme(sel))+', facturation de '+moisLabel(moisIndex(mois))+'.\n'
         +'Ils passent en « facture demandée » datée d’aujourd’hui et sortent du prévisionnel.',
         function(){ circApres(circDemander(sel, mois), 'en facture demandée'); });
     });
   } else if(CIRC_ONGLET==='dem'){
     bouton('Valider, retour reçu', '#047857', '#D1FAE5', function(sel){
       uiConfirm('Valider la facturation',
-        sel.length+' UO, '+eur(somme(sel))+'.\nLa FSS ou le paiement est revenu : ils passent en facturé.',
+        sel.length+(svc==='IRVE_BO'?' tâche(s), ':' UO, ')+eur(somme(sel))+'.\nLa FSS ou le paiement est revenu : ils passent en facturé.',
         function(){ circApres(circValider(sel), 'validés'); });
     });
     bouton('Annuler la demande', '#B91C1C', '#FEE2E2', function(sel){
       uiConfirm('Annuler la demande',
-        sel.length+' UO, '+eur(somme(sel))+'.\nIls reviennent à leur état d’avant la demande et repassent dans le prévisionnel.',
+        sel.length+(svc==='IRVE_BO'?' tâche(s), ':' UO, ')+eur(somme(sel))+'.\nIls reviennent à leur état d’avant la demande et repassent dans le prévisionnel.',
         function(){ circApres(circAnnuler(sel), 'remis à facturer'); }, true);
     });
   } else {
     bouton('Remettre en attente', '#1D4ED8', '#DBEAFE', function(sel){
       uiConfirm('Remettre en attente',
-        sel.length+' UO repassent en facture demandée, en attente du retour.',
+        sel.length+(svc==='IRVE_BO'?' tâche(s)':' UO')+' repassent en facture demandée, en attente du retour.',
         function(){ circApres(circRouvrir(sel), 'remis en attente'); });
     });
   }
@@ -15232,7 +15288,9 @@ function circBloc(svc, cpFiltre){
     var tous=cases.length && cases.every(function(c){ return CIRC_SEL[c.cle]; });
     bTout.textContent=tous?'Tout décocher':'Tout cocher';
     bTout.disabled=!cases.length;
-    info.textContent = sel.length ? (sel.length+' UO coché'+(sel.length>1?'s':'')+', '+eur(somme(sel))) : '';
+    info.textContent = !sel.length ? ''
+      : svc==='IRVE_BO' ? (sel.length+' tâche(s) cochée(s), '+eur(somme(sel)))
+      : (sel.length+' UO coché'+(sel.length>1?'s':'')+', '+eur(somme(sel)));
     actions.forEach(function(x){
       x.b.textContent=x.txt+(sel.length?' ('+sel.length+')':'');
       x.b.disabled=!sel.length;
@@ -15275,6 +15333,8 @@ function rFactu(){
   });
   body.appendChild(sb);
   if(FA_SVC==='IRVE_BO'){
+    // Circuit de facturation des tâches back-office, au-dessus du tableau
+    try{ body.appendChild(circBloc('IRVE_BO','all')); }catch(e){ console.warn('circuit BO',e); }
     var boz=document.createElement('div'); boz.id='ref-taches';
     body.appendChild(boz);
     host.appendChild(card);
@@ -24068,7 +24128,7 @@ window.addEventListener('beforeunload', function(e){
 // On ne recharge jamais de force, une saisie en cours serait perdue :
 // on propose, la personne choisit son moment.
 // ══════════════════════════════════════════════════════════════
-var APP_VERSION='2026-09-24-2';
+var APP_VERSION='2026-09-24-3';
 var MAJ_VUE=false;
 function bandeauMaj(v){
   if(MAJ_VUE || document.getElementById('maj-banner')) return;
