@@ -4610,109 +4610,9 @@ function rWeek(){
     +mesCps().map(function(c){ return svcInfo(svcOf(c)).court; }).join(' \u2022 ');
   host.appendChild(sub);
 
-  // ── Bloc 1 : actions ──
-  var acts=mesActions();
-  var urgentes=acts.filter(function(x){ return x.sev>=2; });
-  var cnt={3:0,2:0};
-  acts.forEach(function(x){ if(cnt[x.sev]!==undefined) cnt[x.sev]++; });
-
-  var kpi=document.createElement('div');
-  kpi.style.cssText='display:flex;gap:7px;padding:0 12px 9px;flex-wrap:wrap';
-  [['\u00c0 traiter en priorit\u00e9',cnt[3],'#B91C1C','#FEE2E2'],
-   ['\u00c0 compl\u00e9ter',cnt[2],'#B45309','#FEF3C7'],
-   ['Mes affaires',mesCps().reduce(function(s,c){
-      return s+(gAff(c)||[]).filter(function(a){ try{return !isClot(a);}catch(e){return true;} }).length; },0),
-    '#185FA5','#EBF5FF']]
-  .forEach(function(x){
-    var d=document.createElement('div');
-    d.style.cssText='flex:1;min-width:96px;border-radius:10px;padding:8px 10px;background:'+x[3]+';color:'+x[2];
-    d.innerHTML='<div style="font-size:20px;font-weight:900">'+x[1]+'</div>'
-      +'<div style="font-size:9px;font-weight:700">'+x[0]+'</div>';
-    kpi.appendChild(d);
-  });
-  host.appendChild(kpi);
-
-  var h1=document.createElement('div');
-  h1.style.cssText='font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;'
-    +'color:var(--t3);padding:4px 12px 6px';
-  h1.textContent='\u00c0 faire';
-  host.appendChild(h1);
-
-  if(!urgentes.length){
-    var ok=document.createElement('div');
-    ok.style.cssText='margin:0 12px 10px;padding:12px;border-radius:10px;background:var(--gl);'
-      +'color:var(--green);font-size:11px;text-align:center;font-weight:700';
-    ok.textContent='Rien d\u2019urgent cette semaine \u2014 tout est \u00e0 jour.';
-    host.appendChild(ok);
-  }
-
-  // ── Trois colonnes : une par périmètre ──
-  var cols=document.createElement('div');
-  cols.style.cssText='display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));'
-    +'gap:9px;margin:0 12px 12px';
-  var byS={};
-  SERVICES.forEach(function(s){ byS[s.k]=[]; });
-  urgentes.forEach(function(x){
-    var k=svcOf(x.cp);
-    if(byS[k]) byS[k].push(x);
-  });
-  SERVICES.forEach(function(s){
-    var col=document.createElement('div');
-    col.style.cssText='border:1.5px solid '+s.fg+'33;border-radius:11px;overflow:hidden;background:var(--s)';
-    var ch=document.createElement('div');
-    ch.style.cssText='display:flex;align-items:center;gap:6px;padding:7px 10px;background:'+s.bg+';color:'+s.fg;
-    ch.innerHTML='<span style="font-size:10px;font-weight:900;flex:1">'+s.l+'</span>'
-      +'<span style="font-size:11px;font-weight:900;padding:1px 8px;border-radius:6px;background:'
-      +s.fg+';color:#fff">'+byS[s.k].length+'</span>';
-    col.appendChild(ch);
-    var inner=document.createElement('div');
-    inner.style.cssText='max-height:400px;overflow-y:auto;padding:6px';
-    if(!byS[s.k].length){
-      var e0=document.createElement('div');
-      e0.style.cssText='padding:14px 8px;text-align:center;font-size:10px;color:var(--t3);font-style:italic';
-      e0.textContent='Rien \u00e0 traiter';
-      inner.appendChild(e0);
-    }
-    byS[s.k].slice(0,25).forEach(function(x){
-      var col2=x.sev===3?['#B91C1C','#FEE2E2']:['#B45309','#FEF3C7'];
-      var row=document.createElement('div');
-      row.style.cssText='padding:6px 8px;margin-bottom:5px;background:var(--bg);border:1px solid var(--b);'
-        +'border-radius:8px;cursor:pointer';
-      row.addEventListener('click',function(){ if(x.a.no) copyNo(x.a.no); });
-      row.innerHTML='<div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">'
-        +'<b style="font-size:11px">'+x.a.code+'</b>'
-        +'<span style="font-size:8px;font-weight:800;padding:1px 5px;border-radius:4px;background:'
-          +col2[1]+';color:'+col2[0]+'">'+x.cat+'</span></div>'
-        +'<div style="font-size:9px;color:var(--t3);margin-top:1px;overflow:hidden;'
-          +'text-overflow:ellipsis;white-space:nowrap">'+(x.a.addr||'')+'</div>'
-        +'<div style="font-size:9px;color:'+col2[0]+'">'+x.txt+'</div>';
-      inner.appendChild(row);
-    });
-    col.appendChild(inner);
-    cols.appendChild(col);
-  });
-  host.appendChild(cols);
-
-  [].slice.call([]).forEach(function(x){
-    var col=x.sev===3?['#B91C1C','#FEE2E2']:['#B45309','#FEF3C7'];
-    var row=document.createElement('div');
-    row.style.cssText='display:flex;align-items:center;gap:9px;margin:0 12px 6px;padding:8px 10px;'
-      +'background:var(--s);border:1.5px solid var(--b);border-radius:10px;cursor:pointer';
-    row.addEventListener('click',function(){ openDet(x.a,x.cp); });
-    var sv=svcInfo(svcOf(x.cp));
-    row.innerHTML='<div style="flex:1;min-width:0">'
-      +'<div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">'
-        +'<b style="font-size:12px">'+x.a.code+'</b>'
-        +'<span style="font-size:8px;padding:1px 5px;border-radius:4px;background:'+sv.bg+';color:'+sv.fg+'">'+sv.court+'</span>'
-        +'<span style="font-size:8.5px;font-weight:800;padding:1px 6px;border-radius:5px;background:'+col[1]+';color:'+col[0]+'">'+x.cat+'</span>'
-      +'</div>'
-      +'<div style="font-size:10px;color:var(--t3);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'
-        +(x.a.addr||'')+'</div>'
-      +'<div style="font-size:10px;color:'+col[0]+';margin-top:1px">'+x.txt+'</div>'
-    +'</div>';
-    host.appendChild(row);
-  });
-
+  // Le module « À faire » est retiré le 28/09/2026 à la demande d'Alexis :
+  // Ma semaine ne garde que le portefeuille. Les fonctions mesActions et les
+  // colonnes par périmètre restent dans le fichier, prêtes à revenir.
   // ── Bloc : mon portefeuille ──
   // Demandé par Alexis le 28/09/2026 : la liste des affaires du chargé de
   // projet, une par ligne, avec l'adresse et l'état d'avancement, pour voir
@@ -4768,7 +4668,7 @@ function rWeek(){
       tr.style.cssText='border-bottom:1px solid var(--b);cursor:pointer';
       tr.addEventListener('mouseenter',function(){ tr.style.background='var(--s2)'; });
       tr.addEventListener('mouseleave',function(){ tr.style.background=''; });
-      tr.addEventListener('click',function(){ openDet(a, x.cp); });
+      tr.addEventListener('click',function(){ allerAffaire(x.cp, a); });
 
       var tdN=document.createElement('td');
       tdN.style.cssText='padding:5px 7px;white-space:nowrap';
@@ -7649,6 +7549,83 @@ function rAffGridRefreshPct(a,ph,colIdx){
   }
 }
 
+
+// Ouvre l'onglet Affaires sur une affaire précise et l'amène à l'écran.
+// Demandé par Alexis le 28/09/2026 : depuis Ma semaine, un clic doit mener au
+// tableau, pas à la fiche des tâches.
+// ARMA et RATP présentent une colonne par affaire, IRVE une ligne : on cherche
+// donc d'abord l'en-tête de colonne, puis la ligne.
+function allerAffaire(cp, a){
+  var svc;
+  try{
+    svc=svcOf(cp);
+    SVC_CUR=svc;
+    CCP=cp;
+    showV('p');
+    // Un filtre de phase, une recherche en cours ou la vue back-office
+    // masqueraient l'affaire visée
+    try{ AG_PHASE_FILTER='all'; }catch(e){}
+    try{ AG_SEARCH=''; var ch=document.getElementById('ag-search'); if(ch) ch.value=''; }catch(e){}
+    try{ AG_VUE_BO=false; }catch(e){}
+    try{ AG_MODE='grid'; agSetMode('grid'); }catch(e){}
+  }catch(e){ return; }
+  // On vise par le RANG de l'affaire dans la grille, pas par son texte : le
+  // numéro se retrouve aussi dans la ligne « N° d'affaire », qui les porte
+  // tous, et une commune est partagée par plusieurs dossiers. Les deux menaient
+  // au mauvais endroit. Le texte ne sert plus qu'à confirmer.
+  var parColonne=(svc!=='IRVE');
+  var attendu=String((parColonne ? (svc==='MECA' ? ((a.meca||{}).station||a.code) : a.code)
+                                 : a.no) || '').replace(/\s+/g,' ').trim();
+  function dessiner(){
+    try{ gridForSvc()(); }catch(e){}
+    var wrap=document.getElementById('ag-wrap');
+    if(!wrap) return null;
+    var rang=-1;
+    try{
+      var affs=selAffaires().map(function(x){ return x.a; }).filter(agMatch);
+      rang=affs.indexOf(a);
+    }catch(e){}
+    var cible=null;
+    if(rang>=0){
+      cible = parColonne
+        ? ([].slice.call(wrap.querySelectorAll('thead th'))[rang+1]||null)   // la 1re colonne porte les libellés
+        : ([].slice.call(wrap.querySelectorAll('tbody tr'))[rang]||null);
+    }
+    // Contrôle : si le rang ne tombe pas sur la bonne affaire, on cherche le
+    // texte plutôt que de mettre en évidence un voisin.
+    if(attendu && (!cible || (cible.textContent||'').indexOf(attendu)<0)){
+      var liste=[].slice.call(wrap.querySelectorAll(parColonne?'thead th':'tbody tr'));
+      cible=liste.filter(function(el){ return (el.textContent||'').indexOf(attendu)>=0; })[0]||null;
+    }
+    return cible;
+  }
+  setTimeout(function(){
+    var cible=null;
+    if(svc==='IRVE'){
+      // Les dossiers en travaux vivent dans le sous-onglet Travaux
+      var vues=(irvePhaseNum(a)>=6) ? ['travaux','etude'] : ['etude','travaux'];
+      for(var v=0; v<vues.length && !cible; v++){
+        try{ IRVE_VUE=vues[v]; }catch(e){}
+        cible=dessiner();
+      }
+    } else {
+      cible=dessiner();
+    }
+    // Une affaire clôturée, ou un dossier qu'aucune vue ne montre, n'a pas de
+    // place dans la grille : on ouvre sa fiche plutôt que de ne rien faire.
+    if(!cible){ try{ openDet(a, cp); }catch(e){} return; }
+    var wrap=document.getElementById('ag-wrap');
+    if(parColonne) wrap.scrollLeft=Math.max(0, cible.offsetLeft-160);
+    else wrap.scrollTop=Math.max(0, cible.offsetTop-120);
+    // Un contour bleu deux secondes, pour retrouver l'affaire du regard.
+    // On passe par outline : les en-têtes portent déjà un boxShadow.
+    var av=cible.style.outline, avo=cible.style.outlineOffset;
+    cible.style.outline='2px solid #1D4ED8';
+    cible.style.outlineOffset='-2px';
+    setTimeout(function(){ cible.style.outline=av||''; cible.style.outlineOffset=avo||''; }, 2000);
+  }, 90);
+}
+try{ window.allerAffaire=allerAffaire; }catch(e){}
 
 // Redirige vers l'onglet Affaires, ouvre le module visé et le met en évidence
 function agGoto(module){
@@ -15027,7 +15004,7 @@ function rSynthFactu(){
   var tS=document.createElement('table');
   tS.style.cssText='width:100%;border-collapse:collapse;font-size:10.5px';
   var thS=document.createElement('thead'); var trS=document.createElement('tr');
-  [['',''],['UO','r'],['À facturer','r'],['Valorisé du mois','r'],['Encours','r']]
+  [['',''],['UO','r'],['À facturer','r'],['FSS en attente','r'],['Encours','r']]
   .forEach(function(c){
     var x=document.createElement('th');
     x.style.cssText='text-align:'+(c[1]==='r'?'right':'left')+';padding:3px 6px;font-size:8.5px;'
@@ -15046,7 +15023,6 @@ function rSynthFactu(){
   s.blocs.forEach(function(b){
     var c=COL[b.name]||{fg:'var(--t2)',bg:'var(--s2)'};
     var vb=null; vs.blocs.forEach(function(x){ if(x.name===b.name) vb=x; });
-    var dm=vm.parBloc[b.name];
     var r=document.createElement('tr');
     r.style.borderBottom='1px solid var(--b)';
     var n=celS(b.name, c.fg, true, false);
@@ -15080,7 +15056,12 @@ function rSynthFactu(){
     }
     r.appendChild(cUo);
     r.appendChild(cTot);
-    r.appendChild(celS(dm===null?'—':fmtEur(Math.round(dm)), 'var(--t2)', false, true));
+    // FSS en attente : la somme des UO qui portent un sablier.
+    var fa={n:0,eur:0};
+    if(svcB){ try{ fa=fssEnAttente(svcB); }catch(e){} }
+    var cFss=celS(fa.n?fmtEur(Math.round(fa.eur)):'—', fa.n?'#B45309':'var(--t3)', fa.n>0, true);
+    cFss.title=fa.n ? (fa.n+' UO en attente du retour de la FSS') : 'Aucune FSS en attente';
+    r.appendChild(cFss);
     r.appendChild(celS(vb?fmtEur(Math.round(vb.valo-vb.fact)):'—', 'var(--t2)', false, true));
     tbS.appendChild(r);
   });
@@ -15097,7 +15078,13 @@ function rSynthFactu(){
   rT.appendChild(celS('TOTAL À FACTURER','var(--green)',true,false));
   rT.appendChild(celS(String(totUo),'var(--green)',true,true));
   rT.appendChild(celS(fmtEur(totEur),'var(--green)',true,true));
-  rT.appendChild(celS(vm.total===null?'—':fmtEur(Math.round(vm.total)),'var(--green)',true,true));
+  var fssTot=0, fssNb=0;
+  ['ARMA','IRVE','IRVE_BO','MECA'].forEach(function(k){
+    try{ var x=fssEnAttente(k); fssTot+=x.eur; fssNb+=x.n; }catch(e){}
+  });
+  var cFT=celS(fssNb?fmtEur(Math.round(fssTot)):'—','var(--green)',true,true);
+  cFT.title=fssNb ? (fssNb+' UO en attente du retour de la FSS') : 'Aucune FSS en attente';
+  rT.appendChild(cFT);
   rT.appendChild(celS(fmtEur(Math.round(vs.encours)),'var(--green)',true,true));
   tbS.appendChild(rT);
   tS.appendChild(tbS); wrapS.appendChild(tS); body.appendChild(wrapS);
@@ -15114,12 +15101,10 @@ function rSynthFactu(){
   vl.innerHTML='<span>Valorisé total <b>'+fmtEur(Math.round(vs.valo))+'</b></span>'
     +'<span>Déjà facturé <b>'+fmtEur(Math.round(vs.fact))+'</b></span>'
     +'<span>Encours <b>'+fmtEur(Math.round(vs.encours))+'</b></span>'
-    +(vm.total===null
-      ? '<span style="color:var(--t3)">Le valorisé du mois demande un instantané enregistré en fin de mois.</span>'
-      : '<span>Valorisé du mois <b>'+fmtEur(Math.round(vm.total))+'</b></span>');
+    +'<span>FSS en attente <b>'+fmtEur(Math.round(fssTot))+'</b></span>';
   vl.title='Valorisé = prix de l’UO multiplié par son avancement. '
-    +'Encours = valorisé total moins ce qui est déjà facturé.'
-    +(vm.ref?('\nDernier instantané : '+vm.ref.date):'');
+    +'Encours = valorisé total moins ce qui est déjà facturé. '
+    +'FSS en attente = les UO dont on attend encore le retour d’ENEDIS.';
   body.appendChild(vl);
 
 
@@ -15287,6 +15272,50 @@ var CIRC_SEL={};
 var CIRC_MOIS='';            // mois de facturation de la demande, vide = mois courant
 var CIRC_IRVE_LIB={ETD:'Étude', CRD:'Coordination', TRX:'Travaux', RCP:'Réception'};
 function fdemDe(a,k){ return (a && a.fdem && a.fdem[k]) || null; }
+// SABLIER : on attend le retour de la FSS sur cet UO.
+// Demandé par Alexis le 28/09/2026 : il doit pouvoir l'activer ou le couper
+// lui-même, indépendamment de la facturation. Exemple : l'UO est à 1 parce que
+// la facture est partie, mais ENEDIS n'a pas encore renvoyé la FSS.
+// Rien de posé à la main : le sablier suit la demande de facture en cours.
+// o est une affaire, ou une tâche back-office avec la clé BO.
+function sabDe(o, k){
+  var m=(o&&o.sab)||{};
+  if(m[k]===1) return true;
+  if(m[k]===0) return false;
+  var f=(k==='BO') ? ((o&&o.fdem)||null) : (((o&&o.fdem)||{})[k]||null);
+  return !!(f && !f.v);
+}
+function sabBasculer(o, k){
+  if(!o.sab) o.sab={};
+  o.sab[k] = sabDe(o,k) ? 0 : 1;
+  return o.sab[k]===1;
+}
+// UO en attente de FSS, par périmètre, avec leur montant.
+function fssEnAttente(svc){
+  var n=0, eur=0;
+  if(svc==='IRVE_BO'){
+    IRVE_TACHES.forEach(function(t){
+      if(!sabDe(t,'BO')) return;
+      n++; eur+=tacheMontant();
+    });
+    return {n:n, eur:eur};
+  }
+  cpsOfSvc(svc).forEach(function(cp){
+    (gAff(cp)||[]).forEach(function(a){
+      circCles(cp,a).forEach(function(k){
+        if(!sabDe(a,k)) return;
+        var f=(a.fdem||{})[k];
+        var part=0;
+        if(f && +f.q) part=+f.q;
+        else { try{ part=uoFacture(cp,a,k); }catch(e){} }
+        if(!(part>0)) part=circPlafond(cp,a,k);
+        if(!(part>0)) return;
+        n++; eur+=part*circPrix(cp,a,k);
+      });
+    });
+  });
+  return {n:n, eur:eur};
+}
 function circOublier(a,k){
   if(a.fdem && a.fdem[k]){ delete a.fdem[k]; if(!Object.keys(a.fdem).length) delete a.fdem; }
 }
@@ -16313,14 +16342,38 @@ function rFactu(){
         box.appendChild(sel);
       }
       var fd=fdemDe(a, cleF);
-      if(fd && (fd.v || FA_SABLIERS)){
+      // La coche verte dit que le retour est arrivé et la facturation validée.
+      if(fd && fd.v){
+        var vu=document.createElement('span');
+        vu.style.cssText='display:inline-block;margin-left:2px;font-size:8px;font-weight:900;padding:0 3px;'
+          +'border-radius:4px;vertical-align:middle;background:#D1FAE5;color:#047857';
+        vu.textContent='\u2713';
+        vu.title='Factur\u00e9, retour valid\u00e9 le '+dFR(fd.v)
+          +'\nDemand\u00e9e le '+dFR(fd.d)+(fd.m?', facturation de '+moisLabel(moisIndex(fd.m)):'');
+        box.appendChild(vu);
+      }
+      // Le sablier se pose et se retire d'un clic : il dit qu'on attend encore
+      // la FSS d'ENEDIS, que la facture soit partie ou non.
+      if(FA_SABLIERS && !(fd && fd.v)){
         bdg=document.createElement('span');
-        bdg.style.cssText='display:inline-block;margin-left:2px;font-size:8px;font-weight:900;padding:0 3px;'
-          +'border-radius:4px;vertical-align:middle;'+(fd.v?'background:#D1FAE5;color:#047857':'background:#DBEAFE;color:#1D4ED8');
-        bdg.textContent=fd.v?'\u2713':'\u23f3';
-        bdg.title=(fd.v ? 'Factur\u00e9, retour valid\u00e9 le '+dFR(fd.v)+'\n' : 'Facture demand\u00e9e, en attente du retour\n')
-          +'Demand\u00e9e le '+dFR(fd.d)+(fd.m?', facturation de '+moisLabel(moisIndex(fd.m)):'')
-          +(fd.rep==='0924'?'\nReprise du fichier d\u2019Alexis du 24/09/2026':'');
+        var peindreSab=function(){
+          var on=sabDe(a, cleF);
+          bdg.style.cssText='display:inline-block;margin-left:2px;font-size:8px;font-weight:900;'
+            +'padding:0 3px;border-radius:4px;vertical-align:middle;cursor:pointer;'
+            +(on?'background:#DBEAFE;color:#1D4ED8;opacity:1':'background:transparent;color:var(--b2);opacity:.55');
+          bdg.textContent='\u23f3';
+          bdg.title=(on?'En attente du retour de la FSS':'Pas d\u2019attente de FSS')
+            +'\nCliquer pour changer'
+            +(fd?('\nFacture demand\u00e9e le '+dFR(fd.d)+(fd.m?', facturation de '+moisLabel(moisIndex(fd.m)):'')):'');
+        };
+        peindreSab();
+        bdg.addEventListener('click',function(ev){
+          ev.stopPropagation();
+          sabBasculer(a, cleF);
+          peindreSab();
+          sbSave();
+          try{ rSynthFactu(); }catch(e){}
+        });
         box.appendChild(bdg);
       }
       td.appendChild(box); tr.appendChild(td);
@@ -24637,7 +24690,7 @@ window.addEventListener('beforeunload', function(e){
 // On ne recharge jamais de force, une saisie en cours serait perdue :
 // on propose, la personne choisit son moment.
 // ══════════════════════════════════════════════════════════════
-var APP_VERSION='2026-09-28-4';
+var APP_VERSION='2026-09-28-5';
 var MAJ_VUE=false;
 function bandeauMaj(v){
   if(MAJ_VUE || document.getElementById('maj-banner')) return;
