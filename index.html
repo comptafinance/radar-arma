@@ -4118,6 +4118,7 @@ function sbLoad(){
           try{ var rF=repriseFactu0924(); if(rF) msg.push(rF); }catch(e2){ console.warn('factu0924',e2); }
           try{ var rT=repriseTachesBo0924(); if(rT) msg.push(rT); }catch(e2){ console.warn('tachesBo0924',e2); }
           try{ var rM=repriseMarche0928(); if(rM) msg.push(rM); }catch(e2){ console.warn('marche0928',e2); }
+          try{ var rS=repriseOkSouad0928(); if(rS) msg.push(rS); }catch(e2){ console.warn('okSouad0928',e2); }
           var nA=annulerAout26(), nC=0;
           try{ nC=importerActionsCommentaires(); }catch(e2){ console.warn('actionsCom',e2); }
           if(bascule) msg.push(bascule.doublons+' doublons IRVE retirés du portefeuille d’Alexis'
@@ -14026,6 +14027,151 @@ function annulerTachesBo0924(){
   return IRVE_TACHES.length;
 }
 try{ window.annulerTachesBo0924=annulerTachesBo0924; }catch(e){}
+
+// ══════════════════════════════════════════════════════════════
+// LES OK DE SOUAD, reprise du 28/09/2026
+// Onglet CP3 du fichier SUIVI ARMA PARIS V7, le portefeuille 3. Alexis :
+// « Mettre à jour les OK dans l'outil RADAR en prenant les OK du portefeuille 3
+// pour mettre à jour seulement les affaires de Souad. »
+// Steve a tranché : le fichier prime, sans rien perdre. Une case remplie dans
+// le fichier remplace celle de RADAR ; une case vide laisse RADAR tel quel.
+// Codes : O réalisée, N à reprendre, A sans objet, point on ne touche pas.
+// Les mentions libres du fichier (A FAIRE, ABANDONNE, ARCHIVE, un nom...) ne
+// sont pas des statuts : elles ne changent rien et sont comptées à part.
+// Les valeurs d'avant sont gardées dans chaque affaire : annulerOkSouad0928().
+// ══════════════════════════════════════════════════════════════
+var SOUAD_TACHES_0928 = ["RDV + Retour Primo", "Envoi du Devis [CC]", "Devis Signé [Client]", "Acompte Payé [Client]", "EXT // Plan 200ème [Si S2000]", "INT // Plan synoptique", "EOTP niv2", "Créer PRM", "R323-25", "Etablir les DT", "Demande CITE + Alfresco", "DMEO", "Programmation Regard", "ROC [Si S1500]", "Validation CITE", "Envoi planning", "Diag amiante [Si S1500]", "Plan balisage + DCE [Si S1500]", "EXT // Passage piéton", "EXT // Panneaux + courreil [Si S1500]", "EXT // CMD", "EXT // DMR", "EXT // ICP/PPS", "INT // CMD", "INT // DMR", "INT // ICP/PPS", "Contrôle N1", "ECOME (type 2)", "PGOC + AAT", "PVR", "PMEO + AMEO", "F100 + MES", "PGOC réceptionné", "AAT réceptionné", "Facturation client", "Cartographie validée", "Presta payés (CDAT)", "FIEC MES", "CREI"];
+var SOUAD_OK_0928 = [
+ ["RAC-25-2F7XYQFWVN", "OOOOOOOOOOOOOOOOOOAOOOOOOOOOOO..OOOOON.", {"debut_trx_ext": "03/02/2026", "fin_trx_ext": "04/02/2026"}],
+ ["RAC-25-2H1Z7HNTYE", "OOOOOOOOOOOOOAOOAAAAOOOOOOOOAAA.NNANON.", {}],
+ ["RAC-24-2B6NCIPOH5", "OOOOOOOOOOOOOOOOOOAOOOOOOOOOOOO.OOOO.O.", {}],
+ ["DC21/028607", "OOOOOOOOOOOOOAOOAAAAOOOOOOOAAAA.AOOAO..", {}],
+ ["RAC-24-2AV4YCHARO", "OOOOOOOOOOOOOOOOOOOOOOOAAAOOOOO.OOOOOON", {}],
+ ["RAC-24-2B3IB1TK3Q", "OOOOOOOOOOOOOOOOOOAAOOOOOO.OOOO.OOOO.N.", {}],
+ ["RAC-24-2EGOR7N1GG", "OOOOOOOOOOOOOOONOOAOOOOOOOON...........", {}],
+ ["RAC-25-2G2BEBH41V", "OOOOOOOOOOOOOAAOAAAAAAAOOOAAAAA.AOOOOO.", {}],
+ ["DC21/027342", "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO.OOOOOON", {}],
+ ["DC21/026573", "OOOOOOO...OAAAAAAAAAAAAAAAAAAAAAAAAAAAA", {}],
+ ["RAC-PAR-25-001010", "OOOOOOO..OO.OAN........................", {}],
+ ["RAC-PAR-25-000694", "OOOOOOOOOOOOOAOOAAOAOOOOOO.AAAA........", {}],
+ ["RAC-25-2HT0DJN43P", "OOOOAOOAAAAOOAAOAAAAAAAOAOAAAAA.AOOOOAN", {}],
+ ["RAC-PAR-25-001029", "OOOOOOOOOOOOOAOOAAOAOOOOOOOAAAANOOOOOON", {}],
+ ["RAC-PAR-25-001024", "OOOOOOOOOOOOOAOOAAAAOOOOOOOOOAONOOOONO.", {}],
+ ["RAC-PAR-25-002931", "OOOOOOOOOOOOOA.........................", {"debut_trx_ext": "31/07/2026"}],
+ ["RAC-PAR-25-000386", "OOO..AAAAAAAAAAAAAAAAAAAAAAAAAA.AAAAAAA", {}],
+ ["RAC-PAR-25-004667", "OOOOOOOOOOO.O...AAAA.......AAAA........", {"date_ecome": "21/07/2026", "date_meex": "27/07/2026"}],
+ ["RAC-PAR-25-004986", "OOOOOOOOOOOOOOONAAAANNNNNNNAAAAN.......", {"date_meex": "19/10/2026"}],
+ ["RAC-PAR-25-004804", "OOOOAOOOAAAOOAAOAAAAAAAOOOAAAAAOAOOOONN", {}],
+ ["RAC-PAR-25-004534", "OOOOAOOOOAAN.AA.AAAA.......AAAA........", {}],
+ ["DC21/026805", "OOOOOOOOOOOOOAOOAAAAOOOOOOOAAAA.OOOOONN", {}],
+ ["RAC-25-2FJDYW0BVT", "OOAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.AAAAAAA", {}],
+ ["RAC-PAR-25-000681", "OOAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.AAAAAAA", {}],
+ ["RAC-24-2CSQNSL52B", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.AAAAAAA", {}],
+ ["RAC-PAR-25-001063", "OOAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.AAAAAAA", {}],
+ ["RAC-24-2C1T8FTW1I", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.AAAAAAA", {}],
+ ["RAC-PAR-25-001387", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.AAAAAAA", {}],
+ ["RAC-PAR-25-001388", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.AAAAAAA", {}],
+ ["RAC-PAR-25-001389", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.AAAAAAA", {}],
+ ["RAC-PAR-25-004742", "OOOOAOOOAAAOOAAOAAAAAAAOOOAAOAA.AOOO...", {}],
+ ["RAC-PAR-25-005728", "OO..AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", {}],
+ ["RAC-PAR-25-005975", ".AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", {}],
+ ["RAC-PAR-25-005489", "OOOOOAOOAAO............................", {}],
+ ["RAC-PAR-25-006344", "OO..AAAAAAAAAAAAAAAAAAAAAA.............", {}],
+ ["RAC-PAR-26-000462", "OOOOOOOOOOOOOAOOAAAAOONOO..............", {"date_meex": "19/10/2026"}],
+ ["RAC-PAR-25-005938", "O.AAAAAAAAAAAAAAAAAAAAAAAAAAAAA.AAAAAAA", {}],
+ ["RAC-PAR-26-001047", "OOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", {}],
+ ["RAC-PAR-26-001198", "OOOOO.N...N............................", {}],
+ ["RAC-PAR-25-006021", "OO.....................................", {}],
+ ["RAC-PAR-26-001637", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", {}],
+ ["RAC-PAR-26-001201", "OO.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", {}],
+ ["RAC-PAR-26-000910", "OOOOOOOOOOOOOAOOAAAAOOOOOO.OOOOO..O....", {"date_meex": "25/09/2026"}],
+ ["RAC-PAR-26-001708", "OOOOOOO.....OA.........................", {}],
+ ["RAC-PAR-26-001705", "OOOOOOO.....OA.........................", {}],
+ ["RAC-PAR-26-000939", "O......................................", {}],
+ ["RAC-PAR-26-001609", "OOOO...................................", {}],
+ ["RAC-PAR-26-001515", "OOOOOOOOOOOOOAONAOAANNNNNN.............", {"debut_trx_ext": "28/09/2026", "date_ecome": "30/09/2026", "date_meex": "02/10/2026"}],
+ ["RAC-PAR-25-006076", "AOOOOOOOOOOOOOOOOOAOOOOOOO.OOOOOOOOONNN", {}],
+ ["RAC-PAR-26-002221", "OOOOOOO.O..............................", {}],
+ ["RAC-PAR-26-001678", "OO.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", {}],
+ ["RAC-PAR-26-002350", ".......................................", {}],
+ ["RAC-PAR-26-003907", "O......................................", {}],
+ ["RAC-PAR-26-003918", "OOOOOOOOOOOOOA.NAAAAN..................", {"date_meex": "29/10/2026"}],
+ ["RAC-PAR-26-003594", "OOOONO.O..O............................", {}]
+];
+var SOUAD_CODES = {'O':'ok', 'N':'nok', 'A':'na'};
+function repriseOkSouad0928(){
+  if(MIGR.okSouad0928) return '';
+  // Le portefeuille de Souad, et lui seul
+  var cp=cpsOfSvc('ARMA').filter(function(k){ return (DATA[k]||{}).ini==='SD'; })[0];
+  if(!cp) return '';
+  sauvegardeSecours('avant la reprise des OK de Souad du 28/09/2026');
+  var idx={};
+  (gAff(cp)||[]).forEach(function(a){
+    var k=String(a.no||'').replace(/\s+/g,'').toUpperCase();
+    if(k) idx[k]=a;
+  });
+  var rap={affaires:0, taches:0, dates:0, absentes:[], inconnues:[]};
+  SOUAD_OK_0928.forEach(function(r){
+    var a=idx[String(r[0]).replace(/\s+/g,'').toUpperCase()];
+    if(!a){ rap.absentes.push(r[0]); return; }
+    if(a.okSouad0928avant) return;                 // déjà repris
+    a.okSouad0928avant={
+      quand:new Date().toISOString(),
+      tasks:(a.tasks||[]).map(function(t){ return {n:t.n, s:t.s}; }),
+      dates:JSON.parse(JSON.stringify(a.dates||{}))
+    };
+    var n=0;
+    String(r[1]).split('').forEach(function(ch, i){
+      var st=SOUAD_CODES[ch];
+      if(!st) return;                              // point : on ne touche pas
+      var nom=SOUAD_TACHES_0928[i];
+      var t=(a.tasks||[]).filter(function(x){ return x.n===nom; })[0];
+      if(!t){ if(rap.inconnues.indexOf(nom)<0) rap.inconnues.push(nom); return; }
+      if(t.s===st) return;
+      t.s=st; n++;
+    });
+    if(!a.dates) a.dates={};
+    Object.keys(r[2]||{}).forEach(function(k){
+      if(String(a.dates[k]||'')===r[2][k]) return;
+      a.dates[k]=r[2][k]; rap.dates++;
+    });
+    rap.taches+=n;
+    rap.affaires++;
+  });
+  MIGR.okSouad0928=true;
+  MIGR.okSouad0928Rapport={quand:new Date().toISOString(), cp:cp, affaires:rap.affaires,
+    taches:rap.taches, dates:rap.dates, absentes:rap.absentes, inconnues:rap.inconnues};
+  try{ console.info('Reprise OK Souad 28/09', MIGR.okSouad0928Rapport); }catch(e){}
+  var msg='OK de Souad repris : '+rap.affaires+' affaires, '+rap.taches+' tâches'
+    +(rap.dates?' et '+rap.dates+' dates':'');
+  if(rap.absentes.length) msg+=' ; '+rap.absentes.length+' affaire(s) du fichier absente(s) de son portefeuille';
+  return msg;
+}
+// Remettre les tâches de Souad comme avant la reprise.
+// Depuis la console : annulerOkSouad0928()
+function annulerOkSouad0928(){
+  sauvegardeSecours('avant annulation de la reprise des OK de Souad');
+  var n=0;
+  Object.keys(DATA).forEach(function(cp){
+    (gAff(cp)||[]).forEach(function(a){
+      var g=a.okSouad0928avant;
+      if(!g) return;
+      (g.tasks||[]).forEach(function(x){
+        var t=(a.tasks||[]).filter(function(y){ return y.n===x.n; })[0];
+        if(t) t.s=x.s;
+      });
+      a.dates=JSON.parse(JSON.stringify(g.dates||{}));
+      delete a.okSouad0928avant;
+      n++;
+    });
+  });
+  MIGR.okSouad0928Annulee=new Date().toISOString();
+  SYNC_REV++; sbSave();
+  try{ buildTabs(); renderAll(); }catch(e){}
+  showToast('Tâches de Souad remises comme avant le 28/09 sur '+n+' affaires');
+  return n;
+}
+try{ window.annulerOkSouad0928=annulerOkSouad0928; }catch(e){}
 
 // Ancien décalage relatif, gardé en repli pour ne rien perdre
 function decalUo(a,k){ return ((a.decal||{})[k])||0; }
@@ -24491,7 +24637,7 @@ window.addEventListener('beforeunload', function(e){
 // On ne recharge jamais de force, une saisie en cours serait perdue :
 // on propose, la personne choisit son moment.
 // ══════════════════════════════════════════════════════════════
-var APP_VERSION='2026-09-28-3';
+var APP_VERSION='2026-09-28-4';
 var MAJ_VUE=false;
 function bandeauMaj(v){
   if(MAJ_VUE || document.getElementById('maj-banner')) return;
