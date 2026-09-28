@@ -4712,6 +4712,131 @@ function rWeek(){
     host.appendChild(row);
   });
 
+  // ── Bloc : mon portefeuille ──
+  // Demandé par Alexis le 28/09/2026 : la liste des affaires du chargé de
+  // projet, une par ligne, avec l'adresse et l'état d'avancement, pour voir
+  // d'un coup où en sont ses dossiers et ce qui presse.
+  (function(){
+    var mine=[];
+    mesCps().forEach(function(cp){
+      (gAff(cp)||[]).forEach(function(a){
+        var clot=false; try{ clot=isClot(a); }catch(e){}
+        if(clot) return;
+        if(svcOf(cp)==='IRVE' && irvePhaseNum(a)===0) return;   // dossier supprimé
+        mine.push({cp:cp, a:a});
+      });
+    });
+    if(!mine.length) return;
+    // Les plus urgentes en tête : météo rouge, puis sans action depuis longtemps
+    mine.forEach(function(x){
+      var j=null; try{ j=joursSansAction(x.a); }catch(e){}
+      x.jours=j;
+      x.urg=(x.a.meteo===3?2:0)+(j!==null&&j>15?1:0);
+    });
+    mine.sort(function(p,q){
+      return (q.urg-p.urg) || ((q.jours===null?-1:q.jours)-(p.jours===null?-1:p.jours));
+    });
+
+    var h=document.createElement('div');
+    h.style.cssText='font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;'
+      +'color:var(--t3);padding:14px 12px 6px;display:flex;align-items:center;gap:8px';
+    h.innerHTML='<span style="flex:1">Mon portefeuille</span>'
+      +'<span style="font-size:10px;font-weight:700;color:var(--t3);text-transform:none;letter-spacing:0">'
+      +mine.length+' affaire'+(mine.length>1?'s':'')+' en cours</span>';
+    host.appendChild(h);
+
+    var wrap=document.createElement('div');
+    wrap.style.cssText='margin:0 10px 12px;border:1.5px solid var(--b);border-radius:10px;'
+      +'overflow:auto;max-height:340px;background:var(--s)';
+    var tbl=document.createElement('table');
+    tbl.style.cssText='width:100%;border-collapse:collapse;font-size:10px';
+    var th=document.createElement('thead'), trh=document.createElement('tr');
+    [['N° affaire','l'],['Adresse','l'],['État','l'],['Avancement','l'],['Depuis','r']]
+    .forEach(function(c){
+      var x=document.createElement('th');
+      x.style.cssText='position:sticky;top:0;background:var(--s2);text-align:'+(c[1]==='r'?'right':'left')
+        +';padding:5px 7px;font-size:8.5px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;'
+        +'color:var(--t3);border-bottom:1.5px solid var(--b);white-space:nowrap';
+      x.textContent=c[0]; trh.appendChild(x);
+    });
+    th.appendChild(trh); tbl.appendChild(th);
+    var tb=document.createElement('tbody');
+    mine.forEach(function(x){
+      var a=x.a, svc=svcOf(x.cp);
+      var tr=document.createElement('tr');
+      tr.style.cssText='border-bottom:1px solid var(--b);cursor:pointer';
+      tr.addEventListener('mouseenter',function(){ tr.style.background='var(--s2)'; });
+      tr.addEventListener('mouseleave',function(){ tr.style.background=''; });
+      tr.addEventListener('click',function(){ openDet(a, x.cp); });
+
+      var tdN=document.createElement('td');
+      tdN.style.cssText='padding:5px 7px;white-space:nowrap';
+      var mto=({1:'var(--green)',2:'var(--amber)',3:'var(--red)'})[a.meteo]||'var(--b2)';
+      var sv=svcInfo(svc);
+      tdN.innerHTML='<span style="display:inline-block;width:7px;height:7px;border-radius:50%;'
+        +'background:'+mto+';margin-right:5px;vertical-align:middle"></span>'
+        +'<b style="font-size:10px">'+(a.no||a.code)+'</b>'
+        +(mesCps().length>1?'<span style="font-size:7.5px;font-weight:800;padding:1px 5px;border-radius:4px;'
+          +'margin-left:5px;background:'+sv.bg+';color:'+sv.fg+'">'+sv.court+'</span>':'');
+      tr.appendChild(tdN);
+
+      var adr=String(a.addr||((a.irve||{}).commune)||((a.meca||{}).station)||'').trim();
+      var tdA=document.createElement('td');
+      tdA.style.cssText='padding:5px 7px;color:var(--t2);max-width:220px;overflow:hidden;'
+        +'text-overflow:ellipsis;white-space:nowrap';
+      tdA.textContent=adr||'—';
+      tdA.title=adr;
+      tr.appendChild(tdA);
+
+      // État : le libellé métier du périmètre
+      var et, col;
+      if(svc==='IRVE'){ var ph=irvePhase(a); et=ph.l; col=[ph.fg, ph.bg]; }
+      else if(svc==='MECA'){ et=(a.meca||{}).groupe||'RATP'; col=['#B45309','#FEF3C7']; }
+      else { var e=AG_ETATS[agEtatOf(a)]||AG_ETATS.autre; et=e.court; col=[e.fg, e.bg]; }
+      var tdE=document.createElement('td');
+      tdE.style.cssText='padding:5px 7px;white-space:nowrap';
+      tdE.innerHTML='<span style="font-size:8.5px;font-weight:800;padding:2px 7px;border-radius:5px;'
+        +'background:'+col[1]+';color:'+col[0]+'">'+et+'</span>';
+      tr.appendChild(tdE);
+
+      // Avancement : la phase en cours et sa part faite
+      var tdP=document.createElement('td');
+      tdP.style.cssText='padding:5px 7px;white-space:nowrap;min-width:150px';
+      var lbl='', pct=0;
+      if(svc==='ARMA'){
+        var phs=['Primo','Etude','Travaux','Réception'], cur=null;
+        phs.forEach(function(p){
+          var v=phasePctFactu(a,p);
+          if(cur===null && v!==null && v<100){ cur=p; pct=v; }
+        });
+        if(cur===null){ lbl='Tout acquis'; pct=100; } else lbl=cur;
+      } else if(svc==='IRVE'){
+        var n=irvePhaseNum(a); pct=Math.round(Math.min(6,Math.max(0,n))/6*100);
+        lbl='étape '+n+' sur 6';
+      } else {
+        var m=mecaMontants(a); pct=m.pct; lbl='livrables';
+      }
+      var coul = pct>=100?'var(--green)':pct>=50?'var(--amber)':'var(--red)';
+      tdP.innerHTML='<div style="display:flex;align-items:center;gap:6px">'
+        +'<div style="flex:1;height:5px;border-radius:3px;background:var(--b);overflow:hidden;min-width:60px">'
+          +'<div style="height:100%;width:'+Math.max(2,pct)+'%;background:'+coul+'"></div></div>'
+        +'<span style="font-size:9px;font-weight:800;color:'+coul+'">'+pct+'%</span></div>'
+        +'<div style="font-size:8.5px;color:var(--t3);margin-top:1px">'+lbl+'</div>';
+      tr.appendChild(tdP);
+
+      var tdJ=document.createElement('td');
+      tdJ.style.cssText='padding:5px 7px;text-align:right;white-space:nowrap;font-size:9px;'
+        +'color:'+(x.jours!==null&&x.jours>15?'var(--red)':'var(--t3)')
+        +';font-weight:'+(x.jours!==null&&x.jours>15?'800':'600');
+      tdJ.textContent = x.jours===null ? '—' : (x.jours+' j');
+      tdJ.title = x.jours===null ? 'Aucune date connue' : ('Sans action depuis '+x.jours+' jours');
+      tr.appendChild(tdJ);
+
+      tb.appendChild(tr);
+    });
+    tbl.appendChild(tb); wrap.appendChild(tbl); host.appendChild(wrap);
+  })();
+
   return;   // la saisie du temps se fait dans l'onglet Affaires
   var h2=document.createElement('div');
   h2.style.cssText='font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;'
@@ -14782,21 +14907,60 @@ function rSynthFactu(){
     n.innerHTML='<span style="display:inline-block;width:7px;height:7px;border-radius:2px;'
       +'background:'+c.fg+';margin-right:5px"></span>'+b.name;
     r.appendChild(n);
-    r.appendChild(celS(String(b.lignes), 'var(--t3)', false, true));
-    r.appendChild(celS(fmtEur(b.total), c.fg, true, true));
+    // Les deux premiers chiffres ouvrent la liste des UO facturables, comme le
+    // détail d'un mois dans la facturation prévisionnelle.
+    // Ils comptent exactement ce que cette liste montre : les UO acquis, ni
+    // facturés ni déjà demandés. Les fonctions revue*, qui servent l'export
+    // Excel, ignorent les demandes en cours et donnaient un chiffre plus élevé
+    // que la liste ouverte juste en dessous.
+    var svcB={'ARMA':'ARMA','IRVE':'IRVE','IRVE back-office':'IRVE_BO','RATP':'MECA'}[b.name];
+    var nbB=b.lignes, totB=b.total;
+    if(svcB){
+      try{
+        var lg=circLignes(svcB,'all').afact;
+        nbB=lg.length;
+        totB=lg.reduce(function(s,x){ return s+(x.montant||0); },0);
+      }catch(e){}
+    }
+    var cUo=celS(String(nbB), 'var(--t3)', false, true);
+    var cTot=celS(fmtEur(totB), c.fg, true, true);
+    if(svcB){
+      [cUo, cTot].forEach(function(x){
+        x.style.cursor='pointer';
+        x.style.textDecoration='underline dotted';
+        x.title='Voir les UO facturables de '+b.name;
+        x.addEventListener('click',function(){ circModal(svcB,'afact'); });
+      });
+    }
+    r.appendChild(cUo);
+    r.appendChild(cTot);
     r.appendChild(celS(dm===null?'—':fmtEur(Math.round(dm)), 'var(--t2)', false, true));
     r.appendChild(celS(vb?fmtEur(Math.round(vb.valo-vb.fact)):'—', 'var(--t2)', false, true));
     tbS.appendChild(r);
   });
   var rT=document.createElement('tr');
   rT.style.cssText='background:var(--gl)';
+  var totUo=0, totEur=0;
+  ['ARMA','IRVE','IRVE_BO','MECA'].forEach(function(k){
+    try{
+      var lg=circLignes(k,'all').afact;
+      totUo+=lg.length;
+      totEur+=lg.reduce(function(x,y){ return x+(y.montant||0); },0);
+    }catch(e){}
+  });
   rT.appendChild(celS('TOTAL À FACTURER','var(--green)',true,false));
-  rT.appendChild(celS(String(s.uo),'var(--green)',true,true));
-  rT.appendChild(celS(fmtEur(s.total),'var(--green)',true,true));
+  rT.appendChild(celS(String(totUo),'var(--green)',true,true));
+  rT.appendChild(celS(fmtEur(totEur),'var(--green)',true,true));
   rT.appendChild(celS(vm.total===null?'—':fmtEur(Math.round(vm.total)),'var(--green)',true,true));
   rT.appendChild(celS(fmtEur(Math.round(vs.encours)),'var(--green)',true,true));
   tbS.appendChild(rT);
   tS.appendChild(tbS); wrapS.appendChild(tS); body.appendChild(wrapS);
+
+  var aide=document.createElement('div');
+  aide.style.cssText='padding:0 12px 6px;font-size:9.5px;color:var(--t3)';
+  aide.textContent='Cliquer sur un nombre d\u2019UO ou un montant ouvre la liste, avec les boutons '
+    +'Demander la facture, Valider et Annuler.';
+  body.appendChild(aide);
 
   var vl=document.createElement('div');
   vl.style.cssText='margin:0 12px 8px;padding:6px 10px;border-radius:9px;background:var(--bl);'
@@ -15164,18 +15328,65 @@ function circAnnuler(lignes){
   });
   return n;
 }
-// Redessine le seul bloc du circuit, à sa place
+// Le circuit s'ouvre en fenêtre depuis la Synthèse facturation, un chiffre par
+// périmètre. Demandé par Alexis le 28/09/2026, pour n'avoir qu'un seul écran.
+var CIRC_MODAL=null, CIRC_MODAL_SVC=null;
+function circFermerModal(){
+  if(CIRC_MODAL && CIRC_MODAL.parentNode) CIRC_MODAL.parentNode.removeChild(CIRC_MODAL);
+  CIRC_MODAL=null; CIRC_MODAL_SVC=null; CIRC_SEL={};
+}
+function circModal(svc, onglet){
+  circFermerModal();
+  CIRC_MODAL_SVC=svc; CIRC_SEL={};
+  CIRC_ONGLET=onglet||'afact';
+  var ov=document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9300;display:flex;'
+    +'align-items:center;justify-content:center;padding:16px';
+  var box=document.createElement('div');
+  box.style.cssText='background:var(--s);border-radius:14px;max-width:940px;width:100%;'
+    +'max-height:92vh;overflow:auto';
+  var hd=document.createElement('div');
+  hd.style.cssText='display:flex;align-items:center;gap:8px;padding:11px 14px 4px';
+  var ti=document.createElement('span');
+  ti.style.cssText='flex:1;font-size:13px;font-weight:800';
+  ti.textContent=serieInfo(svc).l+' \u2014 UO facturables';
+  var bx=document.createElement('button');
+  bx.style.cssText='border:none;background:transparent;color:var(--t3);font-size:18px;font-weight:900;'
+    +'line-height:1;padding:2px 7px;cursor:pointer;font-family:inherit';
+  bx.textContent='\u2715'; bx.title='Fermer';
+  bx.addEventListener('click', circFermerModal);
+  hd.appendChild(ti); hd.appendChild(bx);
+  box.appendChild(hd);
+  box.appendChild(circBloc(svc,'all'));
+  ov.appendChild(box);
+  ov.addEventListener('click',function(e){ if(e.target===ov) circFermerModal(); });
+  document.body.appendChild(ov);
+  CIRC_MODAL=ov;
+}
+try{ window.circModal=circModal; }catch(e){}
+// Redessine le bloc du circuit, en fenêtre ou à sa place
 function circRedessiner(){
+  if(CIRC_MODAL && CIRC_MODAL_SVC){
+    var v=CIRC_MODAL.querySelector('#fa-circuit');
+    if(v && v.parentNode){ v.parentNode.replaceChild(circBloc(CIRC_MODAL_SVC,'all'), v); return; }
+  }
   var ancien=document.getElementById('fa-circuit');
   if(!ancien || !ancien.parentNode) return;
   ancien.parentNode.replaceChild(circBloc(FA_SVC, FA_CP_FILTER), ancien);
 }
 // Après une action : le tableau et le prévisionnel changent aussi
 function circApres(n, quoi){
+  var svc=CIRC_MODAL?CIRC_MODAL_SVC:FA_SVC;
   CIRC_SEL={};
   sbSave();
-  sansBouger(function(){ rFactu(); try{ rPrevFactu(); }catch(e){} try{ rPrevCharge(); }catch(e){} });
-  showToast(n+(FA_SVC==='IRVE_BO'?' tâche(s) ':' UO ')+quoi);
+  sansBouger(function(){
+    if(CIRC_MODAL) circRedessiner(); else rFactu();
+    try{ rSynthFactu(); }catch(e){}
+    try{ rPrevFactu(); }catch(e){}
+    try{ rPrevCharge(); }catch(e){}
+    try{ rMarche(); }catch(e){}
+  });
+  showToast(n+(svc==='IRVE_BO'?' tâche(s) ':' UO ')+quoi);
 }
 function circBloc(svc, cpFiltre){
   var box=document.createElement('div');
@@ -15447,8 +15658,6 @@ function rFactu(){
   });
   body.appendChild(sb);
   if(FA_SVC==='IRVE_BO'){
-    // Circuit de facturation des tâches back-office, au-dessus du tableau
-    try{ body.appendChild(circBloc('IRVE_BO','all')); }catch(e){ console.warn('circuit BO',e); }
     var boz=document.createElement('div'); boz.id='ref-taches';
     body.appendChild(boz);
     host.appendChild(card);
@@ -15541,9 +15750,9 @@ function rFactu(){
 
   var sp=document.createElement('span'); sp.style.flex='1'; bar.appendChild(sp);
   body.appendChild(bar);
-  // Circuit de facturation : à facturer, demandée, facturée. Demandé par
-  // Alexis le 24/09/2026. Il suit le périmètre et le CP choisis au-dessus.
-  try{ body.appendChild(circBloc(FA_SVC, FA_CP_FILTER)); }catch(e){ console.warn('circuit',e); }
+  // Le circuit de facturation faisait doublon avec la Synthèse facturation.
+  // Retiré d'ici le 28/09/2026 à la demande d'Alexis : il s'ouvre maintenant
+  // en cliquant sur un chiffre de la synthèse.
 
   // Colonnes selon le périmètre
   var UOS, entetes, valUo, setUo, avUo;
@@ -24282,7 +24491,7 @@ window.addEventListener('beforeunload', function(e){
 // On ne recharge jamais de force, une saisie en cours serait perdue :
 // on propose, la personne choisit son moment.
 // ══════════════════════════════════════════════════════════════
-var APP_VERSION='2026-09-28-2';
+var APP_VERSION='2026-09-28-3';
 var MAJ_VUE=false;
 function bandeauMaj(v){
   if(MAJ_VUE || document.getElementById('maj-banner')) return;
