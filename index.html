@@ -4117,6 +4117,7 @@ function sbLoad(){
           // Facturation à date des fichiers d'Alexis, 24/09/2026
           try{ var rF=repriseFactu0924(); if(rF) msg.push(rF); }catch(e2){ console.warn('factu0924',e2); }
           try{ var rT=repriseTachesBo0924(); if(rT) msg.push(rT); }catch(e2){ console.warn('tachesBo0924',e2); }
+          try{ var rM=repriseMarche0928(); if(rM) msg.push(rM); }catch(e2){ console.warn('marche0928',e2); }
           var nA=annulerAout26(), nC=0;
           try{ nC=importerActionsCommentaires(); }catch(e2){ console.warn('actionsCom',e2); }
           if(bascule) msg.push(bascule.doublons+' doublons IRVE retirés du portefeuille d’Alexis'
@@ -4981,7 +4982,9 @@ var TACHES_FACTU = {
  'Acompte Payé [Client]':1,'EXT // Plan 200ème [Si S2000]':1,'INT // Plan synoptique':1,
  'EOTP niv2':1,'Demande CITE + Alfresco':1,'Programmation Regard':1,'EXT // CMD':1,
  'EXT // DMR':1,'EXT // ICP/PPS':1,'PGOC réceptionné':1,'AAT réceptionné':1,
- 'Facturation client':1,'Cartographie validée':1,'Presta payés (CDAT)':1,'FIEC MES':1
+ 'Facturation client':1,'Cartographie validée':1,'Presta payés (CDAT)':1,'FIEC MES':1,
+ // Ajoutée le 28/09/2026 à la demande d'Alexis
+ 'R323-25':1
 };
 
 
@@ -6263,6 +6266,15 @@ function rIrveTaches(){
   var wrap=document.createElement('div');
   wrap.id='taches-bo-scroll';   // identifiant stable : sansBouger le retrouve
   wrap.style.cssText='overflow-x:auto;max-height:340px;overflow-y:auto';
+  // Ouvrir sur les dernières lignes ajoutées, comme dans l'onglet Affaires.
+  // Demandé par Alexis le 28/09. Une seule fois par entrée dans l'onglet :
+  // ensuite sansBouger garde la position pendant la saisie.
+  if(!BO_SCROLL_FAIT){
+    setTimeout(function(){
+      var w=document.getElementById('taches-bo-scroll');
+      if(w){ w.scrollTop=w.scrollHeight; BO_SCROLL_FAIT=true; }
+    },0);
+  }
   var tbl=document.createElement('table'); tbl.className='fa-tbl';
   var th=document.createElement('thead'), tr=document.createElement('tr');
   [['',''],['Date',''],['N\u00b0 affaire','l'],['T\u00e2che','l'],['Pour qui','l'],['CP',''],['CRD',''],
@@ -6825,9 +6837,24 @@ function rAffGrid(){
     affs.forEach(function(a){
       var c=document.createElement('td');
       c.className='ag-meta'; c.style.background='var(--b)'; c.style.fontWeight='800';
-      var p=phasePct(a,ph);
+      var p=phasePctFactu(a,ph);
       c.textContent = p===null ? '\u2014' : p+'%';
       c.style.color = p===null ? 'var(--t3)' : (p===100?'var(--green)':p>0?'var(--orange)':'var(--t3)');
+      // Fond vert quand l'UO de la phase est déjà facturé, fond orange sur le
+      // prochain UO à réaliser. Demandé par Alexis le 28/09 pour que les
+      // chargés d'affaires voient d'un coup ce qui est passé en facturation.
+      try{
+        var uPh=UO_DE_PHASE[ph];
+        if(uPh && (a.svc||'ARMA')==='ARMA'){
+          if(faCoef(faGetVal(a,uPh))>0){
+            c.style.background='#DCFCE7';
+            c.title=ph+' \u2014 UO d\u00e9j\u00e0 factur\u00e9';
+          } else if(uPh===prochainUoArma(a)){
+            c.style.background='#FFEDD5';
+            c.title=ph+' \u2014 prochain UO \u00e0 r\u00e9aliser';
+          }
+        }
+      }catch(e){}
       trP.appendChild(c);
     });
     tb.appendChild(trP);
@@ -6837,8 +6864,8 @@ function rAffGrid(){
       var td=document.createElement('td'); td.className='ag-lbl';
       var oblig=!!TACHES_FACTU[tn];
       td.textContent=(oblig?'\u25c6 ':'')+tn;
-      td.title=tn+(oblig?'\n\u25c6 Obligatoire pour la facturation':'');
-      if(oblig) td.style.color='var(--t)';
+      td.title=tn+(oblig?'\n\u25c6 Obligatoire pour la facturation, et seule compt\u00e9e dans l\u2019avancement de l\u2019UO':'');
+      if(oblig){ td.style.color='var(--t)'; td.style.fontWeight='800'; }
       tr.appendChild(td);
       affs.forEach(function(a){
         var t=a.tasks.find(function(x){return x.n===tn;});
@@ -7479,9 +7506,17 @@ function rAffGridRefreshPct(a,ph,colIdx){
     if(lbl && lbl.textContent===ph){
       var cell=rows[i].children[colIdx+1];
       if(cell){
-        var p=phasePct(a,ph);
+        var p=phasePctFactu(a,ph);
         cell.textContent = p===null?'\u2014':p+'%';
         cell.style.color = p===null?'var(--t3)':(p===100?'var(--green)':p>0?'var(--orange)':'var(--t3)');
+        try{
+          var uPh=UO_DE_PHASE[ph];
+          cell.style.background='';
+          if(uPh && (a.svc||'ARMA')==='ARMA'){
+            if(faCoef(faGetVal(a,uPh))>0) cell.style.background='#DCFCE7';
+            else if(uPh===prochainUoArma(a)) cell.style.background='#FFEDD5';
+          }
+        }catch(e){}
       }
       return;
     }
@@ -8254,6 +8289,17 @@ var FA_SVC = 'ARMA';
 var FA_FILTER = 'all';
 var FA_FILTRE_MOIS = '';   // mois de facturation prévue, vide = tous
 var FA_SEUIL = 100;   // seuil d'avancement pour l'extraction
+// Afficher ou non le sablier des factures en attente de retour. Préférence de
+// poste, demandée par Alexis le 28/09. Masquer n'efface rien : les demandes
+// posées restent dans les données et la coche verte des factures validées
+// reste visible.
+var FA_SABLIERS = (function(){
+  try{ return localStorage.getItem('radar_sabliers')!=='0'; }catch(e){ return true; }
+})();
+function setSabliers(v){
+  FA_SABLIERS=!!v;
+  try{ localStorage.setItem('radar_sabliers', v?'1':'0'); }catch(e){}
+}
 
 function faGetVal(a,uo){
   if(!a.facture_uo) a.facture_uo={};
@@ -8464,6 +8510,36 @@ var UO_PRIX = {
   'Réception':    640
 };
 var UO_ORDER = ['Primo','Etude','Coordination','Travaux','Réception'];
+// Phase de la grille -> UO ARMA correspondant. La coordination n'a pas de
+// phase à elle, elle n'apparaît donc pas dans ce tableau.
+var UO_DE_PHASE = {'Primo':'PRIMO','Etude':'ETD','Travaux':'TRX','Réception':'RCP'};
+// Premier UO ni facturé ni sans objet, dans l'ordre de production.
+function prochainUoArma(a){
+  var suite=['PRIMO','ETD','CRD','TRX','RCP'];
+  for(var i=0;i<suite.length;i++){
+    var v=faGetVal(a, suite[i]);
+    if(v==='NA' || faCoef(v)>0) continue;
+    return suite[i];
+  }
+  return null;
+}
+// AVANCEMENT DES UO SUR LES SEULES TÂCHES À LOSANGE
+// Demandé par Alexis le 28/09/2026 : sur ARMA, l'avancement d'un UO se compte
+// avec les seules tâches indispensables à la facturation, celles que le tableau
+// marque d'un losange. Les autres tâches restent visibles et se cochent, elles
+// ne pèsent simplement plus sur le pourcentage.
+// Le repli sur phasePct couvre deux cas : un périmètre autre qu'ARMA, et une
+// phase dont aucune tâche à losange ne s'applique — sinon elle tomberait à zéro
+// alors qu'elle est bien avancée.
+function phasePctFactu(a, ph){
+  if((a.svc||'ARMA')!=='ARMA') return phasePct(a, ph);
+  var ts=(a.tasks||[]).filter(function(t){
+    return t.phase===ph && t.s!=='na' && TACHES_FACTU[t.n];
+  });
+  if(!ts.length) return phasePct(a, ph);
+  return Math.round(ts.filter(function(t){ return t.s==='ok'; }).length/ts.length*100);
+}
+
 // Correspondance UO -> phase RADAR (Coordination n'a pas de phase dédiée)
 var UO_PHASE = {'Primo':'Primo','Etude':'Etude','Travaux':'Travaux','Réception':'Réception'};
 
@@ -8471,13 +8547,13 @@ var UO_PHASE = {'Primo':'Primo','Etude':'Etude','Travaux':'Travaux','Réception'
 function uoPct(a, uo){
   var ph=UO_PHASE[uo];
   if(ph){
-    var p=phasePct(a,ph);
+    var p=phasePctFactu(a,ph);
     if(p===null) return null;      // sans objet (tout NA)
     return p/100;
   }
   // Coordination : Primo à 100 % => 50 % ; Étude à 100 % => 100 %
-  var pPrimo=phasePct(a,'Primo');
-  var pEtude=phasePct(a,'Etude');
+  var pPrimo=phasePctFactu(a,'Primo');
+  var pEtude=phasePctFactu(a,'Etude');
   if(pEtude===100) return 1;
   if(pPrimo===100) return 0.5;
   return 0;
@@ -12150,7 +12226,9 @@ function valoSynth(){
 // Montant vendu par périmètre, ce qui en a été facturé, ce qui reste.
 // Le montant est saisi : il vient du marché, pas de l'application.
 // ══════════════════════════════════════════════════════════════
-var MARCHE_MONTANT = {ARMA:0, IRVE:0, MECA:0};
+// Montants du marché donnés par Alexis le 28/09/2026. Ils restent modifiables
+// dans le module Consommation du marché, et la saisie prime au rechargement.
+var MARCHE_MONTANT = {ARMA:400000, IRVE:700000, MECA:34800};
 function marcheDe(svc){ return +(MARCHE_MONTANT[svc]||0)||0; }
 // Prix d'un UO, quel que soit le périmètre
 function prixUo(cp, a, k){
@@ -12160,26 +12238,38 @@ function prixUo(cp, a, k){
   var m=MECA_UOS.filter(function(x){ return x.k===k; })[0];
   return m?m.prix:0;
 }
-// Montant commandé : les UO dont la commande est passée, FSS reçue comprise.
-// Les tâches back-office IRVE suivent le même drapeau.
+// Montant commandé, règle posée par Alexis le 28/09/2026 : la somme des UO qui
+// ne sont pas en NA dans les colonnes facturé. Autrement dit tout ce que le
+// marché nous confie sur les affaires ouvertes, qu'on l'ait facturé ou non.
+// IRVE ajoute les tâches back-office. RATP est commandé en entier.
+// L'ancienne règle comptait les seuls UO marqués commande passée ou FSS reçue,
+// une saisie manuelle que personne ne tenait à jour.
 function commandeDe(svc){
+  if(svc==='MECA') return marcheDe('MECA');
   var t=0;
   cpsOfSvc(svc).forEach(function(cp){
     (gAff(cp)||[]).forEach(function(a){
       if(svc==='IRVE' && irvePhaseNum(a)===0) return;
-      var liste=(UO_CAT[svc]||[]).map(function(u){ return u.k; });
-      liste.forEach(function(k){
-        if(svc==='IRVE' && k.indexOf(irveProfil(a)+'_')!==0) return;
-        var e=cmdDe(a,k);
-        if(e==='cmd'||e==='fss') t+=prixUo(cp,a,k);
+      if(svc==='ARMA'){
+        FA_UOS.forEach(function(u){
+          if(faGetVal(a,u)==='NA') return;
+          t+=UO_PRIX[FA_KEY[u]]||0;
+        });
+        return;
+      }
+      var iv=a.irve||{};
+      ['ETD','CRD','TRX','RCP'].forEach(function(uo){
+        var estNA=false;
+        Object.keys(iv.fa||{}).forEach(function(k){
+          if(k.slice(-3)===uo && String(iv.fa[k]).trim().toUpperCase()==='NA') estNA=true;
+        });
+        if(estNA) return;
+        if(irvePlafond(a,uo)<=0) return;      // la complexité n'ouvre pas cet UO
+        t+=irvePrixUoAff(a,uo);
       });
     });
   });
-  if(svc==='IRVE'){
-    IRVE_TACHES.forEach(function(x){
-      if(x.fss==='cmd'||x.fss==='fss') t+=tacheMontant();
-    });
-  }
+  if(svc==='IRVE') t+=IRVE_TACHES.length*tacheMontant();
   return t;
 }
 // Facturé par périmètre, back-office IRVE compris
@@ -12479,8 +12569,16 @@ function majBarreSel(){
       +'border-radius:8px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit';
     bX.textContent='Tout décocher';
     bX.addEventListener('click',function(){ FA_SEL={}; rFactu(); });
+    // Croix de fermeture, demandée par Alexis le 28/09 : le bandeau se ferme
+    // sans avoir à remonter au bouton du tableau.
+    var bFerm=document.createElement('button');
+    bFerm.style.cssText='border:none;background:transparent;color:#fff;font-size:16px;font-weight:900;'
+      +'line-height:1;padding:2px 6px;cursor:pointer;font-family:inherit;opacity:.85';
+    bFerm.textContent='\u2715';
+    bFerm.title='Fermer la s\u00e9lection';
+    bFerm.addEventListener('click',function(){ FA_SEL_MODE=false; FA_SEL={}; rFactu(); });
     FA_BARRE.appendChild(t); FA_BARRE.appendChild(sel);
-    FA_BARRE.appendChild(bOk); FA_BARRE.appendChild(bX);
+    FA_BARRE.appendChild(bOk); FA_BARRE.appendChild(bX); FA_BARRE.appendChild(bFerm);
     document.body.appendChild(FA_BARRE);
   }
   var n=faSelNb();
@@ -13701,6 +13799,22 @@ function tacheBoStatut(t, st){
   if(/^\d{4}-\d{2}-\d{2}$/.test(st)){ delete t.fait; t.date=st; t.mois=String(+st.slice(5,7)); return; }
   if(st.toUpperCase()==='FAIT'){ tacheFaire(t, ''); return; }
   delete t.fait; t.date=st;
+}
+// Montants du marché donnés par Alexis le 28/09/2026. Une valeur par défaut ne
+// suffit pas : l'état enregistré contient déjà MARCHE_MONTANT à zéro et le
+// recouvre au chargement. On pose donc les montants une fois, et seulement là
+// où rien n'a été saisi : un montant déjà renseigné n'est jamais remplacé.
+var MARCHE_0928 = {ARMA:400000, IRVE:700000, MECA:34800};
+function repriseMarche0928(){
+  if(MIGR.marche0928) return '';
+  var pose=[];
+  Object.keys(MARCHE_0928).forEach(function(k){
+    if(+(MARCHE_MONTANT[k]||0) > 0) return;
+    MARCHE_MONTANT[k]=MARCHE_0928[k];
+    pose.push(svcInfo(k).court+' '+fmtEur(MARCHE_0928[k]));
+  });
+  MIGR.marche0928=true;
+  return pose.length ? ('Montants du marché posés : '+pose.join(', ')) : '';
 }
 function repriseTachesBo0924(){
   if(MIGR.tachesBo0924) return '';
@@ -15414,6 +15528,16 @@ function rFactu(){
     rFactu();
   });
   bar.appendChild(bSel);
+  // Sabliers : afficher ou non les factures en attente de retour
+  var bSab=document.createElement('button');
+  bSab.style.cssText='border:1.5px solid '+(FA_SABLIERS?'#B45309':'var(--b2)')+';background:'
+    +(FA_SABLIERS?'#FEF3C7':'var(--s)')+';color:'+(FA_SABLIERS?'#B45309':'var(--t3)')
+    +';border-radius:7px;padding:3px 9px;font-size:10px;font-weight:800;cursor:pointer;font-family:inherit';
+  bSab.textContent=(FA_SABLIERS?'\u23f3 Sabliers affich\u00e9s':'\u23f3 Sabliers masqu\u00e9s');
+  bSab.title='Le sablier marque une facture demand\u00e9e, en attente du retour de la FSS.\n'
+    +'Masquer ne retire rien : les demandes restent, et les factures valid\u00e9es gardent leur coche.';
+  bSab.addEventListener('click',function(){ setSabliers(!FA_SABLIERS); sansBouger(function(){ rFactu(); }); });
+  bar.appendChild(bSab);
 
   var sp=document.createElement('span'); sp.style.flex='1'; bar.appendChild(sp);
   body.appendChild(bar);
@@ -15834,7 +15958,7 @@ function rFactu(){
         box.appendChild(sel);
       }
       var fd=fdemDe(a, cleF);
-      if(fd){
+      if(fd && (fd.v || FA_SABLIERS)){
         bdg=document.createElement('span');
         bdg.style.cssText='display:inline-block;margin-left:2px;font-size:8px;font-weight:900;padding:0 3px;'
           +'border-radius:4px;vertical-align:middle;'+(fd.v?'background:#D1FAE5;color:#047857':'background:#DBEAFE;color:#1D4ED8');
@@ -24158,7 +24282,7 @@ window.addEventListener('beforeunload', function(e){
 // On ne recharge jamais de force, une saisie en cours serait perdue :
 // on propose, la personne choisit son moment.
 // ══════════════════════════════════════════════════════════════
-var APP_VERSION='2026-09-28-1';
+var APP_VERSION='2026-09-28-2';
 var MAJ_VUE=false;
 function bandeauMaj(v){
   if(MAJ_VUE || document.getElementById('maj-banner')) return;
