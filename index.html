@@ -7843,7 +7843,7 @@ function rTasks(force){
 
       // VERROUILLAGE IMMÉDIAT — empêche tout rTasks() avant la confirmation
       if(!TASK_PENDING[tKey]){
-        TASK_PENDING[tKey] = {locked: true, prevState: t.s};
+        TASK_PENDING[tKey] = {locked: true, prevState: t.s, t0: Date.now()};
       }
 
       // Helper : mettre à jour icône + classe ligne
@@ -18834,6 +18834,19 @@ function _renderScoresMe(el){
 // ── TASK CYCLE ────────────────────────────────────────────────
 var CYCLE={todo:'ok',ok:'nok',nok:'attente',attente:'na',na:'todo'};
 var TASK_PENDING = {};
+// Un compte à rebours abandonné (onglet quitté, page masquée) laissait sa clé
+// pour toujours et bloquait le rendu de Ma semaine. Au-delà de dix secondes,
+// la clé n'a plus de sens : le décompte dure deux secondes.
+function purgerTaskPending(){
+  var t=Date.now();
+  Object.keys(TASK_PENDING).forEach(function(k){
+    var p=TASK_PENDING[k];
+    if(!p) { delete TASK_PENDING[k]; return; }
+    if(p.t0 && t-p.t0 < 10000) return;
+    try{ if(p.iv) clearInterval(p.iv); }catch(e){}
+    delete TASK_PENDING[k];
+  });
+}
 var DET_SHOW_DONE=false;
 var CONFIG_STORE={};
 var CONFIG_ACTIVE_ID='default';
@@ -18843,12 +18856,21 @@ var CONFIG_ETATS={'devis-pending':true,'devis-client':true,'etude':true,'mex-mis
 var CONFIG_SERVICE='Raccordement Enedis'; // {taskKey: timerId} — tâches en attente de bascule
 
 function cycleTask(a,t){
-  // Sauvegarde différée — ne pas sauvegarder pendant un compte à rebours
-  // (le timer final fera la sauvegarde via rTasks→sbSave)
-  if(SYNC_ENABLED && Object.keys(TASK_PENDING).length === 0){
-    if(SYNC_DEBOUNCE)clearTimeout(SYNC_DEBOUNCE);
-    SYNC_DEBOUNCE=setTimeout(sbSaveNow,800);
-  }var was=t.s;t.s=CYCLE[t.s]||'todo';logHistory(DET_CP||CCP,a.code,was+'→'+t.s,t.n.replace(/\[.*?\]/g,'').trim());// XP à chaque changement d'état (pas seulement →ok)
+  // PERTE DE SAISIES DU 25/09/2026, corrigée le 28/09.
+  // La règle d'avant ne programmait l'enregistrement que si AUCUN compte à
+  // rebours n'était en cours. Or le compte à rebours de « Ma semaine » pose sa
+  // clé dans TASK_PENDING dès le premier clic, et la retire seulement à la fin
+  // des deux secondes. Quitter la vue entre les deux laissait la clé pour
+  // toujours : plus aucune bascule de tâche n'était protégée, ni dans Ma
+  // semaine, ni dans Affaires, ni dans la fiche. SYNC_REV ne bougeait plus,
+  // donc viderFileSync croyait qu'il n'y avait rien à envoyer et la fermeture
+  // n'envoyait rien non plus. Les saisies restaient sur le poste, et la
+  // lecture serveur du lendemain passait dessus.
+  // Une bascule de tâche est une saisie : elle se protège toujours. Annuler le
+  // compte à rebours ré-enregistre l'état d'avant, donc rien ne se perd.
+  purgerTaskPending();
+  sbSave();
+  var was=t.s;t.s=CYCLE[t.s]||'todo';logHistory(DET_CP||CCP,a.code,was+'→'+t.s,t.n.replace(/\[.*?\]/g,'').trim());// XP à chaque changement d'état (pas seulement →ok)
 var xpAmt = t.s==='ok'?20:t.s==='nok'?5:t.s==='attente'?3:t.s==='na'?2:1;
 if(t.phase==='Travaux') xpAmt = Math.round(xpAmt*1.5);
 addXP(xpAmt, (t.s==='ok'?'✓ ':t.s==='nok'?'✗ ':t.s==='attente'?'⏳ ':'')+t.n.slice(0,15)+' +'+xpAmt+'XP');
@@ -24103,6 +24125,14 @@ setInterval(function(){
 // Fermeture d'onglet, bascule vers une autre application, mise en veille :
 // on ecrit tout de suite au lieu d'attendre la temporisation.
 function viderFileSync(){
+  // Un compte à rebours en cours ne doit pas survivre à la fermeture : la
+  // tâche est déjà basculée dans les données, seul l'affichage attendait.
+  try{
+    Object.keys(TASK_PENDING).forEach(function(k){
+      try{ if(TASK_PENDING[k] && TASK_PENDING[k].iv) clearInterval(TASK_PENDING[k].iv); }catch(e){}
+      delete TASK_PENDING[k];
+    });
+  }catch(e){}
   try{ lsSaveNow(); }catch(e){}
   if(SYNC_ENABLED && SB_TOKEN && syncModifie() && !SYNC_BUSY){
     if(SYNC_DEBOUNCE) clearTimeout(SYNC_DEBOUNCE);
@@ -24128,7 +24158,7 @@ window.addEventListener('beforeunload', function(e){
 // On ne recharge jamais de force, une saisie en cours serait perdue :
 // on propose, la personne choisit son moment.
 // ══════════════════════════════════════════════════════════════
-var APP_VERSION='2026-09-24-3';
+var APP_VERSION='2026-09-28-1';
 var MAJ_VUE=false;
 function bandeauMaj(v){
   if(MAJ_VUE || document.getElementById('maj-banner')) return;
