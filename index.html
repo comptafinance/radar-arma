@@ -1182,6 +1182,20 @@ function applyState(json){
   try{
     var s=JSON.parse(json);
     if(!s||!s.DATA)return false;
+    // Les objets deja en memoire, ranges par identite. On les reprendra
+    // plutot que d'en creer de neufs : l'ecran pointe dessus.
+    var ANCIENNES={};
+    Object.keys(DATA).forEach(function(cp){
+      ((DATA[cp]||{}).affaires||[]).forEach(function(a){
+        try{ ANCIENNES[affKey(cp,a)]=a; }catch(e){}
+      });
+    });
+    // Verser le contenu de n dans v, sans changer l'objet v lui-meme
+    function verser(v, n){
+      Object.keys(v).forEach(function(k){ if(!(k in n)) delete v[k]; });
+      Object.keys(n).forEach(function(k){ v[k]=n[k]; });
+      return v;
+    }
     // Merge DATA — re-run mkAff on each affaire to restore task arrays
     Object.keys(s.DATA).forEach(function(cp){
       if(!s.DATA[cp].affaires)s.DATA[cp].affaires=[];
@@ -1194,7 +1208,16 @@ function applyState(json){
           var t=a.tasks.find(function(x){return x.n===st.n;});
           if(t){t.s=st.s;t.xpGiven=st.xpGiven||false;}
         });
-        return a;
+        var v=ANCIENNES[affKey(cp,a)];
+        if(!v || v===a) return a;
+        // Les taches d'abord : chaque case en garde une, reperee par son nom
+        var parNom={};
+        (v.tasks||[]).forEach(function(t){ parNom[t.n]=t; });
+        a.tasks=(a.tasks||[]).map(function(t){
+          var vt=parNom[t.n];
+          return vt ? verser(vt, t) : t;
+        });
+        return verser(v, a);
       });
     });
     // Apply
@@ -1221,7 +1244,16 @@ function applyState(json){
     if(Array.isArray(s.MECA_PRIX)) s.MECA_PRIX.forEach(function(p,i){ if(MECA_UOS[i]) MECA_UOS[i].prix=p; });
     if(s.TAUX_ACTIVITE) Object.keys(s.TAUX_ACTIVITE).forEach(function(k){TAUX_ACTIVITE[k]=s.TAUX_ACTIVITE[k];});
     if(s.AFFECT_FIN) Object.keys(s.AFFECT_FIN).forEach(function(k){AFFECT_FIN[k]=s.AFFECT_FIN[k];});
-    if(Array.isArray(s.IRVE_TACHES)){ IRVE_TACHES.length=0; s.IRVE_TACHES.forEach(function(x){IRVE_TACHES.push(x);}); }
+    if(Array.isArray(s.IRVE_TACHES)){
+      // Meme regle que pour les affaires : on remplit les taches en place,
+      // sinon les lignes du back-office deja affichees ecrivent dans le vide.
+      var TB={}; IRVE_TACHES.forEach(function(t){ if(t && t.id) TB[t.id]=t; });
+      IRVE_TACHES.length=0;
+      s.IRVE_TACHES.forEach(function(x){
+        var v=(x && x.id) ? TB[x.id] : null;
+        IRVE_TACHES.push(v ? verser(v, x) : x);
+      });
+    }
     if(s.TACHES_PREV){ Object.keys(TACHES_PREV).forEach(function(k){delete TACHES_PREV[k];});
       Object.keys(s.TACHES_PREV).forEach(function(k){TACHES_PREV[k]=s.TACHES_PREV[k];}); }
     if(s.MARCHE_MONTANT) Object.keys(s.MARCHE_MONTANT).forEach(function(k){MARCHE_MONTANT[k]=s.MARCHE_MONTANT[k];});
@@ -1288,7 +1320,13 @@ function lsIndicator(txt,color,title){
 // les donnees livrees dans le fichier, et un enregistrement automatique parti
 // trop tot les ecrivait par-dessus le travail reellement enregistre ici.
 var LS_LU=false;
+var LS_ATTENDU=null;
+function lsSaveBientot(){
+  if(LS_ATTENDU) clearTimeout(LS_ATTENDU);
+  LS_ATTENDU=setTimeout(function(){ LS_ATTENDU=null; try{ lsSaveNow(); }catch(e){} }, 400);
+}
 function lsSaveNow(){
+  if(LS_ATTENDU){ clearTimeout(LS_ATTENDU); LS_ATTENDU=null; }
   if(!LS_LU) return;                     // jamais ecrire avant d'avoir lu
   try{
     localStorage.setItem(LS_KEY, serializeState());
@@ -1463,7 +1501,13 @@ function toggleMoreMenu(){
   if(o)o.style.display=open?'block':'none';
   if(btn){btn.classList.toggle('on',open);}
 }
+var RENDU_ATTENDU=null;
+function renderBientot(){
+  if(RENDU_ATTENDU) clearTimeout(RENDU_ATTENDU);
+  RENDU_ATTENDU=setTimeout(function(){ RENDU_ATTENDU=null; try{ renderAll(); }catch(e){} }, 300);
+}
 function renderAll(){
+  if(RENDU_ATTENDU){ clearTimeout(RENDU_ATTENDU); RENDU_ATTENDU=null; }
   var d=gCP(),lp=gLP(),nok=gNOK();
   function el_(id){return document.getElementById(id);}
   function setTxt(id,v){var e=el_(id);if(e)e.textContent=v;}
@@ -1550,7 +1594,7 @@ Object.keys(statsMap).forEach(function(id){
   // S'assure que tous les badges (Planning/Budget compris) sont à jour
   // — utile au chargement initial et après les rendus de Missions
   try{ refreshAllBadges(); }catch(e){}
-  if(Object.keys(TASK_PENDING).length===0)sbSave();
+  if(!RENDU_AUTO && Object.keys(TASK_PENDING).length===0) sbSave();
 }
 
 
@@ -4008,7 +4052,7 @@ function fusionner(remoteStr){
     sauvegardeSecours('fusion sans référence commune');
     var uni=JSON.stringify(unionEtats(local, remote));
     applyState(uni);
-    SYNC_BASE=uni;
+    SYNC_BASE=remoteStr;        // meme regle : la base est celle du serveur
     showToast('Reprise de la liaison — vos saisies ont été conservées');
     return true;
   }
@@ -4057,7 +4101,7 @@ function fusionner(remoteStr){
 
   var merged=JSON.stringify(local);
   applyState(merged);
-  SYNC_BASE=merged;
+  SYNC_BASE=remoteStr;          // l'ancetre commun reste ce que le serveur a
   SYNC_CONFLITS=conflits;
   if(repris||conflits){
     var msg=[];
@@ -4119,6 +4163,7 @@ function sbLoad(){
           try{ var rT=repriseTachesBo0924(); if(rT) msg.push(rT); }catch(e2){ console.warn('tachesBo0924',e2); }
           try{ var rM=repriseMarche0928(); if(rM) msg.push(rM); }catch(e2){ console.warn('marche0928',e2); }
           try{ var rS=repriseOkSouad0928(); if(rS) msg.push(rS); }catch(e2){ console.warn('okSouad0928',e2); }
+          try{ var rB=repriseSablierBo0928(); if(rB) msg.push(rB); }catch(e2){ console.warn('sablierBo0928',e2); }
           var nA=annulerAout26(), nC=0;
           try{ nC=importerActionsCommentaires(); }catch(e2){ console.warn('actionsCom',e2); }
           if(bascule) msg.push(bascule.doublons+' doublons IRVE retirés du portefeuille d’Alexis'
@@ -4175,6 +4220,7 @@ function majFactu(){
 
 function sbSave(){
   SYNC_REV++;                            // une saisie de plus attend le serveur
+  DERNIERE_SAISIE=Date.now();
   // AVANT la première lecture serveur, personne n'a rien tapé : ce que
   // l'application écrit en montant n'est pas du travail à protéger.
   //
@@ -4186,7 +4232,7 @@ function sbSave(){
   if(!SB_TOKEN && !SYNC_PRET) SYNC_REV_OK=SYNC_REV;
   else poserAttente();
   try{ majBadgeSync(); }catch(e){}
-  try{ lsSaveNow(); }catch(e){}          // filet de sécurité local
+  try{ lsSaveBientot(); }catch(e){}      // filet de sécurité local, groupé
   try{ majFactu(); }catch(e){}           // la facturation suit l'avancement
   if(!SYNC_ENABLED){ SYNC_REV_OK=SYNC_REV; return; }
   if(SYNC_DEBOUNCE) clearTimeout(SYNC_DEBOUNCE);
@@ -4199,9 +4245,18 @@ function sbSaveNow(){
   if(!SYNC_ENABLED){ lsSaveNow(); SYNC_REV_OK=SYNC_REV; return Promise.resolve(true); }
   try{ lsSaveNow(); }catch(e){}                  // le local d'abord, toujours
   if(SYNC_BUSY){
+    // Une écriture est en cours : la saisie qui arrive n'est pas perdue, elle
+    // part juste après. On s'accroche à l'écriture en cours plutôt que de
+    // reposer un minuteur à l'aveugle, pour ne pas laisser de trou si le
+    // navigateur gèle les minuteurs d'un onglet en arrière-plan.
     if(SYNC_DEBOUNCE) clearTimeout(SYNC_DEBOUNCE);
-    SYNC_DEBOUNCE=setTimeout(sbSaveNow,900);
-    return SYNC_EN_COURS || Promise.resolve(false);
+    if(SYNC_EN_COURS && SYNC_EN_COURS.then){
+      return SYNC_EN_COURS.then(function(){
+        return syncModifie() ? sbSaveNow() : false;
+      });
+    }
+    SYNC_DEBOUNCE=setTimeout(sbSaveNow,600);
+    return Promise.resolve(false);
   }
   // Sans jeton de session le serveur refuse l'ecriture (401). Inutile de
   // partir : on le dit, au lieu de laisser croire que c'est enregistre.
@@ -4244,23 +4299,26 @@ function sbSaveSuite(){
 }
 
 // Une ecriture, avec jusqu'a trois tentatives. Rend true si le serveur a pris.
-function ecrireServeur(rev, essai){
-  syncIndic('\u27f3','var(--amber)', essai ? 'Nouvelle tentative\u2026'
+// ECRASEMENT ENTRE POSTES, trouve le 28/09/2026.
+// On lisait, on fusionnait, puis on remplacait la ligne. Ce qu'un collegue
+// enregistrait entre cette lecture et notre envoi etait efface, sans que
+// personne ne s'en apercoive. L'ecriture est maintenant conditionnelle : le
+// serveur ne remplace la ligne que si elle n'a pas bouge depuis notre lecture.
+// Si elle a bouge, on reprend tout depuis sa version au lieu de l'ecraser.
+function ecrireServeur(rev, essai, conflits){
+  conflits=conflits||0;
+  syncIndic('\u27f3','var(--amber)', (essai||conflits) ? 'Nouvelle tentative\u2026'
                                            : 'Fusion et enregistrement\u2026');
-  return fetch(SB_URL+'/rest/v1/arma_state?id=eq.'+SB_ROW_ID+'&select=data',{headers:sbHeaders()})
+  return fetch(SB_URL+'/rest/v1/arma_state?id=eq.'+SB_ROW_ID+'&select=data,updated_at',{headers:sbHeaders()})
     .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status+' (lecture)'); return r.json(); })
     .then(function(rows){
-      if(rows && rows.length && rows[0].data && rows[0].data!==SYNC_BASE){
-        fusionner(rows[0].data);
+      var ligne=(rows && rows.length) ? rows[0] : null;
+      if(ligne && ligne.data && ligne.data!==SYNC_BASE){
+        fusionner(ligne.data);
       }
       var stateStr=serializeState();
-      return fetch(SB_URL+'/rest/v1/arma_state',{
-        method:'POST',
-        headers:Object.assign({},sbHeaders(),{'Prefer':'resolution=merge-duplicates'}),
-        body:JSON.stringify({id:SB_ROW_ID, data:stateStr,
-                             updated_at:new Date().toISOString()})
-      }).then(function(res){
-        if(!res.ok) throw new Error('HTTP '+res.status);
+      var quand=new Date().toISOString();
+      function reussi(){
         SYNC_BASE=stateStr;
         if(rev>SYNC_REV_OK) SYNC_REV_OK=rev;   // ce qui attendait est parti
         SYNC_ECHEC=false;
@@ -4271,6 +4329,33 @@ function ecrireServeur(rev, essai){
         alerteNonEnregistre(false);
         syncIndic('\u2713','var(--green)','Partag\u00e9 \u2014 '+new Date().toLocaleTimeString('fr'));
         return true;
+      }
+      // Au bout de trois reprises, on ecrit quand meme : mieux vaut un
+      // enregistrement que laisser la saisie en l'air. On vient de fusionner,
+      // donc on part de la version la plus fraiche qu'on ait vue.
+      var horo=(ligne && ligne.updated_at && conflits<3) ? ligne.updated_at : null;
+      if(!horo){
+        return fetch(SB_URL+'/rest/v1/arma_state',{
+          method:'POST',
+          headers:Object.assign({},sbHeaders(),{'Prefer':'resolution=merge-duplicates'}),
+          body:JSON.stringify({id:SB_ROW_ID, data:stateStr, updated_at:quand})
+        }).then(function(res){
+          if(!res.ok) throw new Error('HTTP '+res.status);
+          return reussi();
+        });
+      }
+      return fetch(SB_URL+'/rest/v1/arma_state?id=eq.'+SB_ROW_ID
+                   +'&updated_at=eq.'+encodeURIComponent(horo),{
+        method:'PATCH',
+        headers:Object.assign({},sbHeaders(),{'Prefer':'return=representation'}),
+        body:JSON.stringify({data:stateStr, updated_at:quand})
+      }).then(function(res){
+        if(!res.ok) throw new Error('HTTP '+res.status);
+        return res.json().then(function(out){
+          // Aucune ligne modifiee : quelqu'un a enregistre pendant notre envoi.
+          if(!out || !out.length) return ecrireServeur(rev, essai, conflits+1);
+          return reussi();
+        }, function(){ return reussi(); });   // corps vide : le PATCH a pris
       });
     })
     .catch(function(e){
@@ -4289,8 +4374,17 @@ function ecrireServeur(rev, essai){
 }
 
 // Relecture périodique : fusionne sans écraser le travail en cours
+// Horodatage de la dernière saisie. Sert à ne pas redessiner l'écran pendant
+// qu'on travaille : une relecture serveur reconstruit les tableaux, et la case
+// qu'on visait disparaît sous le curseur. C'est ce qui faisait « sauter » des
+// OK quand plusieurs personnes cochent en même temps.
+var DERNIERE_SAISIE=0;
 function sbPoll(){
   if(!SYNC_ENABLED || SYNC_BUSY) return;
+  // Une saisie attend d'être écrite, ou date de moins de cinq secondes : on
+  // laisse passer ce tour. Le suivant arrive vingt secondes plus tard, et rien
+  // n'est perdu puisque la fusion se fait aussi avant chaque écriture.
+  if(syncModifie() || (Date.now()-DERNIERE_SAISIE < 5000)) return;
   // Tant que la premiere lecture n'a pas abouti, SYNC_BASE est vide : fusionner
   // reprendrait le serveur tel quel et effacerait la saisie en cours.
   if(!SYNC_PRET || !SB_TOKEN) return;
@@ -4300,7 +4394,8 @@ function sbPoll(){
       if(!rows || !rows.length || !rows[0].data) return;
       if(rows[0].data===SYNC_BASE) return;
       if(fusionner(rows[0].data)){
-        buildTabs(); renderAll();
+        RENDU_AUTO=true;
+        try{ buildTabs(); renderAll(); }finally{ RENDU_AUTO=false; }
         try{ rSvcBar(); rCpSelBar(); }catch(e){}
       }
     })
@@ -6303,7 +6398,7 @@ function rIrveTaches(){
   }
   var tbl=document.createElement('table'); tbl.className='fa-tbl';
   var th=document.createElement('thead'), tr=document.createElement('tr');
-  [['',''],['Date',''],['N\u00b0 affaire','l'],['T\u00e2che','l'],['Pour qui','l'],['CP',''],['CRD',''],
+  [['',''],['Date',''],['N\u00b0 affaire','l'],['T\u00e2che','l'],['Pour qui','l'],['CP',''],['CRD / FSS ?',''],
    ['CMD / FSS',''],['','']]
   .forEach(function(c){ var x=document.createElement('th'); if(c[1])x.className=c[1]; x.textContent=c[0]; tr.appendChild(x); });
   th.appendChild(tr); tbl.appendChild(th);
@@ -6343,7 +6438,8 @@ function rIrveTaches(){
       if((t.crd||'')===o[0]) op.selected=true;
       sel.appendChild(op);
     });
-    sel.style.maxWidth='68px';
+    sel.style.maxWidth='58px';
+    tdC.style.whiteSpace='nowrap';
     if(!t.crd){ sel.style.color='var(--t3)'; sel.style.fontWeight='600'; }
     sel.title='Avancement 100 % \u2014 la t\u00e2che est r\u00e9alis\u00e9e'
       +'\nPasser \u00e0 0,1 quand l\u2019UO coordination est factur\u00e9';
@@ -6356,6 +6452,26 @@ function rIrveTaches(){
       sbSave();
     });
     tdC.appendChild(sel);
+    // Sablier : on attend le retour de la FSS sur cette tache. Meme systeme
+    // que dans le tableau de facturation, demande par Alexis le 28/09/2026.
+    var sab=document.createElement('span');
+    function peindreSabBo(){
+      var on=sabDe(t,'BO');
+      sab.style.cssText='display:inline-block;margin-left:3px;font-size:9px;font-weight:900;'
+        +'padding:0 3px;border-radius:4px;vertical-align:middle;cursor:pointer;'
+        +(on?'background:#DBEAFE;color:#1D4ED8;opacity:1':'background:transparent;color:var(--b2);opacity:.55');
+      sab.textContent='\u23f3';
+      sab.title=(on?'En attente du retour de la FSS':'Pas d\u2019attente de FSS')+'\nCliquer pour changer';
+    }
+    peindreSabBo();
+    sab.addEventListener('click',function(ev){
+      ev.stopPropagation();
+      sabBasculer(t,'BO');
+      peindreSabBo();
+      sbSave();
+      try{ rSynthFactu(); }catch(e){}
+    });
+    tdC.appendChild(sab);
     row.appendChild(tdC);
 
     // Commande et FSS, comme sur les autres p\u00e9rim\u00e8tres
@@ -13908,6 +14024,22 @@ function tacheBoStatut(t, st){
 // recouvre au chargement. On pose donc les montants une fois, et seulement là
 // où rien n'a été saisi : un montant déjà renseigné n'est jamais remplacé.
 var MARCHE_0928 = {ARMA:400000, IRVE:700000, MECA:34800};
+// Alexis, 28/09/2026 : « mettre un sablier actif sur l'ensemble des tâches
+// indiquées comme faites ». Une tâche faite attend son retour de FSS tant que
+// personne n'a dit le contraire. Posé une fois, et jamais sur une tâche dont
+// le sablier a déjà été réglé à la main.
+function repriseSablierBo0928(){
+  if(MIGR.sablierBo0928) return '';
+  var n=0;
+  IRVE_TACHES.forEach(function(t){
+    if(tacheOuverte(t)) return;                 // pas encore faite
+    if(t.sab && (t.sab.BO===0 || t.sab.BO===1)) return;   // déjà réglé à la main
+    if(!t.sab) t.sab={};
+    t.sab.BO=1; n++;
+  });
+  MIGR.sablierBo0928=true;
+  return n ? ('Sablier posé sur '+n+' tâches back-office déjà faites') : '';
+}
 function repriseMarche0928(){
   if(MIGR.marche0928) return '';
   var pose=[];
@@ -19366,6 +19498,10 @@ function _renderScoresMe(el){
 // ── TASK CYCLE ────────────────────────────────────────────────
 var CYCLE={todo:'ok',ok:'nok',nok:'attente',attente:'na',na:'todo'};
 var TASK_PENDING = {};
+// Un rendu venu du serveur n'est pas une saisie : il ne doit pas déclencher
+// d'écriture. Sans ce drapeau, recevoir la modification d'un collègue nous
+// faisait réécrire à notre tour, et les deux postes se renvoyaient la balle.
+var RENDU_AUTO=false;
 // Un compte à rebours abandonné (onglet quitté, page masquée) laissait sa clé
 // pour toujours et bloquait le rendu de Ma semaine. Au-delà de dix secondes,
 // la clé n'a plus de sens : le décompte dure deux secondes.
@@ -19548,7 +19684,7 @@ phRow.appendChild(lbl);phRow.appendChild(uoInfo);
 
       var icon=t.s==='ok'?'✓':t.s==='nok'?'✕':t.s==='na'?'—':t.s==='attente'?'⏳':'';
       var cb=document.createElement('button');cb.className='tcb tcb-'+t.s;cb.textContent=icon;cb.title='ok→nok→na→todo';
-      cb.addEventListener('click',function(){cycleTask(a,t);cb.className='tcb tcb-'+t.s;cb.textContent=t.s==='ok'?'✓':t.s==='nok'?'✕':t.s==='na'?'—':t.s==='attente'?'⏳':'';row.className='dt-row'+(t.s==='nok'?' nok':t.s==='na'?' na-row':t.s==='attente'?' attente-row':'');tn2.style.textDecoration=t.s==='ok'?'line-through':'none';renderAll();sbSave();});
+      cb.addEventListener('click',function(){cycleTask(a,t);cb.className='tcb tcb-'+t.s;cb.textContent=t.s==='ok'?'✓':t.s==='nok'?'✕':t.s==='na'?'—':t.s==='attente'?'⏳':'';row.className='dt-row'+(t.s==='nok'?' nok':t.s==='na'?' na-row':t.s==='attente'?' attente-row':'');tn2.style.textDecoration=t.s==='ok'?'line-through':'none';sbSave();renderBientot();});
       var tn2=document.createElement('div');tn2.className='dt-name';tn2.style.cssText='flex:1;font-size:10px;text-decoration:'+(t.s==='ok'?'line-through':'none')+';color:'+(t.s==='na'?'var(--t3)':'var(--t)');var tActorB=null,tS2=tn.indexOf('[Si S2000]')>=0,tS1=tn.indexOf('[Si S1500]')>=0;
       var tClean=tn.replace(/\[CC\]/g,'').replace(/\[Client\]/g,'').replace(/\[Si S2000\]/g,'').replace(/\[Si S1500\]/g,'').trim();
       if(tn.indexOf('[CC]')>=0)tActorB='CC';else if(tn.indexOf('[Client]')>=0)tActorB='Client';
@@ -24690,7 +24826,7 @@ window.addEventListener('beforeunload', function(e){
 // On ne recharge jamais de force, une saisie en cours serait perdue :
 // on propose, la personne choisit son moment.
 // ══════════════════════════════════════════════════════════════
-var APP_VERSION='2026-09-28-5';
+var APP_VERSION='2026-09-28-6';
 var MAJ_VUE=false;
 function bandeauMaj(v){
   if(MAJ_VUE || document.getElementById('maj-banner')) return;
