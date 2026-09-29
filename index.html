@@ -4106,6 +4106,75 @@ function alerteNonEnregistre(actif, texte){
   SYNC_ALERTE.firstChild.textContent=texte;
 }
 
+// Les listes qui se fusionnent element par element, reconnues une a une.
+// Les autres tableaux (referentiels de competences, prix...) restent entiers.
+var LISTES_A_IDENTITE={IDEES:1, IRVE_TACHES:1, FACTU_HIST:1, GEN_HISTO:1, ECARTS:1};
+// L'identite d'un element : son id s'il en a un, sinon son empreinte. Le
+// numero d'occurrence depareille les doublons d'empreinte.
+function cleElement(nom, x, compte){
+  var brute;
+  if(x && x.id) brute='I|'+x.id;
+  else if(nom==='IRVE_TACHES' && x)
+    brute='E|'+[x.aff,x.tache,x.date,x.cp,x.pour,x.hors]
+      .map(function(v){ return String(v==null?'':v); }).join('|');
+  else { try{ brute='J|'+JSON.stringify(x); }catch(e){ brute='J|?'; } }
+  var n=compte[brute]||0; compte[brute]=n+1;
+  return brute+'#'+n;
+}
+function indexerListe(nom, arr){
+  var m={}, ordre=[], compte={};
+  (arr||[]).forEach(function(x){ var k=cleElement(nom,x,compte); m[k]=x; ordre.push(k); });
+  return {m:m, ordre:ordre};
+}
+// Fusion a trois voies d'une liste : ce que chacun a cree s'ajoute, ce que
+// chacun a supprime reste supprime, et un element modifie des deux cotes se
+// fusionne champ par champ.
+function fusionListe(nom, b, l, r){
+  var B=indexerListe(nom,b), L=indexerListe(nom,l), R=indexerListe(nom,r);
+  function eq(x,y){ try{ return JSON.stringify(x)===JSON.stringify(y); }catch(e){ return false; } }
+  var out=[], vus={};
+  L.ordre.forEach(function(k){
+    vus[k]=1;
+    var lo=L.m[k], ba=B.m[k], di=R.m[k];
+    if(ba!==undefined && di===undefined){
+      if(eq(lo,ba)) return;               // supprime a distance, intact ici : il part
+      out.push(lo); return;               // modifie ici : il reste
+    }
+    if(di===undefined){ out.push(lo); return; }   // cree ici
+    out.push(fusionValeur('', ba, lo, di));       // present des deux cotes
+  });
+  R.ordre.forEach(function(k){
+    if(vus[k]) return;
+    if(B.m[k]!==undefined) return;        // supprime ici : il reste supprime
+    out.push(R.m[k]);                     // cree a distance
+  });
+  return out;
+}
+// Fusion a trois voies d'une valeur quelconque.
+//   le serveur n'a pas bouge -> la notre ; nous n'avons pas bouge -> la
+//   sienne ; deux objets -> on descend ; deux versions d'une meme valeur
+//   simple -> la notre.
+function fusionValeur(nom, b, l, r){
+  function eq(x,y){ try{ return JSON.stringify(x)===JSON.stringify(y); }catch(e){ return false; } }
+  if(eq(r,b)) return l;
+  if(eq(l,b)) return r;
+  if(Array.isArray(l) && Array.isArray(r) && LISTES_A_IDENTITE[nom])
+    return fusionListe(nom, Array.isArray(b)?b:[], l, r);
+  if(l && r && typeof l==='object' && typeof r==='object'
+     && !Array.isArray(l) && !Array.isArray(r)){
+    var cles={}, out={};
+    [b,l,r].forEach(function(o){
+      if(o && typeof o==='object' && !Array.isArray(o))
+        Object.keys(o).forEach(function(k){ cles[k]=1; });
+    });
+    Object.keys(cles).forEach(function(k){
+      var v=fusionValeur('', (b&&typeof b==='object'&&!Array.isArray(b))?b[k]:undefined, l[k], r[k]);
+      if(v!==undefined) out[k]=v;
+    });
+    return out;
+  }
+  return l;
+}
 // Union prudente de deux états sans ancêtre commun.
 // Règle unique : le local fait foi, le serveur ne comble que ce qu'il ignore.
 // On ajoute, on ne retire jamais.
@@ -4118,8 +4187,13 @@ function unionEtats(local, remote){
       if(!vus[(a.code||'')+'|'+(a.no||'')]) local.DATA[cp].affaires.push(a);
     });
   });
+  Object.keys(LISTES_A_IDENTITE).forEach(function(nom){
+    if(Array.isArray(remote[nom]))
+      local[nom]=fusionListe(nom, [], local[nom]||[], remote[nom]);
+  });
   Object.keys(remote).forEach(function(key){
     if(key==='DATA'||key==='ts') return;
+    if(LISTES_A_IDENTITE[key]) return;    // deja unies juste au-dessus
     var rv=remote[key];
     if(rv===null || typeof rv!=='object' || Array.isArray(rv)){
       if(local[key]===undefined) local[key]=rv;
@@ -4198,16 +4272,17 @@ function fusionner(remoteStr){
     }
   });
 
-  // Dictionnaires simples : le plus récent l'emporte champ par champ
-  ['COMMENTS','ENGAGE_HIST','PERIM','TIME_LOG','TJM'].forEach(function(key){
-    if(!remote[key]) return;
-    if(!local[key]) local[key]={};
-    Object.keys(remote[key]).forEach(function(kk){
-      var bv=base[key]?JSON.stringify(base[key][kk]):undefined;
-      var rv=JSON.stringify(remote[key][kk]);
-      var lv=local[key][kk]!==undefined?JSON.stringify(local[key][kk]):undefined;
-      if(rv!==bv && (lv===bv || lv===undefined)) local[key][kk]=remote[key][kk];
-    });
+  // Tout le reste de l'etat, valeur par valeur : listes a identite element
+  // par element, dictionnaires champ par champ, et a defaut le local garde.
+  // Avant, seuls cinq dictionnaires etaient fusionnes ; pour les autres cles
+  // le local ecrasait, et les idees comme les taches back-office du collegue
+  // disparaissaient a notre premiere ecriture.
+  var clesEtat={};
+  [base, local, remote].forEach(function(o){ Object.keys(o||{}).forEach(function(k){ clesEtat[k]=1; }); });
+  Object.keys(clesEtat).forEach(function(key){
+    if(key==='DATA' || key==='ts') return;
+    var v=fusionValeur(key, base[key], local[key], remote[key]);
+    if(v===undefined) delete local[key]; else local[key]=v;
   });
 
   var merged=JSON.stringify(local);
@@ -20303,7 +20378,7 @@ function rIdees(){
   env.addEventListener('click',function(){
     var txt=ta.value.trim();
     if(!txt){ ta.focus(); return; }
-    IDEES.push({id:'I'+Date.now(), date:dISO(), auteur:(qui.value||'').trim().toUpperCase(),
+    IDEES.push({id:'I'+Date.now().toString(36)+Math.random().toString(36).slice(2,7), date:dISO(), auteur:(qui.value||'').trim().toUpperCase(),
                 texte:txt, statut:'a-traiter'});
     sbSave();
     showToast('Amélioration ajoutée');
@@ -25118,7 +25193,7 @@ window.addEventListener('beforeunload', function(e){
 // On ne recharge jamais de force, une saisie en cours serait perdue :
 // on propose, la personne choisit son moment.
 // ══════════════════════════════════════════════════════════════
-var APP_VERSION='2026-09-29-8';
+var APP_VERSION='2026-09-29-9';
 var MAJ_VUE=false;
 // La version en ligne, des qu'on la connait. Tant qu'elle vaut null, on ne
 // sait pas, et on n'empeche rien.
