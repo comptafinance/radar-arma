@@ -20067,7 +20067,7 @@ var IDEES_OBJET = 'RADAR - ameliorations a traiter';
 // Le texte du mail : les propositions qui attendent, la plus ancienne
 // d'abord, pour qu'elles se traitent dans l'ordre.
 function ideesTexteMail(){
-  var att=IDEES.filter(function(x){ return (x.statut||'a-traiter')==='a-traiter'; });
+  var att=ideesRetenues();
   if(!att.length) return '';
   var l=[];
   att.forEach(function(it,i){
@@ -20076,20 +20076,31 @@ function ideesTexteMail(){
     l.push('');
   });
   l.push('--');
-  l.push(att.length+' proposition(s) en attente, releve du '+dISO()+'.');
+  l.push(att.length+' proposition(s) retenue(s), releve du '+dISO()+'.');
   return l.join('\n');
 }
 var IDEE_STATUTS = [
-  {k:'a-traiter', l:'À traiter',     fg:'#B45309', bg:'#FEF3C7'},
-  {k:'traite',    l:'Traité',        fg:'#047857', bg:'#D1FAE5'},
-  {k:'inutile',   l:'Pas nécessaire',fg:'#6B7280', bg:'#E5E7EB'}
+  {k:'a-traiter', l:'\ud83d\udfe1 À étudier',  fg:'#B45309', bg:'#FEF3C7',
+   aide:'Proposée, pas encore tranchée'},
+  {k:'vert',      l:'\ud83d\udfe2 À faire',    fg:'#047857', bg:'#D1FAE5',
+   aide:'Retenue : elle part en développement'},
+  {k:'inutile',   l:'\ud83d\udd34 Pas retenue',fg:'#B91C1C', bg:'#FEE2E2',
+   aide:'Écartée, elle reste visible avec son motif'},
+  {k:'traite',    l:'\u2714 Fait',              fg:'#1D4ED8', bg:'#DBEAFE',
+   aide:'Livrée et en ligne'}
 ];
+// Ce qui part en développement, et rien d'autre.
+function ideesRetenues(){
+  return IDEES.filter(function(x){ return x.statut==='vert'; });
+}
 function ideeStatut(k){
   return IDEE_STATUTS.filter(function(s){ return s.k===k; })[0] || IDEE_STATUTS[0];
 }
 function nbIdeesATraiter(){
   return IDEES.filter(function(x){ return (x.statut||'a-traiter')==='a-traiter'; }).length;
 }
+// Les vertes attendent d'etre developpees : c'est le chiffre qui compte.
+function nbIdeesVertes(){ return ideesRetenues().length; }
 // La vue vit dans le conteneur défilant, comme les autres
 function vueIdees(){
   var v=document.getElementById('v-idees');
@@ -20183,23 +20194,30 @@ function rIdees(){
   tit.style.cssText='font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--t2);flex:1';
   tit.textContent='💡 Améliorations proposées';
   hdr.appendChild(tit);
-  var nA=nbIdeesATraiter();
+  var nA=nbIdeesATraiter(), nV=nbIdeesVertes();
+  if(nA){
+    var cJ=document.createElement('span');
+    cJ.style.cssText='font-size:10px;font-weight:800;padding:3px 9px;border-radius:8px;'
+      +'background:#FEF3C7;color:#B45309';
+    cJ.textContent=nA+' à étudier';
+    hdr.appendChild(cJ);
+  }
   var cpt=document.createElement('span');
   cpt.style.cssText='font-size:10px;font-weight:800;padding:3px 9px;border-radius:8px;background:'
-    +(nA?'#FEF3C7':'var(--gl)')+';color:'+(nA?'#B45309':'var(--green)');
-  cpt.textContent = nA ? (nA+' à traiter') : 'Rien en attente';
+    +(nV?'#D1FAE5':'var(--s2)')+';color:'+(nV?'#047857':'var(--t3)');
+  cpt.textContent = nV ? (nV+' à faire') : (nA?'aucune retenue':'Rien en attente');
   hdr.appendChild(cpt);
   // Envoyer ce qui attend, sans avoir à le recopier
   var bEnv=document.createElement('button');
-  bEnv.style.cssText='border:none;background:'+(nA?'var(--brand)':'var(--b)')+';color:'
-    +(nA?'#fff':'var(--t3)')+';border-radius:8px;padding:5px 12px;font-size:10.5px;'
-    +'font-weight:800;cursor:'+(nA?'pointer':'default')+';font-family:inherit';
+  bEnv.style.cssText='border:none;background:'+(nV?'var(--brand)':'var(--b)')+';color:'
+    +(nV?'#fff':'var(--t3)')+';border-radius:8px;padding:5px 12px;font-size:10.5px;'
+    +'font-weight:800;cursor:'+(nV?'pointer':'default')+';font-family:inherit';
   bEnv.textContent='\u2709 Envoyer';
-  bEnv.title = nA ? 'Envoyer les propositions en attente, et les copier'
-                  : 'Rien en attente : il n\u2019y a rien \u00e0 envoyer';
+  bEnv.title = nV ? 'Envoyer les propositions retenues, et les copier'
+                  : 'Aucune proposition retenue : il n\u2019y a rien \u00e0 envoyer';
   bEnv.addEventListener('click',function(){
     var txt=ideesTexteMail();
-    if(!txt){ showToast('Rien en attente'); return; }
+    if(!txt){ showToast('Aucune proposition retenue'); return; }
     // Copier d'abord : le mail peut tronquer un texte long, le presse-papiers
     // non. Ce qui a ete redige n'est jamais perdu.
     try{ if(navigator.clipboard) navigator.clipboard.writeText(txt); }catch(e){}
@@ -20281,6 +20299,17 @@ function rIdees(){
   zs.appendChild(lgM);
   body.appendChild(zs);
 
+  var mode=document.createElement('div');
+  mode.style.cssText='padding:8px 12px;border-bottom:1px solid var(--b);font-size:10px;'
+    +'color:var(--t2);line-height:1.6;background:var(--s2)';
+  mode.innerHTML='Écris ta proposition, elle arrive en '
+    +'<b style="color:#B45309">\ud83d\udfe1 À étudier</b>. '
+    +'Steve la passe en <b style="color:#047857">\ud83d\udfe2 À faire</b> quand elle est retenue, '
+    +'et c\u2019est seulement à ce moment qu\u2019elle part en développement. '
+    +'<b style="color:#B91C1C">\ud83d\udd34 Pas retenue</b> veut dire écartée, elle reste '
+    +'affichée pour qu\u2019on sache pourquoi. '
+    +'<b style="color:#1D4ED8">\u2714 Fait</b> quand c\u2019est en ligne.';
+  body.appendChild(mode);
   if(!IDEES.length){
     var e0=document.createElement('div');
     e0.style.cssText='padding:18px 12px;text-align:center;font-size:11px;color:var(--t3);font-style:italic';
@@ -20299,7 +20328,12 @@ function rIdees(){
   th.appendChild(tr); tbl.appendChild(th);
   var tb=document.createElement('tbody');
   // Les dernières idées d'abord
-  IDEES.slice().reverse().forEach(function(it){
+  var ordre={'vert':0, 'a-traiter':1, 'traite':2, 'inutile':3};
+  function rang(x){
+    var r=ordre[x.statut||'a-traiter'];
+    return (r===undefined) ? 1 : r;      // un ||1 ecraserait le zero du vert
+  }
+  IDEES.slice().reverse().sort(function(x,y){ return rang(x)-rang(y); }).forEach(function(it){
     var i=IDEES.indexOf(it);
     var row=document.createElement('tr');
     var tdD=document.createElement('td');
@@ -20320,6 +20354,7 @@ function rIdees(){
     var st=ideeStatut(it.statut);
     sel.style.cssText='border:1px solid '+st.fg+'66;border-radius:7px;padding:3px 6px;font-size:10px;'
       +'font-weight:800;background:'+st.bg+';color:'+st.fg+';font-family:inherit';
+    sel.title=IDEE_STATUTS.map(function(s){ return s.l+' : '+s.aide; }).join('\n');
     IDEE_STATUTS.forEach(function(s){
       var o=document.createElement('option'); o.value=s.k; o.textContent=s.l;
       if(s.k===(it.statut||'a-traiter')) o.selected=true;
@@ -25048,7 +25083,7 @@ window.addEventListener('beforeunload', function(e){
 // On ne recharge jamais de force, une saisie en cours serait perdue :
 // on propose, la personne choisit son moment.
 // ══════════════════════════════════════════════════════════════
-var APP_VERSION='2026-09-29-4';
+var APP_VERSION='2026-09-29-5';
 var MAJ_VUE=false;
 function bandeauMaj(v){
   if(MAJ_VUE || document.getElementById('maj-banner')) return;
