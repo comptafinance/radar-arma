@@ -4432,6 +4432,18 @@ function echecSansSession(){
   try{ majBadgeSync(); }catch(e){}
   return Promise.resolve(false);
 }
+// Relit la version en ligne, et rend vrai si ce poste est a jour. En cas de
+// doute (pas de reseau pour version.json), on ne bloque pas : l'ecriture
+// elle-meme echouera ou passera, comme avant.
+function versionAJourAvantEcriture(){
+  return fetch('version.json?t='+Date.now(), {cache:'no-store'})
+    .then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(j){
+      if(j && j.v) VERSION_EN_LIGNE=j.v;
+      return !versionPerimee();
+    })
+    .catch(function(){ return !versionPerimee(); });
+}
 function sbSaveSuite(){
   // Un poste dont le code n'est plus celui en ligne n'ecrit pas : sa fusion
   // est celle d'avant, et il reposerait un etat perime sur le travail des
@@ -4450,7 +4462,16 @@ function sbSaveSuite(){
   }
   SYNC_BUSY=true;
   var rev=SYNC_REV;
-  SYNC_EN_COURS=ecrireServeur(rev,0).then(function(ok){
+  // On relit la version avant d'ecrire. Le dernier envoi du bouton Recharger
+  // passe outre (VERSION_EN_LIGNE vaut alors null, et le bouton le sait).
+  var controle = ENVOI_AVANT_RECHARGEMENT ? Promise.resolve(true) : versionAJourAvantEcriture();
+  SYNC_EN_COURS=controle.then(function(aJour){
+    if(!aJour){
+      SYNC_BUSY=false; SYNC_EN_COURS=null;
+      return sbSaveSuite();          // repasse par le verrou, qui garde tout sur le poste
+    }
+    return ecrireServeur(rev,0);
+  }).then(function(ok){
     SYNC_BUSY=false; SYNC_EN_COURS=null; return ok;
   });
   return SYNC_EN_COURS;
@@ -12256,42 +12277,35 @@ function revueArmaModele(){
   h1.push('N\u00b0 FSS','Commentaire R\u00e9f\u00e9rent'); h2.push('',''); s1.push(1,1); s2.push(1,1);
   var rows=[h1,h2], styles=[s1,s2];
 
-  cpsOfSvc('ARMA').forEach(function(cp){
-    var ini=(DATA[cp].ini||cp);
-    gAff(cp).forEach(function(a){
-      var uos=[];
-      FA_UOS.forEach(function(u){
-        var val=faGetVal(a,u);
-        if(faCoef(val)>0 || val==='NA' || faLibre(a,u)) return;
-        var p=null; try{ p=uoPct(a, FA_KEY[u]); }catch(e){}
-        if(p!==null && Math.round(p*100)>=100) uos.push(FA_SHORT[u]);
-      });
-      var demi=false;
-      var naETR=['ETD','TRX','RCP'].every(function(x){ return faGetVal(a,x)==='NA'; });
-      if(naETR && faGetVal(a,'CRD')!=='NA' && !faCoef(faGetVal(a,'CRD'))){
-        var pc=null; try{ pc=uoPct(a,'Coordination'); }catch(e){}
-        if(pc!==null && Math.round(pc*100)===50) demi=true;
-      }
-      if(!uos.length && !demi) return;
-      var comm = demi ? 'CRD (0,5)' : uos.join('+');
-      var r=[a.no||a.code, ini, (a.typo||'').toUpperCase().indexOf('S6000')>=0?'X':''];
-      var st=[10,10,0];
-      ARMA_MODELE.forEach(function(c){
-        var e=tacheEtat(a,c.t);
-        r.push(e);
-        st.push(e==='OK'?7 : e==='NA'?8 : e==='NOK'?9 : 0);
-      });
-      r.push('', comm);
-      st.push(0,10);
-      rows.push(r); styles.push(st);
+  // La meme liste que l'ecran, regroupee par affaire : une ligne par affaire,
+  // les UO a facturer dans le commentaire, avec leur part quand elle n'est
+  // pas entiere.
+  var parAff={}, ordre=[], nUo=0, tot=0;
+  circLignes('ARMA','all').afact.forEach(function(l){
+    var k=l.cp+'|'+(l.a.no||l.a.code);
+    if(!parAff[k]){ parAff[k]={cp:l.cp, a:l.a, uos:[]}; ordre.push(k); }
+    parAff[k].uos.push((FA_SHORT[l.k]||l.k)+(l.part<0.999?' ('+circPart(l.part)+')':''));
+    nUo++; tot+=l.montant||0;
+  });
+  ordre.forEach(function(k){
+    var g=parAff[k], a=g.a, ini=(DATA[g.cp]||{}).ini||g.cp;
+    var r=[a.no||a.code, ini, (a.typo||'').toUpperCase().indexOf('S6000')>=0?'X':''];
+    var st=[10,10,0];
+    ARMA_MODELE.forEach(function(c){
+      var e=tacheEtat(a,c.t);
+      r.push(e);
+      st.push(e==='OK'?7 : e==='NA'?8 : e==='NOK'?9 : 0);
     });
+    r.push('', g.uos.join('+'));
+    st.push(0,10);
+    rows.push(r); styles.push(st);
   });
 
   var merges=['A1:A2','B1:B2','C1:C2'];
   var deb=4;
   for(var i=1;i<=ARMA_MODELE.length;i++){
-    var g=(i<ARMA_MODELE.length)?ARMA_MODELE[i].grp:'@fin';
-    if(g){
+    var gg=(i<ARMA_MODELE.length)?ARMA_MODELE[i].grp:'@fin';
+    if(gg){
       var fin=i+3;
       if(fin>deb) merges.push(colLettre(deb)+'1:'+colLettre(fin)+'1');
       deb=i+4;
@@ -12305,76 +12319,35 @@ function revueArmaModele(){
   ARMA_MODELE.forEach(function(){ widths.push(11); });
   widths.push(12,20);
 
+  // lignes = des UO, comme a l'ecran, et non plus des affaires
   return {name:'ARMA', rows:rows, styles:styles, merges:merges, widths:widths,
-          noFilter:true, lignes:rows.length-2};
+          noFilter:true, lignes:nUo, total:tot};
 }
 function colLettre(n){ var s=''; while(n>0){ var r=(n-1)%26; s=String.fromCharCode(65+r)+s; n=(n-r-1)/26; } return s; }
 
 function revueArma(){
   var rows=[['N\u00b0 affaire','CP','UO','Prix (\u20ac)','Avancement','Statut']];
   var tot=0;
-  cpsOfSvc('ARMA').forEach(function(cp){
-    gAff(cp).forEach(function(a){
-      // Étude, travaux et réception sans objet mais coordination à 50 % :
-      // on facture la moitié de l'UO coordination.
-      var naETR=['ETD','TRX','RCP'].every(function(x){ return faGetVal(a,x)==='NA'; });
-      if(naETR && faGetVal(a,'CRD')!=='NA' && !faCoef(faGetVal(a,'CRD'))){
-        var pc=null; try{ pc=uoPct(a,'Coordination'); }catch(e){}
-        if(pc!==null && Math.round(pc*100)===50){
-          var px=Math.round((UO_PRIX['Coordination']||0)*0.5);
-          tot+=px;
-          rows.push([a.no||a.code, DATA[cp].ini||cp, 'CRD', px, '50 %', 'À facturer (demi-UO)']);
-        }
-      }
-      FA_UOS.forEach(function(u){
-        var val=faGetVal(a,u);
-        // D\u00e9j\u00e0 factur\u00e9, m\u00eame partiellement, ou sans objet : on n'inclut pas
-        if(faCoef(val)>0 || val==='NA' || faLibre(a,u)) return;
-        var av=0, pn=null;
-        try{ pn=uoPct(a, FA_KEY[u]); }catch(e){}
-        if(pn===null) return;                 // phase sans objet
-        av=pn*100;
-        if(av<100) return;
-        var prix=UO_PRIX[FA_KEY[u]]||0;
-        tot+=prix;
-        rows.push([a.no||a.code, DATA[cp].ini||cp, FA_SHORT[u], prix, '100 %', '\u00c0 facturer']);
-      });
-    });
+  circLignes('ARMA','all').afact.forEach(function(l){
+    tot+=l.montant||0;
+    rows.push([l.a.no||l.a.code, (DATA[l.cp]||{}).ini||l.cp, FA_SHORT[l.k]||l.k,
+               Math.round(l.montant||0), Math.round(l.av||100)+' %',
+               l.part<0.999 ? '\u00c0 facturer ('+circPart(l.part)+')' : '\u00c0 facturer']);
   });
-  rows.push(['','','TOTAL',tot,'','']);
+  rows.push(['','','TOTAL',Math.round(tot),'','']);
   return {name:'ARMA', rows:rows, total:tot, lignes:rows.length-2};
 }
 function revueIrve(){
   var rows=[['N\u00b0 affaire','CP','Type','Complexit\u00e9','UO','Prix (\u20ac)','Statut']];
   var tot=0;
-  cpsOfSvc('IRVE').forEach(function(cp){
-    gAff(cp).forEach(function(a){
-      if(irvePhaseNum(a)===0) return;
-      var iv=a.irve||{}, pr=irveProfil(a);
-      ['ETD','CRD','TRX','RCP'].forEach(function(uo){
-        var cle=pr+'_'+uo;
-        var av=0, fa=0;
-        if(uo==='ETD') av=(irvePhaseNum(a)>=3?1:0);
-        else if(uo==='CRD') av=(irvePhaseNum(a)>=6?1:0);
-        else { var pp=irvePhasePct(a, uo==='TRX'?'Travaux':'R\u00e9ception'); av=(pp===null?0:pp/100); }
-        var estNA=false;
-        Object.keys(iv.fa||{}).forEach(function(k){
-          if(k.slice(-3)!==uo) return;
-          if(String(iv.fa[k]).trim().toUpperCase()==='NA'){ estNA=true; return; }
-          fa=Math.max(fa,irveCoef(iv.fa[k]));
-        });
-        if(estNA) return;   // dossier repris par Enedis, UO sans objet
-        // Une valeur d\u00e9j\u00e0 factur\u00e9e, m\u00eame 0,5 ou 0,75, clot l'UO
-        if(av<1 || fa>0) return;
-        if(!irveUoFacturable(a,uo)) return;
-        var prix=irvePrixUoAff(a,uo);
-        tot+=prix;
-        rows.push([a.no||a.code, DATA[cp].ini||cp, irveEstNouveau(a)?'Nouveau':'Historique',
-                   pr==='M'?'Moyenne':'Simple', uo, prix, '\u00c0 facturer']);
-      });
-    });
+  circLignes('IRVE','all').afact.forEach(function(l){
+    var a=l.a, pr=irveProfil(a);
+    tot+=l.montant||0;
+    rows.push([a.no||a.code, (DATA[l.cp]||{}).ini||l.cp, irveEstNouveau(a)?'Nouveau':'Historique',
+               pr==='M'?'Moyenne':'Simple', String(l.k).slice(-3), Math.round(l.montant||0),
+               l.part<0.999 ? '\u00c0 facturer ('+circPart(l.part)+')' : '\u00c0 facturer']);
   });
-  rows.push(['','','','','TOTAL',tot,'']);
+  rows.push(['','','','','TOTAL',Math.round(tot),'']);
   return {name:'IRVE', rows:rows, total:tot, lignes:rows.length-2};
 }
 // Part d'UO coordination attribuée à une tâche back-office
@@ -12383,18 +12356,18 @@ function tacheUo(){
   return p ? Math.round(tacheMontant()/p*100)/100 : 0.1;
 }
 function revueIrveBo(){
-  var det=[], parAff={}, cnt={}, tot=0, n=0;
-  IRVE_TACHES.forEach(function(t){
-    if(t.crd) return;                     // t\u00e2che d\u00e9j\u00e0 factur\u00e9e
-    tot+=tacheMontant(); n++;
+  // Les taches faites et pas encore facturees, sans demande en cours : la
+  // meme liste que l'ecran.
+  var det=[], parAff={}, tot=0, n=0;
+  circLignesBo().afact.forEach(function(l){
+    var t=l.t;
+    tot+=l.montant||0; n++;
     var k=String(t.aff||'').trim()||'(sans n\u00b0)';
     parAff[k]=(parAff[k]||0)+tacheUo();
-    cnt[k]=(cnt[k]||0)+1;
     det.push([t.date?dFR(t.date):'', t.aff, t.tache, t.pour, t.cp, tacheUo()]);
   });
   det.push(['','','','','TOTAL', Math.round(n*tacheUo()*100)/100]);
 
-  // Synth\u00e8se par affaire, plac\u00e9e \u00e0 c\u00f4t\u00e9 du d\u00e9tail
   var syn=Object.keys(parAff).sort().map(function(k){
     return [k, Math.round(parAff[k]*100)/100];
   });
@@ -12413,29 +12386,25 @@ function revueIrveBo(){
 function revueMeca(){
   var rows=[['Station','Lot','CP','Livrable','Prix (\u20ac)','Avancement','Statut']];
   var tot=0;
-  cpsOfSvc('MECA').forEach(function(cp){
-    gAff(cp).forEach(function(a){
-      var mc=a.meca||{};
-      MECA_UOS.forEach(function(u){
-        var av=mecaPctUo(a,u.k);
-        if((mc.fa||{})[u.k]) return;          // d\u00e9j\u00e0 factur\u00e9
-        if(av<100) return;
-        tot+=u.prix;
-        rows.push([mc.station||a.code, mc.groupe||'', DATA[cp].ini||cp, u.l, u.prix, '100 %', '\u00c0 facturer']);
-      });
-    });
+  circLignes('MECA','all').afact.forEach(function(l){
+    var mc=l.a.meca||{};
+    var u=MECA_UOS.filter(function(x){ return x.k===l.k; })[0]||{l:l.k};
+    tot+=l.montant||0;
+    rows.push([mc.station||l.a.code, mc.groupe||'', (DATA[l.cp]||{}).ini||l.cp, u.l,
+               Math.round(l.montant||0), Math.round(l.av||100)+' %', '\u00c0 facturer']);
   });
-  rows.push(['','','','TOTAL',tot,'','']);
+  rows.push(['','','','TOTAL',Math.round(tot),'','']);
   return {name:'RATP', rows:rows, total:tot, lignes:rows.length-2};
 }
-
 function exportRevues(){
   try{
     var f=[revueArmaModele(), revueIrve(), revueIrveBo(), revueMeca()];
-    f[0].total=revueArma().total;
-    var recap=[['P\u00e9rim\u00e8tre','UO \u00e0 facturer','Montant (\u20ac)']];
+    // chaque feuille porte son total, calcule sur la meme liste que l'ecran
+    // Des UO pour ARMA, IRVE et RATP, des taches pour le back-office : la
+    // colonne dit donc a facturer, et le nom precise l'unite.
+    var recap=[['P\u00e9rim\u00e8tre','\u00c0 facturer','Montant (\u20ac)']];
     var gt=0;
-    f.forEach(function(x){ recap.push([x.name, x.lignes, Math.round(x.total)]); gt+=x.total; });
+    f.forEach(function(x){ recap.push([x.name+(x.name==='IRVE back-office'?' (t\u00e2ches)':' (UO)'), x.lignes, Math.round(x.total)]); gt+=x.total; });
     recap.push(['TOTAL','',Math.round(gt)]);
     var sheets=[{name:'Synth\u00e8se', rows:recap}].concat(f);
     var blob=xlsxBuild(sheets);
@@ -25149,7 +25118,7 @@ window.addEventListener('beforeunload', function(e){
 // On ne recharge jamais de force, une saisie en cours serait perdue :
 // on propose, la personne choisit son moment.
 // ══════════════════════════════════════════════════════════════
-var APP_VERSION='2026-09-29-7';
+var APP_VERSION='2026-09-29-8';
 var MAJ_VUE=false;
 // La version en ligne, des qu'on la connait. Tant qu'elle vaut null, on ne
 // sait pas, et on n'empeche rien.
@@ -25186,11 +25155,14 @@ function bandeauMaj(v){
   b.appendChild(t); b.appendChild(ok); b.appendChild(no);
   document.body.appendChild(b);
 }
+// Vrai pendant le dernier envoi que fait le bouton Recharger
+var ENVOI_AVANT_RECHARGEMENT=false;
 function rechargerSurNouvelleVersion(bouton){
   if(bouton){ bouton.disabled=true; bouton.textContent='Enregistrement\u2026'; }
   // Ce dernier envoi-la est autorise : il porte ce que la personne vient de
   // saisir, avant de repartir sur la version neuve.
   VERSION_EN_LIGNE=null;
+  ENVOI_AVANT_RECHARGEMENT=true;
   try{ sauvegardeFichier('avant-maj'); }catch(e){}
   var p; try{ p=sbSaveNow(); }catch(e){ p=Promise.resolve(false); }
   return Promise.resolve(p).then(function(bon){
