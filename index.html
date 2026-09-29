@@ -5099,7 +5099,7 @@ function rPhaseBar(){
 
 // Tâches indispensables à la facturation (signalées par ◆)
 var TACHES_FACTU = {
- 'RDV + Retour Primo':1,'Envoi du Devis [CC]':1,'Devis Signé [Client]':1,
+ 'RDV + Retour Primo':1,'Devis Signé [Client]':1,
  'Acompte Payé [Client]':1,'EXT // Plan 200ème [Si S2000]':1,'INT // Plan synoptique':1,
  'EOTP niv2':1,'Demande CITE + Alfresco':1,'Programmation Regard':1,'EXT // CMD':1,
  'EXT // DMR':1,'EXT // ICP/PPS':1,'PGOC réceptionné':1,'AAT réceptionné':1,
@@ -6399,12 +6399,12 @@ function rIrveTaches(){
   var tbl=document.createElement('table'); tbl.className='fa-tbl';
   var th=document.createElement('thead'), tr=document.createElement('tr');
   [['',''],['Date',''],['N\u00b0 affaire','l'],['T\u00e2che','l'],['Pour qui','l'],['CP',''],['CRD / FSS ?',''],
-   ['CMD / FSS',''],['','']]
+   ['','']]
   .forEach(function(c){ var x=document.createElement('th'); if(c[1])x.className=c[1]; x.textContent=c[0]; tr.appendChild(x); });
   th.appendChild(tr); tbl.appendChild(th);
   var tb=document.createElement('tbody');
   if(!IRVE_TACHES.length){
-    var tr0=document.createElement('tr'); var td0=document.createElement('td'); td0.colSpan=9;
+    var tr0=document.createElement('tr'); var td0=document.createElement('td'); td0.colSpan=8;
     td0.style.cssText='padding:14px;text-align:center;font-style:italic;color:var(--t3);font-size:10.5px';
     td0.textContent='Aucune t\u00e2che enregistr\u00e9e';
     tr0.appendChild(td0); tb.appendChild(tr0);
@@ -6474,27 +6474,9 @@ function rIrveTaches(){
     tdC.appendChild(sab);
     row.appendChild(tdC);
 
-    // Commande et FSS, comme sur les autres p\u00e9rim\u00e8tres
-    var tdF=document.createElement('td');
-    tdF.style.padding='2px 3px';
-    var sf=document.createElement('select');
-    CMD_ETATS.forEach(function(e){
-      var o=document.createElement('option'); o.value=e.k; o.textContent=e.l; sf.appendChild(o);
-    });
-    function peindreF(){
-      var e=cmdEtatInfo(t.fss);
-      sf.value=e.k;
-      sf.style.cssText='border:1px solid '+e.fg+'66;border-radius:5px;padding:1px 3px;'
-        +'font-size:8.5px;font-weight:800;background:'+e.bg+';color:'+e.fg
-        +';font-family:inherit;max-width:72px';
-      sf.title=e.t+(FSS_SOURCE?'':'\nSaisie manuelle : le dossier des commandes et FSS n\u2019est pas encore branch\u00e9');
-    }
-    peindreF();
-    sf.addEventListener('change',function(){
-      if(sf.value) t.fss=sf.value; else delete t.fss;
-      peindreF(); sbSave();
-    });
-    tdF.appendChild(sf); row.appendChild(tdF);
+    // La colonne CMD / FSS est retiree ici le 28/09/2026, a la demande de
+    // Steve. Le champ t.fss reste dans les donnees, et le sablier de la
+    // colonne CRD / FSS ? dit desormais ce qu'on attend d'Enedis.
 
     var tdX=document.createElement('td');
     tdX.style.cssText='padding:2px 3px;width:22px';
@@ -24826,7 +24808,7 @@ window.addEventListener('beforeunload', function(e){
 // On ne recharge jamais de force, une saisie en cours serait perdue :
 // on propose, la personne choisit son moment.
 // ══════════════════════════════════════════════════════════════
-var APP_VERSION='2026-09-28-6';
+var APP_VERSION='2026-09-29-1';
 var MAJ_VUE=false;
 function bandeauMaj(v){
   if(MAJ_VUE || document.getElementById('maj-banner')) return;
