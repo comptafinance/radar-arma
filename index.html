@@ -4024,7 +4024,24 @@ var REPRISES_ACTIVES = false;
 // demarrage suivant on sait que le poste detient du travail que le serveur
 // ignore, et la lecture fusionne au lieu de reprendre.
 var LS_ATT='radar_attente';
-function poserAttente(){ try{ localStorage.setItem(LS_ATT, new Date().toISOString()); }catch(e){} }
+// Vrai le temps de reprendre des saisies retrouvees sur le poste a l'ouverture.
+var REPRISE_EN_COURS=false;
+function poserAttente(){
+  try{ localStorage.setItem(LS_ATT, JSON.stringify({d:new Date().toISOString(), v:APP_VERSION})); }catch(e){}
+}
+// Lit le marqueur. Rend {date, fiable}. Un marqueur de l'ancien format, une
+// simple date, a ete pose par le code d'avant le 29/09/2026, qui le posait a
+// chaque connexion sans qu'aucune saisie n'attende : il n'est pas fiable.
+function lireAttente(){
+  var raw=null;
+  try{ raw=localStorage.getItem(LS_ATT); }catch(e){}
+  if(!raw) return null;
+  try{
+    var o=JSON.parse(raw);
+    if(o && o.d) return {date:o.d, fiable:true, version:o.v||''};
+  }catch(e){}
+  return {date:raw, fiable:false, version:''};
+}
 function leverAttente(){ try{ localStorage.removeItem(LS_ATT); }catch(e){} }
 
 function syncModifie(){ return SYNC_REV!==SYNC_REV_OK; }
@@ -4072,7 +4089,10 @@ function alerteNonEnregistre(actif, texte){
     r.style.cssText='border:none;background:#fff;color:#B91C1C;border-radius:8px;padding:5px 12px;'
       +'font-size:11px;font-weight:800;cursor:pointer;font-family:inherit';
     r.textContent='Réessayer';
-    r.addEventListener('click',function(){ SYNC_REV++; sbSaveNow(); });
+    r.addEventListener('click',function(){
+      if(versionPerimee()){ rechargerSurNouvelleVersion(r); return; }
+      SYNC_REV++; sbSaveNow();
+    });
     var x=document.createElement('button');
     x.style.cssText='border:1px solid rgba(255,255,255,.55);background:transparent;color:#fff;'
       +'border-radius:8px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit';
@@ -4218,9 +4238,25 @@ function sbLoad(){
   // Des saisies attendaient encore le serveur a la derniere fermeture. On les
   // remonte d'abord depuis le poste et on les declare en attente, pour que la
   // lecture qui suit les protege au lieu de passer dessus.
-  var enAttente=false;
-  try{ enAttente=!!localStorage.getItem(LS_ATT); }catch(e){}
+  // Des saisies ont-elles vraiment ete laissees en plan a la derniere visite ?
+  // Le marqueur porte sa date. Au-dela de douze heures, la memoire du poste
+  // est trop vieille pour passer devant le serveur : on la met de cote en
+  // copie de secours, et c'est le serveur qui fait foi.
+  var enAttente=false, att=lireAttente();
+  if(att){
+    var age=Date.now()-(Date.parse(att.date)||0);
+    if(att.fiable && age>=0 && age<12*3600*1000){
+      enAttente=true;
+    } else {
+      // Trop ancien, ou pose a tort par l'ancien code : la memoire du poste
+      // ne passe pas devant le serveur. Elle est gardee en copie de secours.
+      try{ lsLoad(); sauvegardeSecours((att.fiable?'saisies trop anciennes':'marqueur de l ancienne version')
+                                      +' non reprises ('+att.date+')'); }catch(e){}
+      leverAttente();
+    }
+  }
   if(enAttente){
+    REPRISE_EN_COURS=true;
     try{ lsLoad(); SYNC_REV++; }catch(e){ console.warn('reprise attente',e); }
     showToast('Saisies non partag\u00e9es retrouv\u00e9es sur ce poste : elles sont conserv\u00e9es');
   }
@@ -4228,9 +4264,21 @@ function sbLoad(){
     .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
     .then(function(rows){
       if(rows && rows.length && rows[0].data){
-        // Des saisies attendent d'etre ecrites : on fusionne, on n'ecrase pas.
-        if(syncModifie()) fusionner(rows[0].data);
-        else { applyState(rows[0].data); SYNC_BASE=rows[0].data; }
+        // A l'ouverture, le serveur fait foi. On ne fusionne que si de vraies
+        // saisies de la visite precedente attendent, retrouvees sur le poste.
+        // La decision tient au marqueur SEUL : un premier affichage remet le
+        // compteur a zero avant la lecture, et syncModifie() mentait alors.
+        if(enAttente){
+          // fusionner() regarde syncModifie() : on garantit qu'il voit la saisie
+          if(!syncModifie()) SYNC_REV_OK=SYNC_REV-1;
+          fusionner(rows[0].data);
+          SYNC_REV++;
+          REPRISE_EN_COURS=false;
+        }
+        else {
+          applyState(rows[0].data); SYNC_BASE=rows[0].data;
+          SYNC_REV_OK=SYNC_REV; leverAttente();
+        }
         SYNC_PRET=true;
         buildTabs(); renderAll();
         var dm=document.getElementById('dark-toggle');
@@ -4277,6 +4325,7 @@ function sbLoad(){
       }
     })
     .catch(function(e){
+      REPRISE_EN_COURS=false;          // la reprise n'a pas pu se faire : on relache
       console.error('sbLoad',e);
       SYNC_PRET=false;
       syncIndic('\u2717','var(--red)','Hors ligne \u2014 donn\u00e9es locales');
@@ -4321,7 +4370,9 @@ function sbSave(){
   // « rien à protéger » : le marqueur d'attente n'était jamais posé, le badge
   // restait au vert, et le travail partait à la poubelle au rechargement.
   // C'est ainsi que des tâches basculées en Fait ne se sont pas enregistrées.
-  if(!SB_TOKEN && !SYNC_PRET) SYNC_REV_OK=SYNC_REV;
+  // Avant la 1re lecture, rien n'est une saisie... sauf des saisies retrouvees
+  // sur le poste qu'on est justement en train de reprendre.
+  if(!SYNC_PRET && !REPRISE_EN_COURS) SYNC_REV_OK=SYNC_REV;
   else poserAttente();
   try{ majBadgeSync(); }catch(e){}
   try{ lsSaveBientot(); }catch(e){}      // filet de sécurité local, groupé
@@ -4391,10 +4442,10 @@ function sbSaveSuite(){
     poserAttente();
     try{ majBadgeSync(); }catch(e){}
     syncIndic('\u26a0','var(--amber)','Non partag\u00e9 \u2014 rechargez la page');
-    alerteNonEnregistre(true,'Cette page tourne sur une version ancienne de RADAR. '
-      +'Vos saisies sont gard\u00e9es sur ce poste mais ne partent pas, pour ne pas '
-      +'\u00e9craser le travail des autres. Rechargez, elles partiront ensuite.');
-    try{ bandeauMaj(VERSION_EN_LIGNE); }catch(e){}
+    // Un seul bandeau, le bleu : il porte le bouton qui fait ce qu'il faut.
+    // Afficher aussi le rouge le recouvrait et rendait Recharger inaccessible.
+    try{ alerteNonEnregistre(false); }catch(e){}
+    try{ MAJ_VUE=false; bandeauMaj(VERSION_EN_LIGNE); }catch(e){}
     return Promise.resolve(false);
   }
   SYNC_BUSY=true;
@@ -25098,7 +25149,7 @@ window.addEventListener('beforeunload', function(e){
 // On ne recharge jamais de force, une saisie en cours serait perdue :
 // on propose, la personne choisit son moment.
 // ══════════════════════════════════════════════════════════════
-var APP_VERSION='2026-09-29-6';
+var APP_VERSION='2026-09-29-7';
 var MAJ_VUE=false;
 // La version en ligne, des qu'on la connait. Tant qu'elle vaut null, on ne
 // sait pas, et on n'empeche rien.
@@ -25126,28 +25177,7 @@ function bandeauMaj(v){
   // On attendait 250 ms avant de recharger, alors que l'ecriture demande une
   // lecture puis un envoi : la montee de version emportait la derniere saisie.
   // On attend maintenant la reponse du serveur, et on previent si elle est non.
-  ok.addEventListener('click',function(){
-    ok.disabled=true; ok.textContent='Enregistrement…';
-    // Cet envoi-la est autorise : c'est le dernier avant de repartir sur la
-    // version neuve, et il porte ce que la personne vient de saisir.
-    VERSION_EN_LIGNE=null;
-    // Une copie des donnees part dans les telechargements avant tout
-    // rechargement : une mise a jour ne doit jamais etre le dernier moment
-    // ou l'etat d'avant existait.
-    try{ sauvegardeFichier('avant-maj-'+v); }catch(e){}
-    var p; try{ p=sbSaveNow(); }catch(e){ p=Promise.resolve(false); }
-    Promise.resolve(p).then(function(bon){
-      if(bon===false && syncModifie()){
-        ok.disabled=false; ok.textContent='Recharger';
-        uiConfirm('Modifications non enregistrées',
-          'Le serveur n’a pas accepté vos dernières saisies.\n'
-          +'Recharger maintenant les perdrait.\n\nRecharger quand même ?',
-          function(){ location.reload(true); }, true);
-        return;
-      }
-      location.reload(true);
-    });
-  });
+  ok.addEventListener('click',function(){ rechargerSurNouvelleVersion(ok); });
   var no=document.createElement('button');
   no.style.cssText='border:1px solid rgba(255,255,255,.5);background:transparent;color:#fff;'
     +'border-radius:8px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit';
@@ -25155,6 +25185,25 @@ function bandeauMaj(v){
   no.addEventListener('click',function(){ if(b.parentNode) document.body.removeChild(b); });
   b.appendChild(t); b.appendChild(ok); b.appendChild(no);
   document.body.appendChild(b);
+}
+function rechargerSurNouvelleVersion(bouton){
+  if(bouton){ bouton.disabled=true; bouton.textContent='Enregistrement\u2026'; }
+  // Ce dernier envoi-la est autorise : il porte ce que la personne vient de
+  // saisir, avant de repartir sur la version neuve.
+  VERSION_EN_LIGNE=null;
+  try{ sauvegardeFichier('avant-maj'); }catch(e){}
+  var p; try{ p=sbSaveNow(); }catch(e){ p=Promise.resolve(false); }
+  return Promise.resolve(p).then(function(bon){
+    if(bon===false && syncModifie()){
+      if(bouton){ bouton.disabled=false; bouton.textContent='Recharger'; }
+      uiConfirm('Modifications non enregistr\u00e9es',
+        'Le serveur n\u2019a pas accept\u00e9 vos derni\u00e8res saisies.\n'
+        +'Elles restent sur ce poste et repartiront apr\u00e8s le rechargement.\n\nRecharger maintenant ?',
+        function(){ location.reload(true); }, true);
+      return;
+    }
+    location.reload(true);
+  });
 }
 function verifierVersion(){
   fetch('version.json?t='+Date.now(), {cache:'no-store'})
