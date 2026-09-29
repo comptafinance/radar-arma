@@ -1167,7 +1167,7 @@ function sbHeaders(){
 // Serialize full app state to JSON
 function serializeState(){
   return JSON.stringify({
-    DATA:DATA,AVC:AVC,DXP:DXP,COMMENTS:COMMENTS,ENGAGE_HIST:ENGAGE_HIST,PERIM:PERIM,CHARGE_CAP:CHARGE_CAP,CAP_SVC:CAP_SVC,DUREE_SVC:DUREE_SVC,UO_PARAMS:UO_PARAMS,CAP_HEURES:CAP_HEURES,IRVE_TACHES:IRVE_TACHES,TACHES_PREV:TACHES_PREV,MARCHE_MONTANT:MARCHE_MONTANT,AFFECT_PREV:AFFECT_PREV,FACTU_HIST:FACTU_HIST,REF_MDP:REF_MDP,UO_PRIX:UO_PRIX,IRVE_PRIX:IRVE_PRIX,TACHE_MONTANT:TACHE_MONTANT,COUT_MENSUEL:COUT_MENSUEL,MECA_PRIX:MECA_UOS.map(function(u){return u.prix;}),AFFECT_FIN:AFFECT_FIN,TAUX_ACTIVITE:TAUX_ACTIVITE,SVC_CUR:SVC_CUR,TIME_LOG:TIME_LOG,TJM:TJM,HISTO_SEM:HISTO_SEM,SKILLS:SKILLS,ECARTS:ECARTS,COMP_REFS:COMP_REFS,FORMATIONS:FORMATIONS,IDEES:IDEES,COMP_REQ_PAR_ENTITE:COMP_REQ_PAR_ENTITE,CONC_ACTIONS:CONC_ACTIONS,CONC_AJOUTS:CONC_AJOUTS,MIGR:MIGR,AFFECT_MOIS:AFFECT_MOIS,GEN_PARAMS:GEN_PARAMS,GEN_HISTO:GEN_HISTO,TACHES_PREV_CP:TACHES_PREV_CP,CONC_RESEAU:CONC_RESEAU,
+    DATA:DATA,AVC:AVC,DXP:DXP,COMMENTS:COMMENTS,ENGAGE_HIST:ENGAGE_HIST,PERIM:PERIM,CHARGE_CAP:CHARGE_CAP,CAP_SVC:CAP_SVC,DUREE_SVC:DUREE_SVC,UO_PARAMS:UO_PARAMS,CAP_HEURES:CAP_HEURES,IRVE_TACHES:IRVE_TACHES,TACHES_PREV:TACHES_PREV,MARCHE_MONTANT:MARCHE_MONTANT,AFFECT_PREV:AFFECT_PREV,FACTU_HIST:FACTU_HIST,REF_MDP:REF_MDP,UO_PRIX:UO_PRIX,IRVE_PRIX:IRVE_PRIX,TACHE_MONTANT:TACHE_MONTANT,COUT_MENSUEL:COUT_MENSUEL,MECA_PRIX:MECA_UOS.map(function(u){return u.prix;}),AFFECT_FIN:AFFECT_FIN,TAUX_ACTIVITE:TAUX_ACTIVITE,SVC_CUR:SVC_CUR,TIME_LOG:TIME_LOG,TJM:TJM,HISTO_SEM:HISTO_SEM,SKILLS:SKILLS,ECARTS:ECARTS,COMP_REFS:COMP_REFS,FORMATIONS:FORMATIONS,IDEES:IDEES,COMP_REQ_PAR_ENTITE:COMP_REQ_PAR_ENTITE,IDEES_MAIL:IDEES_MAIL,CONC_ACTIONS:CONC_ACTIONS,CONC_AJOUTS:CONC_AJOUTS,MIGR:MIGR,AFFECT_MOIS:AFFECT_MOIS,GEN_PARAMS:GEN_PARAMS,GEN_HISTO:GEN_HISTO,TACHES_PREV_CP:TACHES_PREV_CP,CONC_RESEAU:CONC_RESEAU,
     LINKS_DATA:LINKS_DATA,
     MAIL_DATA:MAIL_DATA,
     HISTORY:HISTORY,
@@ -1274,6 +1274,7 @@ function applyState(json){
     if(s.FORMATIONS){ Object.keys(FORMATIONS).forEach(function(k){delete FORMATIONS[k];});
       Object.keys(s.FORMATIONS).forEach(function(k){FORMATIONS[k]=s.FORMATIONS[k];}); }
     if(Array.isArray(s.IDEES)){ IDEES.length=0; s.IDEES.forEach(function(x){IDEES.push(x);}); }
+    if(typeof s.IDEES_MAIL==='string') IDEES_MAIL=s.IDEES_MAIL;
     if(typeof s.COMP_REQ_PAR_ENTITE==='boolean') COMP_REQ_PAR_ENTITE=s.COMP_REQ_PAR_ENTITE;
     if(s.CONC_ACTIONS){ Object.keys(CONC_ACTIONS).forEach(function(k){delete CONC_ACTIONS[k];});
       Object.keys(s.CONC_ACTIONS).forEach(function(k){CONC_ACTIONS[k]=s.CONC_ACTIONS[k];}); }
@@ -19958,6 +19959,27 @@ function closeLU(){document.getElementById('lu').classList.remove('show');}
 // fichier n'est pas touché.
 // ══════════════════════════════════════════════════════════════
 var IDEES = [];
+// Adresse a qui partent les propositions. Vide par defaut : elle se saisit
+// dans l'ecran des ameliorations et vit avec les donnees, jamais dans le
+// code, qui est public.
+var IDEES_MAIL = '';
+// Objet fixe : c'est a lui qu'on reconnait ces mails dans la boite.
+var IDEES_OBJET = 'RADAR - ameliorations a traiter';
+// Le texte du mail : les propositions qui attendent, la plus ancienne
+// d'abord, pour qu'elles se traitent dans l'ordre.
+function ideesTexteMail(){
+  var att=IDEES.filter(function(x){ return (x.statut||'a-traiter')==='a-traiter'; });
+  if(!att.length) return '';
+  var l=[];
+  att.forEach(function(it,i){
+    l.push((i+1)+'. '+(it.date||'')+(it.auteur?(' - '+it.auteur):''));
+    l.push(String(it.texte||'').trim());
+    l.push('');
+  });
+  l.push('--');
+  l.push(att.length+' proposition(s) en attente, releve du '+dISO()+'.');
+  return l.join('\n');
+}
 var IDEE_STATUTS = [
   {k:'a-traiter', l:'À traiter',     fg:'#B45309', bg:'#FEF3C7'},
   {k:'traite',    l:'Traité',        fg:'#047857', bg:'#D1FAE5'},
@@ -20068,6 +20090,38 @@ function rIdees(){
     +(nA?'#FEF3C7':'var(--gl)')+';color:'+(nA?'#B45309':'var(--green)');
   cpt.textContent = nA ? (nA+' à traiter') : 'Rien en attente';
   hdr.appendChild(cpt);
+  // Envoyer ce qui attend, sans avoir à le recopier
+  var bEnv=document.createElement('button');
+  bEnv.style.cssText='border:none;background:'+(nA?'var(--brand)':'var(--b)')+';color:'
+    +(nA?'#fff':'var(--t3)')+';border-radius:8px;padding:5px 12px;font-size:10.5px;'
+    +'font-weight:800;cursor:'+(nA?'pointer':'default')+';font-family:inherit';
+  bEnv.textContent='\u2709 Envoyer';
+  bEnv.title = nA ? 'Envoyer les propositions en attente, et les copier'
+                  : 'Rien en attente : il n\u2019y a rien \u00e0 envoyer';
+  bEnv.addEventListener('click',function(){
+    var txt=ideesTexteMail();
+    if(!txt){ showToast('Rien en attente'); return; }
+    // Copier d'abord : le mail peut tronquer un texte long, le presse-papiers
+    // non. Ce qui a ete redige n'est jamais perdu.
+    try{ if(navigator.clipboard) navigator.clipboard.writeText(txt); }catch(e){}
+    if(!IDEES_MAIL){
+      showToast('Propositions copi\u00e9es \u2014 renseigne l\u2019adresse ci-dessous');
+      return;
+    }
+    var lien='mailto:'+encodeURIComponent(IDEES_MAIL)
+      +'?subject='+encodeURIComponent(IDEES_OBJET)
+      +'&body='+encodeURIComponent(txt);
+    // Au-dela d'environ deux mille caracteres, le client de messagerie coupe :
+    // on ouvre alors un message vide et le texte reste dans le presse-papiers.
+    if(lien.length>1900){
+      lien='mailto:'+encodeURIComponent(IDEES_MAIL)+'?subject='+encodeURIComponent(IDEES_OBJET);
+      showToast('Trop long pour le mail : coll\u00e9 dans le presse-papiers');
+    } else {
+      showToast('Mail pr\u00e9par\u00e9 \u2014 propositions aussi copi\u00e9es');
+    }
+    try{ window.location.href=lien; }catch(e){}
+  });
+  hdr.appendChild(bEnv);
   card.appendChild(hdr);
   var body=document.createElement('div'); card.appendChild(body);
 
@@ -20105,6 +20159,27 @@ function rIdees(){
   });
   lg.appendChild(env);
   zs.appendChild(lg);
+  // A qui partent les propositions. Se saisit une fois, vit avec les donnees.
+  var lgM=document.createElement('div');
+  lgM.style.cssText='display:flex;align-items:center;gap:7px;flex-wrap:wrap';
+  var lblM=document.createElement('span');
+  lblM.style.cssText='font-size:9.5px;font-weight:700;color:var(--t3)';
+  lblM.textContent='Envoyer \u00e0';
+  lgM.appendChild(lblM);
+  var inM=document.createElement('input');
+  inM.type='email'; inM.value=IDEES_MAIL; inM.placeholder='adresse de destination';
+  inM.style.cssText='flex:0 1 240px;min-width:150px;border:1.5px solid var(--b2);border-radius:8px;'
+    +'padding:4px 9px;font-size:10.5px;background:var(--bg);color:var(--t);font-family:inherit';
+  inM.title='Adresse \u00e0 qui le bouton Envoyer adresse les propositions.\n'
+    +'Elle vit avec les donn\u00e9es, jamais dans le code.';
+  inM.addEventListener('change',function(){
+    IDEES_MAIL=inM.value.trim();
+    sbSave();
+    showToast(IDEES_MAIL?'Destinataire enregistr\u00e9':'Destinataire effac\u00e9');
+    rIdees();
+  });
+  lgM.appendChild(inM);
+  zs.appendChild(lgM);
   body.appendChild(zs);
 
   if(!IDEES.length){
@@ -24874,7 +24949,7 @@ window.addEventListener('beforeunload', function(e){
 // On ne recharge jamais de force, une saisie en cours serait perdue :
 // on propose, la personne choisit son moment.
 // ══════════════════════════════════════════════════════════════
-var APP_VERSION='2026-09-29-2';
+var APP_VERSION='2026-09-29-3';
 var MAJ_VUE=false;
 function bandeauMaj(v){
   if(MAJ_VUE || document.getElementById('maj-banner')) return;
