@@ -6964,18 +6964,17 @@ function rAffGrid(){
       var p=phasePctFactu(a,ph);
       c.textContent = p===null ? '\u2014' : p+'%';
       c.style.color = p===null ? 'var(--t3)' : (p===100?'var(--green)':p>0?'var(--orange)':'var(--t3)');
-      // Fond vert quand l'UO de la phase est déjà facturé, fond orange sur le
-      // prochain UO à réaliser. Demandé par Alexis le 28/09 pour que les
-      // chargés d'affaires voient d'un coup ce qui est passé en facturation.
+      // Fond vert quand l'UO de la phase est déjà facturé, fond orange quand
+      // il est acquis et pas encore facturé, donc à comptabiliser.
       try{
         var uPh=UO_DE_PHASE[ph];
         if(uPh && (a.svc||'ARMA')==='ARMA'){
           if(faCoef(faGetVal(a,uPh))>0){
             c.style.background='#DCFCE7';
             c.title=ph+' \u2014 UO d\u00e9j\u00e0 factur\u00e9';
-          } else if(uPh===prochainUoArma(a)){
+          } else if(uoAFacturerArma(a,uPh)){
             c.style.background='#FFEDD5';
-            c.title=ph+' \u2014 prochain UO \u00e0 r\u00e9aliser';
+            c.title=ph+' \u2014 acquis, pas encore factur\u00e9 : \u00e0 comptabiliser';
           }
         }
       }catch(e){}
@@ -7638,7 +7637,7 @@ function rAffGridRefreshPct(a,ph,colIdx){
           cell.style.background='';
           if(uPh && (a.svc||'ARMA')==='ARMA'){
             if(faCoef(faGetVal(a,uPh))>0) cell.style.background='#DCFCE7';
-            else if(uPh===prochainUoArma(a)) cell.style.background='#FFEDD5';
+            else if(uoAFacturerArma(a,uPh)) cell.style.background='#FFEDD5';
           }
         }catch(e){}
       }
@@ -8486,6 +8485,18 @@ var FA_LABEL = {PRIMO:'Primo', CRD:'Coordination', ETD:'Etude', TRX:'Travaux', R
 var FA_KEY   = {PRIMO:'Primo', CRD:'Coordination', ETD:'Etude', TRX:'Travaux', RCP:'R\u00e9ception'};
 var FA_OPTS  = ['', '1', '0,75', '0,5', '2', 'NA', '~OK'];
 var FA_CP_FILTER = 'all';
+// Recherche du tableau de facturation, demandée par Alexis le 29/09/2026
+var FA_SEARCH = '';
+var FA_RECH_MINUT = null;
+// Les mêmes champs que la recherche de l'onglet Affaires, pour que le réflexe
+// soit le même d'un tableau à l'autre.
+function faMatch(a){
+  if(!FA_SEARCH) return true;
+  var iv=a.irve||{}, mc=a.meca||{};
+  var hay=[a.no, a.code, a.addr, a.typo, iv.commune, iv.client, iv.mandataire, iv.be,
+           mc.station, mc.ville, mc.groupe].join(' ').toLowerCase();
+  return FA_SEARCH.split(/\s+/).filter(Boolean).every(function(m){ return hay.indexOf(m)>=0; });
+}
 var FA_SVC = 'ARMA';
 var FA_FILTER = 'all';
 var FA_FILTRE_MOIS = '';   // mois de facturation prévue, vide = tous
@@ -8714,6 +8725,17 @@ var UO_ORDER = ['Primo','Etude','Coordination','Travaux','Réception'];
 // Phase de la grille -> UO ARMA correspondant. La coordination n'a pas de
 // phase à elle, elle n'apparaît donc pas dans ce tableau.
 var UO_DE_PHASE = {'Primo':'PRIMO','Etude':'ETD','Travaux':'TRX','Réception':'RCP'};
+// Un UO ARMA acquis et pas encore facturé : c'est ce qu'Alexis appelle
+// « orange à 100 % », ce qu'il faut comptabiliser en facturation. Une mention
+// du suivi dans la case ne change rien : elle dit seulement que ce n'est pas
+// facturé.
+function uoAFacturerArma(a, uo){
+  if((a.svc||'ARMA')!=='ARMA') return false;
+  var v=faGetVal(a,uo);
+  if(v==='NA' || faCoef(v)>0) return false;
+  var p=null; try{ p=uoPct(a, FA_KEY[uo]); }catch(e){ return false; }
+  return p!==null && Math.round(p*100)>=100;
+}
 // Premier UO ni facturé ni sans objet, dans l'ordre de production.
 function prochainUoArma(a){
   var suite=['PRIMO','ETD','CRD','TRX','RCP'];
@@ -15491,10 +15513,10 @@ function circLignes(svc, cpFiltre){
         if(fact<0) return;                                  // sans objet
         var plaf=circPlafond(cp,a,k);
         if(plaf<=0 || fact>=plaf-0.001) return;             // rien à facturer
-        if(svc==='ARMA' && faLibre(a,k)) return;            // mention du suivi (BLOC...)
         var av=circAv(cp,a,k);
         if(av===null || av<100) return;                     // pas encore acquis
         l.part=plaf-fact; l.montant=l.part*px; l.av=av;
+        if(svc==='ARMA') l.note=faLibre(a,k)||'';           // A FAIRE, PROG, BLOC…
         out.afact.push(l);
       });
     });
@@ -15801,6 +15823,15 @@ function circBloc(svc, cpFiltre){
     var tdU=document.createElement('td'); tdU.className='l';
     tdU.style.cssText='font-size:9.5px;font-weight:700';
     tdU.textContent=l.lib;
+    // Ce que le suivi porte dans la case, quand ce n'est pas un chiffre
+    if(l.note){
+      var nte=document.createElement('span');
+      nte.style.cssText='margin-left:5px;font-size:8.5px;font-weight:800;padding:1px 5px;'
+        +'border-radius:5px;background:#FEF3C7;color:#B45309';
+      nte.textContent=l.note;
+      nte.title='Mention portée dans la case du suivi';
+      tdU.appendChild(nte);
+    }
     tr.appendChild(tdU);
     var tdP=document.createElement('td'); tdP.style.fontSize='9.5px';
     tdP.textContent=circPart(l.part);
@@ -15942,7 +15973,7 @@ function rFactu(){
       +'border:1.5px solid '+(on?s.fg:'var(--b2)')+';background:'+(on?s.bg:'var(--s)')
       +';color:'+(on?s.fg:'var(--t3)')+';font-family:inherit';
     b.textContent=s.court;
-    b.addEventListener('click',function(){ FA_SVC=s.k; FA_CP_FILTER='all'; rFactu(); });
+    b.addEventListener('click',function(){ FA_SVC=s.k; FA_CP_FILTER='all'; FA_SEARCH=''; rFactu(); });
     sb.appendChild(b);
   });
   body.appendChild(sb);
@@ -16038,6 +16069,31 @@ function rFactu(){
   bar.appendChild(bSab);
 
   var sp=document.createElement('span'); sp.style.flex='1'; bar.appendChild(sp);
+  // Recherche par numéro, commune ou client, demandée par Alexis le 29/09/2026
+  var rech=document.createElement('input');
+  rech.type='search';
+  rech.id='fa-search';
+  rech.placeholder='\ud83d\udd0d Rechercher\u2026';
+  rech.value=FA_SEARCH;
+  rech.autocomplete='off';
+  rech.style.cssText='flex:0 1 190px;min-width:120px;border:1.5px solid var(--b2);border-radius:7px;'
+    +'padding:3px 9px;font-size:10px;background:var(--bg);color:var(--t);font-family:inherit';
+  rech.title='Num\u00e9ro d\u2019affaire, commune, client\u2026 Tous les mots doivent \u00eatre pr\u00e9sents.';
+  rech.addEventListener('input',function(){
+    FA_SEARCH=rech.value.trim().toLowerCase();
+    if(FA_RECH_MINUT) clearTimeout(FA_RECH_MINUT);
+    FA_RECH_MINUT=setTimeout(function(){
+      sansBouger(function(){ rFactu(); });
+      // Le tableau est redessine : on rend la main au champ, au bon endroit
+      try{ var n=document.getElementById('fa-search');
+           if(n){ n.focus(); n.setSelectionRange(n.value.length, n.value.length); } }catch(e){}
+    }, 250);
+  });
+  bar.appendChild(rech);
+  var cpt=document.createElement('span');
+  cpt.id='fa-search-count';
+  cpt.style.cssText='font-size:9px;font-weight:700;color:var(--t3)';
+  bar.appendChild(cpt);
   body.appendChild(bar);
   // Le circuit de facturation faisait doublon avec la Synthèse facturation.
   // Retiré d'ici le 28/09/2026 à la demande d'Alexis : il s'ouvre maintenant
@@ -16098,13 +16154,19 @@ function rFactu(){
           var v=avUo(a,u);
           if(v===null||v===undefined) return false;
           if(valUo(a,u)>0) return false;      // d\u00e9j\u00e0 factur\u00e9, m\u00eame partiellement
-          if(FA_SVC==='ARMA' && (faGetVal(a,u)==='NA' || faLibre(a,u))) return false;
+          if(FA_SVC==='ARMA' && faGetVal(a,u)==='NA') return false;
           return v>=seuil;
         });
         if(!ok) return;
       }
+      if(!faMatch(a)) return;
       rows.push({cp:cp,a:a});
     });
+  });
+  var totalAvantRecherche=0;
+  cpsOfSvc(FA_SVC).forEach(function(cp){
+    if(FA_CP_FILTER!=='all' && cp!==FA_CP_FILTER) return;
+    totalAvantRecherche+=(gAff(cp)||[]).length;
   });
 
   // Mois calculés une seule fois par portefeuille : les recalculer par
@@ -16140,6 +16202,10 @@ function rFactu(){
     });
   }
 
+  try{
+    cpt.textContent = FA_SEARCH ? (rows.length+' / '+totalAvantRecherche) : '';
+    cpt.style.color = (!FA_SEARCH || rows.length) ? 'var(--t3)' : 'var(--red)';
+  }catch(e){}
   var sum=document.createElement('div'); sum.className='fa-sum';
   function chip(t){ var s=document.createElement('span'); s.className='fa-chip'; s.textContent=t; return s; }
   sum.appendChild(chip(rows.length+' affaire(s)'));
@@ -24808,7 +24874,7 @@ window.addEventListener('beforeunload', function(e){
 // On ne recharge jamais de force, une saisie en cours serait perdue :
 // on propose, la personne choisit son moment.
 // ══════════════════════════════════════════════════════════════
-var APP_VERSION='2026-09-29-1';
+var APP_VERSION='2026-09-29-2';
 var MAJ_VUE=false;
 function bandeauMaj(v){
   if(MAJ_VUE || document.getElementById('maj-banner')) return;
