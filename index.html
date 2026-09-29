@@ -4382,6 +4382,21 @@ function echecSansSession(){
   return Promise.resolve(false);
 }
 function sbSaveSuite(){
+  // Un poste dont le code n'est plus celui en ligne n'ecrit pas : sa fusion
+  // est celle d'avant, et il reposerait un etat perime sur le travail des
+  // autres. Rien n'est perdu ici, tout reste sur le poste et repartira apres
+  // rechargement.
+  if(versionPerimee()){
+    try{ lsSaveNow(); }catch(e){}
+    poserAttente();
+    try{ majBadgeSync(); }catch(e){}
+    syncIndic('\u26a0','var(--amber)','Non partag\u00e9 \u2014 rechargez la page');
+    alerteNonEnregistre(true,'Cette page tourne sur une version ancienne de RADAR. '
+      +'Vos saisies sont gard\u00e9es sur ce poste mais ne partent pas, pour ne pas '
+      +'\u00e9craser le travail des autres. Rechargez, elles partiront ensuite.');
+    try{ bandeauMaj(VERSION_EN_LIGNE); }catch(e){}
+    return Promise.resolve(false);
+  }
   SYNC_BUSY=true;
   var rev=SYNC_REV;
   SYNC_EN_COURS=ecrireServeur(rev,0).then(function(ok){
@@ -25083,8 +25098,14 @@ window.addEventListener('beforeunload', function(e){
 // On ne recharge jamais de force, une saisie en cours serait perdue :
 // on propose, la personne choisit son moment.
 // ══════════════════════════════════════════════════════════════
-var APP_VERSION='2026-09-29-5';
+var APP_VERSION='2026-09-29-6';
 var MAJ_VUE=false;
+// La version en ligne, des qu'on la connait. Tant qu'elle vaut null, on ne
+// sait pas, et on n'empeche rien.
+var VERSION_EN_LIGNE=null;
+function versionPerimee(){
+  return !!(VERSION_EN_LIGNE && VERSION_EN_LIGNE!==APP_VERSION);
+}
 function bandeauMaj(v){
   if(MAJ_VUE || document.getElementById('maj-banner')) return;
   MAJ_VUE=true;
@@ -25107,6 +25128,9 @@ function bandeauMaj(v){
   // On attend maintenant la reponse du serveur, et on previent si elle est non.
   ok.addEventListener('click',function(){
     ok.disabled=true; ok.textContent='Enregistrement…';
+    // Cet envoi-la est autorise : c'est le dernier avant de repartir sur la
+    // version neuve, et il porte ce que la personne vient de saisir.
+    VERSION_EN_LIGNE=null;
     // Une copie des donnees part dans les telechargements avant tout
     // rechargement : une mise a jour ne doit jamais etre le dernier moment
     // ou l'etat d'avant existait.
@@ -25135,7 +25159,18 @@ function bandeauMaj(v){
 function verifierVersion(){
   fetch('version.json?t='+Date.now(), {cache:'no-store'})
     .then(function(r){ return r.ok?r.json():null; })
-    .then(function(j){ if(j && j.v && j.v!==APP_VERSION) bandeauMaj(j.v); })
+    .then(function(j){
+      if(j && j.v){
+        VERSION_EN_LIGNE=j.v;
+        if(j.v!==APP_VERSION){
+          bandeauMaj(j.v);
+          // Plus rien ne part d'ici : on le dit tout de suite, sans attendre
+          // que quelqu'un tente une saisie.
+          try{ majBadgeSync(); }catch(e){}
+          try{ syncIndic('\u26a0','var(--amber)','Version ancienne \u2014 rechargez pour enregistrer'); }catch(e){}
+        }
+      }
+    })
     .catch(function(){});
 }
 setTimeout(verifierVersion, 4000);
