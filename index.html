@@ -1387,6 +1387,23 @@ function lsReset(){
 }
 
 // Export / import du fichier de données
+// Une copie datee des donnees, deposee dans les telechargements. Rend true
+// si le fichier est parti.
+function sauvegardeFichier(motif){
+  try{
+    var quand=new Date();
+    var h=String(quand.getHours()).padStart(2,'0')+String(quand.getMinutes()).padStart(2,'0');
+    var nom='RADAR_donnees_'+quand.toISOString().slice(0,10)+'_'+h
+            +(motif?('_'+String(motif).replace(/[^a-zA-Z0-9-]+/g,'-')):'')+'.json';
+    var blob=new Blob([serializeState()], {type:'application/json'});
+    var url=URL.createObjectURL(blob);
+    var a=document.createElement('a');
+    a.href=url; a.download=nom;
+    document.body.appendChild(a); a.click();
+    setTimeout(function(){ try{ document.body.removeChild(a); URL.revokeObjectURL(url); }catch(e){} }, 800);
+    return true;
+  }catch(e){ console.warn('sauvegardeFichier', e); return false; }
+}
 function lsExport(){
   var blob=new Blob([serializeState()],{type:'application/json'});
   var url=URL.createObjectURL(blob);
@@ -3916,6 +3933,61 @@ function idxAffaires(state){
 function memeAff(a,b){
   try{ return JSON.stringify(a)===JSON.stringify(b); }catch(e){ return false; }
 }
+// Fusion fine d'une affaire modifiée des deux côtés.
+// Règle, appliquée à chaque tâche et à chaque champ pris séparément :
+//   le serveur n'a pas bougé  -> on garde le nôtre
+//   nous n'avons pas bougé    -> on prend celui du serveur
+//   les deux ont bougé        -> on descend d'un cran, et à défaut le nôtre
+// Rend l'affaire fusionnée, le nombre de valeurs reprises du serveur et le
+// nombre de vraies collisions.
+function fusionAffaire(base, loc, dist){
+  var repris=0, conflits=0;
+  function eq(x,y){ try{ return JSON.stringify(x)===JSON.stringify(y); }catch(e){ return false; } }
+  function estObjet(v){ return v && typeof v==='object' && !Array.isArray(v); }
+  function fondre(b, l, r){
+    if(eq(r,b)) return {v:l, pris:0, conf:0};
+    if(eq(l,b)) return {v:r, pris:1, conf:0};
+    if(estObjet(l) && estObjet(r)){
+      var out={}, p=0, c=0, cles={};
+      if(estObjet(b)) Object.keys(b).forEach(function(k){ cles[k]=1; });
+      Object.keys(l).forEach(function(k){ cles[k]=1; });
+      Object.keys(r).forEach(function(k){ cles[k]=1; });
+      Object.keys(cles).forEach(function(k){
+        var res=fondre(estObjet(b)?b[k]:undefined, l[k], r[k]);
+        if(res.v!==undefined) out[k]=res.v;
+        p+=res.pris; c+=res.conf;
+      });
+      return {v:out, pris:p, conf:c};
+    }
+    return {v:l, pris:0, conf:1};
+  }
+  var b=base||{}, out={}, cles={};
+  Object.keys(b).forEach(function(k){ cles[k]=1; });
+  Object.keys(loc||{}).forEach(function(k){ cles[k]=1; });
+  Object.keys(dist||{}).forEach(function(k){ cles[k]=1; });
+  Object.keys(cles).forEach(function(k){
+    if(k==='tasks') return;                 // les tâches se fusionnent par nom
+    var res=fondre(b[k], (loc||{})[k], (dist||{})[k]);
+    if(res.v!==undefined) out[k]=res.v;
+    repris+=res.pris; conflits+=res.conf;
+  });
+  var parNom={}, ordre=[];
+  ((loc||{}).tasks||[]).forEach(function(t){ parNom[t.n]={l:t}; ordre.push(t.n); });
+  ((dist||{}).tasks||[]).forEach(function(t){
+    if(!parNom[t.n]){ parNom[t.n]={}; ordre.push(t.n); }
+    parNom[t.n].r=t;
+  });
+  var bT={}; ((base||{}).tasks||[]).forEach(function(t){ bT[t.n]=t; });
+  out.tasks=ordre.map(function(n){
+    var e=parNom[n];
+    if(!e.r) return e.l;
+    if(!e.l){ repris++; return e.r; }
+    var res=fondre(bT[n], e.l, e.r);
+    repris+=res.pris; conflits+=res.conf;
+    return res.v;
+  });
+  return {aff:out, repris:repris, conflits:conflits};
+}
 
 // ══════════════════════════════════════════════════════════════
 // FILET ANTI-PERTE
@@ -3940,6 +4012,13 @@ var SYNC_ECHEC=false;     // vrai si la dernière écriture a été refusée
 var SYNC_ALERTE=null;
 var SYNC_EN_COURS=null;
 var LS_SECOURS='radar_secours';
+// Les reprises de donnees au chargement sont ARRETEES depuis le 29/09/2026.
+// Elles ont fait leur office les 24 et 28/09. Chacune est gardee par un
+// drapeau MIGR, mais ce drapeau vit dans les donnees : s'il ne parvient pas
+// au serveur, la reprise repart et reecrit par-dessus le travail du jour.
+// Le risque n'en vaut plus la peine. Pour en rejouer une : sauvegarder les
+// donnees, remettre ceci a true, publier, puis le remettre a false.
+var REPRISES_ACTIVES = false;
 // Marqueur d'attente : pose des qu'une saisie n'est pas encore chez le serveur,
 // retire des qu'elle y est. Il survit a la fermeture de l'onglet, donc au
 // demarrage suivant on sait que le poste detient du travail que le serveur
@@ -4084,7 +4163,18 @@ function fusionner(remoteStr){
         }
       }
     } else if(!memeAff(lA,rA)){
-      conflits++;                              // modifiée des deux côtés : local gagne
+      // Modifiée des deux côtés. On ne jette plus le travail du collègue en
+      // bloc : chaque tâche et chaque champ se décide seul.
+      var arr2=(local.DATA[cp]||{}).affaires||[];
+      for(var j=0;j<arr2.length;j++){
+        if((arr2[j].code||'')===(rA.code||'') && (arr2[j].no||'')===(rA.no||'')){
+          var fus=fusionAffaire(bA, arr2[j], rA);
+          arr2[j]=fus.aff;
+          repris+=fus.repris;
+          conflits+=fus.conflits;
+          break;
+        }
+      }
     }
   });
 
@@ -4148,8 +4238,9 @@ function sbLoad(){
         try{ rSvcBar(); rCpSelBar(); }catch(e){}
         syncIndic('\u2713','var(--green)','Synchronis\u00e9 \u2014 '+new Date().toLocaleTimeString('fr'));
         try{ histoAuto(); }catch(e){}
-        // Reprises de donnees, une fois l'etat partage en main.
+        // Reprises de donnees. ARRETEES le 29/09/2026 : voir plus bas.
         try{
+          if(!REPRISES_ACTIVES) throw {arret:true};
           var msg=[], bascule=null;
           try{ bascule=migrerIrveVersPaul(); }catch(e2){ console.warn('irveVersPaul',e2); }
           try{ migrerAffectations(); }catch(e2){ console.warn('affectMois',e2); }
@@ -4173,7 +4264,7 @@ function sbLoad(){
           if(nC) msg.push(nC+' actions reprises des commentaires concessionnaires');
           if(msg.length){ SYNC_REV++; sbSave(); buildTabs(); renderAll();
             showToast(msg.join(' • ')); }
-        }catch(e){ console.warn('reprises',e); }
+        }catch(e){ if(!e || !e.arret) console.warn('reprises',e); }
       } else {
         // Connecte, mais aucune ligne visible. On n'ecrase JAMAIS le serveur
         // tout seul : c'est ainsi qu'un jeu de demonstration partirait en
@@ -12853,14 +12944,21 @@ function annulerAout26(){
 // mais l'application lit son état sur le serveur : la bascule doit donc se
 // faire aussi côté données partagées. Un dossier déjà présent chez Paul
 // n'est pas recopié, il est simplement retiré de chez Alexis.
-// Volontairement PAS gardée par un drapeau à usage unique : l'état correct est
-// « Alexis n'a plus de dossier IRVE ». Tant qu'il en reste, on nettoie. Une
-// fusion venue d'un autre poste peut en effet en ramener.
+// Gardée par un drapeau depuis le 29/09/2026. Elle ne l'était pas, pour que
+// l'état « Alexis n'a plus de dossier IRVE » resiste a une fusion qui en
+// ramenerait. Mais elle repartait a CHAQUE ouverture, par n'importe qui :
+// toute affaire IRVE reapparue chez lui etait deplacee et son portefeuille
+// vide, en silence. Une affaire creee ou reaffectee le matin disparaissait de
+// sa vue au premier rechargement venu. La bascule a eu lieu, elle se ferme.
+// Si un dossier IRVE doit revenir chez Alexis, il y restera : c'est voulu.
 function migrerIrveVersPaul(){
+  // ARRETEE le 29/09/2026. Elle a fait son office le 24/09. Le corps reste
+  // pour l'histoire, il ne s'execute plus.
+  if(true){ MIGR.irveVersPaul=true; return null; }
   var irve=Object.keys(DATA).filter(function(c){ return svcOf(c)==='IRVE'; });
   var src=irve.filter(function(c){ return (DATA[c].ini||'')==='AD'; })[0];
   var dst=irve.filter(function(c){ return (DATA[c].ini||'')==='PG'; })[0];
-  if(!src || !dst || !(DATA[src].affaires||[]).length) return null;
+  if(!src || !dst) return null;
   sauvegardeSecours('avant bascule IRVE Alexis vers Paul');
   var vus={};
   (DATA[dst].affaires||[]).forEach(function(a){ vus[(a.code||'')+'|'+(a.no||'')]=1; });
@@ -12874,6 +12972,7 @@ function migrerIrveVersPaul(){
   });
   var total=(DATA[src].affaires||[]).length;
   DATA[src].affaires=[];
+  MIGR.irveVersPaul=true;                    // ne se rejouera plus
   // Compteurs : même convention que le déplacement d'une affaire dans l'app
   DATA[dst].en_cours=(DATA[dst].en_cours||0)+(deplaces-closDep);
   DATA[dst].closed=(DATA[dst].closed||0)+closDep;
@@ -24949,7 +25048,7 @@ window.addEventListener('beforeunload', function(e){
 // On ne recharge jamais de force, une saisie en cours serait perdue :
 // on propose, la personne choisit son moment.
 // ══════════════════════════════════════════════════════════════
-var APP_VERSION='2026-09-29-3';
+var APP_VERSION='2026-09-29-4';
 var MAJ_VUE=false;
 function bandeauMaj(v){
   if(MAJ_VUE || document.getElementById('maj-banner')) return;
@@ -24973,6 +25072,10 @@ function bandeauMaj(v){
   // On attend maintenant la reponse du serveur, et on previent si elle est non.
   ok.addEventListener('click',function(){
     ok.disabled=true; ok.textContent='Enregistrement…';
+    // Une copie des donnees part dans les telechargements avant tout
+    // rechargement : une mise a jour ne doit jamais etre le dernier moment
+    // ou l'etat d'avant existait.
+    try{ sauvegardeFichier('avant-maj-'+v); }catch(e){}
     var p; try{ p=sbSaveNow(); }catch(e){ p=Promise.resolve(false); }
     Promise.resolve(p).then(function(bon){
       if(bon===false && syncModifie()){
