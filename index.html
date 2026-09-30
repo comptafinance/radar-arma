@@ -1165,18 +1165,20 @@ function sbHeaders(){
 }
 
 // Serialize full app state to JSON
-function serializeState(){
-  return JSON.stringify({
+function etatObjet(){
+  return ({
     DATA:DATA,AVC:AVC,DXP:DXP,COMMENTS:COMMENTS,ENGAGE_HIST:ENGAGE_HIST,PERIM:PERIM,CHARGE_CAP:CHARGE_CAP,CAP_SVC:CAP_SVC,DUREE_SVC:DUREE_SVC,UO_PARAMS:UO_PARAMS,CAP_HEURES:CAP_HEURES,IRVE_TACHES:IRVE_TACHES,TACHES_PREV:TACHES_PREV,MARCHE_MONTANT:MARCHE_MONTANT,AFFECT_PREV:AFFECT_PREV,FACTU_HIST:FACTU_HIST,REF_MDP:REF_MDP,UO_PRIX:UO_PRIX,IRVE_PRIX:IRVE_PRIX,TACHE_MONTANT:TACHE_MONTANT,COUT_MENSUEL:COUT_MENSUEL,MECA_PRIX:MECA_UOS.map(function(u){return u.prix;}),AFFECT_FIN:AFFECT_FIN,TAUX_ACTIVITE:TAUX_ACTIVITE,SVC_CUR:SVC_CUR,TIME_LOG:TIME_LOG,TJM:TJM,HISTO_SEM:HISTO_SEM,SKILLS:SKILLS,ECARTS:ECARTS,COMP_REFS:COMP_REFS,FORMATIONS:FORMATIONS,IDEES:IDEES,COMP_REQ_PAR_ENTITE:COMP_REQ_PAR_ENTITE,IDEES_MAIL:IDEES_MAIL,CONC_ACTIONS:CONC_ACTIONS,CONC_AJOUTS:CONC_AJOUTS,MIGR:MIGR,AFFECT_MOIS:AFFECT_MOIS,GEN_PARAMS:GEN_PARAMS,GEN_HISTO:GEN_HISTO,TACHES_PREV_CP:TACHES_PREV_CP,CONC_RESEAU:CONC_RESEAU,
     LINKS_DATA:LINKS_DATA,
     MAIL_DATA:MAIL_DATA,
     HISTORY:HISTORY,
     SYNO_DATA:SYNO_DATA,
     TASK_COMMENTS:TASK_COMMENTS,
+    JOURNAL:JOURNAL,
     APPV:APP_VERSION,
     ts:Date.now()
   });
 }
+function serializeState(){ return JSON.stringify(etatObjet()); }
 
 // Deserialize and apply state from Supabase
 function applyState(json){
@@ -1296,6 +1298,10 @@ function applyState(json){
     if(s.HISTORY)Object.keys(s.HISTORY).forEach(function(k){HISTORY[k]=s.HISTORY[k];});
     if(s.SYNO_DATA)Object.keys(s.SYNO_DATA).forEach(function(k){SYNO_DATA[k]=s.SYNO_DATA[k];});
     if(s.TASK_COMMENTS)Object.keys(s.TASK_COMMENTS).forEach(function(k){TASK_COMMENTS[k]=s.TASK_COMMENTS[k];});
+    // Le journal suit l'etat charge, meme absent : sinon celui d'une visite
+    // precedente restait en memoire et repartait vers le serveur.
+    JOURNAL.length=0;
+    if(Array.isArray(s.JOURNAL)) s.JOURNAL.forEach(function(x){ JOURNAL.push(x); });
     LAST_SYNC=s.ts;
     return true;
   }catch(e){console.error('applyState error:',e);return false;}
@@ -1363,7 +1369,7 @@ function basePartielle(etatStr){
   if(!b) return {v:1, sansBase:1};
   var loc=JSON.parse(etatStr), p={v:1, cles:{}, data:{}};
   Object.keys(b).concat(Object.keys(loc)).forEach(function(k){
-    if(k==='DATA' || k==='ts' || k==='APPV' || (k in p.cles)) return;
+    if(k==='DATA' || k==='ts' || k==='APPV' || k==='JOURNAL' || (k in p.cles)) return;
     if(!memeContenu(b[k], loc[k])) p.cles[k]=(k in b)?b[k]:ABSENT_BASE;
   });
   var bD=b.DATA||{}, lD=loc.DATA||{};
@@ -1450,6 +1456,7 @@ function reconstruireBase(){
   if(!raw || !p || p.v!==1 || p.sansBase) return null;
   if(p.vide) return raw;
   var loc=JSON.parse(raw);
+  loc.JOURNAL=[];
   function poser(o, k, v){ if(v && v.__absent__) delete o[k]; else o[k]=v; }
   Object.keys(p.cles||{}).forEach(function(k){ poser(loc, k, p.cles[k]); });
   if(!loc.DATA) loc.DATA={};
@@ -4258,7 +4265,7 @@ function alerteNonEnregistre(actif, texte){
 
 // Les listes qui se fusionnent element par element, reconnues une a une.
 // Les autres tableaux (referentiels de competences, prix...) restent entiers.
-var LISTES_A_IDENTITE={IDEES:1, IRVE_TACHES:1, FACTU_HIST:1, GEN_HISTO:1, ECARTS:1};
+var LISTES_A_IDENTITE={IDEES:1, IRVE_TACHES:1, FACTU_HIST:1, GEN_HISTO:1, ECARTS:1, JOURNAL:1};
 // L'identite d'un element : son id s'il en a un, sinon son empreinte. Le
 // numero d'occurrence depareille les doublons d'empreinte.
 function cleElement(nom, x, compte){
@@ -4361,6 +4368,9 @@ function unionEtats(local, remote){
 function fusionner(remoteStr){
   var remote, base;
   try{ remote=JSON.parse(remoteStr); }catch(e){ return false; }
+  // Ce qui a ete fait ici avant l'arrivee des autres est note maintenant ;
+  // ce que la fusion apporte ne sera jamais attribue a ce poste.
+  try{ journalPoint(); }catch(e){}
   try{ base=SYNC_BASE?JSON.parse(SYNC_BASE):null; }catch(e){ base=null; }
   var local=JSON.parse(serializeState());
 
@@ -4380,6 +4390,7 @@ function fusionner(remoteStr){
     applyState(remoteStr);
     SYNC_BASE=remoteStr;
     SYNC_REV_OK=SYNC_REV; leverAttente();
+    try{ journalReset(); }catch(e){}
     showToast('Liaison reprise — saisies sans référence gardées en copie de secours');
     return true;
   }
@@ -4441,6 +4452,7 @@ function fusionner(remoteStr){
   var merged=JSON.stringify(local);
   applyState(merged);
   SYNC_BASE=remoteStr;          // l'ancetre commun reste ce que le serveur a
+  try{ journalReset(); }catch(e){}
   SYNC_CONFLITS=conflits;
   if(repris||conflits){
     var msg=[];
@@ -4516,6 +4528,7 @@ function sbLoad(){
           try{ sauvegardeSecours('saisies de la derniere visite, sans reference commune'); }catch(e){}
           applyState(rows[0].data); SYNC_BASE=rows[0].data;
           SYNC_REV_OK=SYNC_REV; leverAttente();
+          try{ journalReset(); }catch(e){}   // les clics repris seront notes
           var repris=0;
           try{ repris=rejouerClicsNonPartis(localObj, JSON.parse(rows[0].data)); }catch(e){ console.warn('rejeu',e); }
           if(repris){
@@ -4536,6 +4549,7 @@ function sbLoad(){
         else {
           applyState(rows[0].data); SYNC_BASE=rows[0].data;
           SYNC_REV_OK=SYNC_REV; leverAttente();
+          try{ journalReset(); }catch(e){}
         }
         SYNC_PRET=true;
         buildTabs(); renderAll();
@@ -4643,6 +4657,7 @@ function sbSave(){
 
 // Écriture : on relit d'abord le serveur pour fusionner, puis on écrit
 function sbSaveNow(){
+  try{ journalPoint(); }catch(e){ console.warn('journal',e); }
   if(!SYNC_ENABLED){ lsSaveNow(); SYNC_REV_OK=SYNC_REV; return Promise.resolve(true); }
   try{ lsSaveNow(); }catch(e){}                  // le local d'abord, toujours
   if(SYNC_BUSY){
@@ -7238,6 +7253,7 @@ function rAffGrid(){
                   return AG_SHOW_CLOT ? true : !isClot(a);
                 });
   try{ agSearchInfo(affs.length, totalAff); }catch(e){}
+  affs=agTrierParRang(affs);
   var cpOf={};
   pairs.forEach(function(p){ cpOf[p.a.code+'|'+(p.a.no||'')]=p.cp; });
   function affCp(a){ return cpOf[a.code+'|'+(a.no||'')]||CCP; }
@@ -7280,6 +7296,7 @@ function rAffGrid(){
       if(ev.target!==th) return;          // le crayon garde son r\u00f4le
       if(a.no) copyNo(a.no); else editAffaireModal(affCp(a),a);
     });
+    agRendreGlissable(th, a, 'inset 0 -3px 0 '+col.fg);
     th.appendChild(btnEditAff(affCp(a),a));
     trH.appendChild(th);
   });
@@ -7424,7 +7441,8 @@ function rAffGrid(){
       var td=document.createElement('td'); td.className='ag-lbl';
       var oblig=!!TACHES_FACTU[tn];
       td.textContent=(oblig?'\u25c6 ':'')+tn;
-      td.title=tn+(oblig?'\n\u25c6 Obligatoire pour la facturation, et seule compt\u00e9e dans l\u2019avancement de l\u2019UO':'');
+      td.title=tn+(oblig?'\n\u25c6 Obligatoire pour la facturation, et seule compt\u00e9e dans l\u2019avancement de l\u2019UO'
+        +(UO_TACHE_AUTRE_PHASE[tn]?' '+UO_TACHE_AUTRE_PHASE[tn]:''):'');
       if(oblig){ td.style.color='var(--t)'; td.style.fontWeight='800'; }
       tr.appendChild(td);
       affs.forEach(function(a){
@@ -8055,6 +8073,59 @@ function agRowsBudget(affs){
     });
   },'ag-money'));
   return rows;
+}
+
+// ── GLISSER UNE AFFAIRE POUR LA CHANGER DE COLONNE ──────────────────
+// Proposition d'Alexis du 30/09/2026. L'ordre est partage : chaque affaire
+// porte son rang (a.ordre), le meme pour tous. Une affaire sans rang se range
+// apres les autres, dans l'ordre de sa liste.
+var AG_GLISSE=null;
+function agTrierParRang(liste){
+  return liste.map(function(a,i){ return {a:a, i:i}; }).sort(function(x,y){
+    var ox=(typeof x.a.ordre==='number')?x.a.ordre:Infinity;
+    var oy=(typeof y.a.ordre==='number')?y.a.ordre:Infinity;
+    if(ox!==oy) return ox<oy?-1:1;
+    return x.i-y.i;
+  }).map(function(x){ return x.a; });
+}
+function agDeplacerAffaire(src, cible, apres){
+  // Tout le perimetre affiche, filtres compris ou non, pour que l'ordre reste
+  // coherent quand on retire un filtre.
+  var tout=agTrierParRang(selAffaires().map(function(p){ return p.a; }));
+  var i=tout.indexOf(src); if(i<0) return;
+  tout.splice(i,1);
+  var j=tout.indexOf(cible); if(j<0) return;
+  tout.splice(apres?j+1:j, 0, src);
+  tout.forEach(function(a,k){ a.ordre=(k+1)*10; });
+  try{ journalAjouter({o:'Colonne d\u00e9plac\u00e9e', a:src.no||src.code,
+    w:(apres?'apr\u00e8s ':'avant ')+(cible.no||cible.code)}); }catch(e){}
+  sbSave();
+  rAffGrid();
+}
+function agRendreGlissable(th, a, ombre){
+  th.draggable=true;
+  th.style.cursor='grab';
+  th.title+='\nGlisser pour changer de colonne';
+  th.addEventListener('dragstart',function(ev){
+    AG_GLISSE=a; th.style.opacity='.45';
+    try{ ev.dataTransfer.effectAllowed='move'; ev.dataTransfer.setData('text/plain', a.code||''); }catch(e){}
+  });
+  th.addEventListener('dragend',function(){ AG_GLISSE=null; th.style.opacity=''; });
+  th.addEventListener('dragover',function(ev){
+    if(!AG_GLISSE || AG_GLISSE===a) return;
+    ev.preventDefault();
+    var r=th.getBoundingClientRect(), apres=(ev.clientX-r.left)>r.width/2;
+    th.dataset.apres=apres?'1':'';
+    th.style.boxShadow=(apres?'inset -4px 0 0 ':'inset 4px 0 0 ')+'var(--brand)';
+  });
+  th.addEventListener('dragleave',function(){ th.style.boxShadow=ombre; });
+  th.addEventListener('drop',function(ev){
+    ev.preventDefault();
+    th.style.boxShadow=ombre;
+    var s=AG_GLISSE; AG_GLISSE=null;
+    if(!s || s===a) return;
+    agDeplacerAffaire(s, a, th.dataset.apres==='1');
+  });
 }
 
 // Recalcule la cellule de % d'une phase après changement d'une tâche
@@ -9191,10 +9262,18 @@ function prochainUoArma(a){
 // Le repli sur phasePct couvre deux cas : un périmètre autre qu'ARMA, et une
 // phase dont aucune tâche à losange ne s'applique — sinon elle tomberait à zéro
 // alors qu'elle est bien avancée.
+// Taches a losange qui comptent pour un autre UO que celui de leur phase.
+// Proposition d'Alexis du 30/09/2026, arbitree par Steve : l'UO Travaux est
+// acquis quand les travaux sont faits (programmation, CMD, DMR, ICP/PPS). Les
+// receptions PGOC et AAT et la facturation client, qui suivent le chantier,
+// comptent pour l'UO Reception. Avant, une affaire aux travaux termines
+// restait a 57 % tant que ces trois pieces n'etaient pas cochees.
+var UO_TACHE_AUTRE_PHASE={'PGOC réceptionné':'Réception','AAT réceptionné':'Réception','Facturation client':'Réception'};
+function phaseFactuDe(t){ return UO_TACHE_AUTRE_PHASE[t.n] || t.phase; }
 function phasePctFactu(a, ph){
   if((a.svc||'ARMA')!=='ARMA') return phasePct(a, ph);
   var ts=(a.tasks||[]).filter(function(t){
-    return t.phase===ph && t.s!=='na' && TACHES_FACTU[t.n];
+    return phaseFactuDe(t)===ph && t.s!=='na' && TACHES_FACTU[t.n];
   });
   if(!ts.length) return phasePct(a, ph);
   return Math.round(ts.filter(function(t){ return t.s==='ok'; }).length/ts.length*100);
@@ -20689,8 +20768,304 @@ function ongletMemo(){
   if(nb && nb.offsetParent===null && getComputedStyle(nb).display==='none') return null;
   return v;
 }
+// ══════════════════════════════════════════════════════════════
+// JOURNAL D'ACTIVITE
+// Demande de Steve du 30/09/2026 : un suivi de toutes les actions, avec la
+// date, l'heure, la personne et ce qu'elle a fait.
+// Chaque action est deduite de ce qui a change SUR CE POSTE entre deux
+// enregistrements : aucun bouton n'y echappe. Ce que les autres postes font
+// arrive par la fusion et n'est jamais attribue ici (point avant chaque
+// fusion, reference remise a zero apres). La personne est celle choisie dans
+// « Qui etes-vous ? ». 60 jours et 3 000 lignes au plus dans RADAR ; la
+// sauvegarde horaire archive tout dans le SharePoint.
+// ══════════════════════════════════════════════════════════════
+var JOURNAL=[];
+var JOURNAL_MAX=3000, JOURNAL_JOURS=60;
+var JOURNAL_REF=null;
+// Cles calculees par l'application elle-meme : leur changement n'est pas une action
+var JOURNAL_CLES_MUETTES={ts:1, APPV:1, JOURNAL:1, HISTORY:1, DXP:1, ENGAGE_HIST:1, HISTO_SEM:1,
+  SVC_CUR:1, MIGR:1, AVC:1, FACTU_HIST:1, GEN_HISTO:1};
+var JOURNAL_CHAMPS_MUETS={tasks:1, cycle:1, phase:1, ordre:1, okSouad0928avant:1, rep0924avant:1,
+  closed:1, en_cours:1, xpGiven:1};
+var JOURNAL_STATUTS={todo:'\u00c0 faire', ok:'OK', nok:'NOK', na:'N/A', attente:'En attente'};
+var JOURNAL_DATES={debut_trx_ext:'d\u00e9but travaux ext.', fin_trx_ext:'fin travaux ext.',
+  date_trx_client:'travaux client', date_trx_int:'travaux int.', date_ecome:'ECOME',
+  date_meex:'MEEX', date_mex:'MEX'};
+function journalQui(){
+  return USER_INI || (CURRENT_USER && CURRENT_USER.email ? String(CURRENT_USER.email).split('@')[0] : '') || '?';
+}
+function journalPoste(){
+  try{ return String(localStorage.getItem('radar_device')||'').slice(0,8); }catch(e){ return ''; }
+}
+function journalCourt(v){
+  if(v===undefined || v===null || v==='') return '';
+  var s=(typeof v==='object') ? JSON.stringify(v) : String(v);
+  if(/^\d{4}-\d{2}-\d{2}$/.test(s)) return dFR(s);       // les dates, lisibles
+  return s.length>70 ? s.slice(0,69)+'\u2026' : s;
+}
+function journalAjouter(e){
+  e.i='J'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+  e.t=e.t||Date.now();
+  e.u=e.u||journalQui();
+  e.p=journalPoste();
+  JOURNAL.push(e);
+  var lim=Date.now()-JOURNAL_JOURS*86400000;
+  if(JOURNAL.length>JOURNAL_MAX || (JOURNAL[0] && (JOURNAL[0].t||0)<lim)){
+    var garde=JOURNAL.filter(function(x){ return (x.t||0)>=lim; })
+      .sort(function(x,y){ return (x.t||0)-(y.t||0); });
+    if(garde.length>JOURNAL_MAX) garde=garde.slice(garde.length-JOURNAL_MAX);
+    JOURNAL.length=0; garde.forEach(function(x){ JOURNAL.push(x); });
+  }
+}
+// L'etat du poste, affaire par affaire et cle par cle, en texte.
+function journalInstantane(){
+  var o=etatObjet(), aff={}, cles={};
+  Object.keys(o.DATA||{}).forEach(function(cp){
+    ((o.DATA[cp]||{}).affaires||[]).forEach(function(a){
+      aff[affKey(cp,a)]={cp:cp, id:(a.code||'')+'|'+(a.no||''), s:JSON.stringify(a)};
+    });
+  });
+  Object.keys(o).forEach(function(k){
+    if(k==='DATA' || JOURNAL_CLES_MUETTES[k]) return;
+    cles[k]=JSON.stringify(o[k]);
+  });
+  return {aff:aff, cles:cles};
+}
+var JOURNAL_REV_PT=-1;
+function journalReset(){ JOURNAL_REF=journalInstantane(); JOURNAL_REV_PT=SYNC_REV; }
+function journalAffaire(nomAff, cp, x, y, sortie){
+  var no=(y||x).no||(y||x).code||'';
+  // Les taches, par nom
+  var tx={}; ((x&&x.tasks)||[]).forEach(function(t){ tx[t.n]=t.s; });
+  ((y&&y.tasks)||[]).forEach(function(t){
+    if(tx[t.n]!==undefined && tx[t.n]!==t.s)
+      sortie.push({c:cp, a:no, o:'T\u00e2che '+t.n, v:JOURNAL_STATUTS[tx[t.n]]||tx[t.n], w:JOURNAL_STATUTS[t.s]||t.s});
+  });
+  // Les champs, un niveau de detail sous les objets
+  var cles={}; Object.keys(x||{}).concat(Object.keys(y||{})).forEach(function(k){ cles[k]=1; });
+  Object.keys(cles).forEach(function(k){
+    if(JOURNAL_CHAMPS_MUETS[k]) return;
+    var vx=(x||{})[k], vy=(y||{})[k];
+    if(memeContenu(vx,vy)) return;
+    var obj=(vx && typeof vx==='object' && !Array.isArray(vx)) || (vy && typeof vy==='object' && !Array.isArray(vy));
+    if(obj){
+      var sc={}; Object.keys(vx||{}).concat(Object.keys(vy||{})).forEach(function(s){ sc[s]=1; });
+      Object.keys(sc).forEach(function(s){
+        var a1=(vx||{})[s], a2=(vy||{})[s];
+        if(memeContenu(a1,a2)) return;
+        var lib = k==='facture_uo' ? 'Facturation UO '+s
+                : k==='dates' ? 'Date '+(JOURNAL_DATES[s]||s)
+                : k==='fin' ? 'Budget '+s.replace('budget_','')
+                : k==='meca' && s==='uo' ? null
+                : (k==='meca'?'RATP ':k==='irve'?'IRVE ':k+' ')+s;
+        if(lib===null){
+          var u={}; Object.keys(a1||{}).concat(Object.keys(a2||{})).forEach(function(z){ u[z]=1; });
+          Object.keys(u).forEach(function(z){
+            if(!memeContenu((a1||{})[z],(a2||{})[z]))
+              sortie.push({c:cp, a:no, o:'UO '+z, v:journalCourt((a1||{})[z]), w:journalCourt((a2||{})[z])});
+          });
+          return;
+        }
+        sortie.push({c:cp, a:no, o:lib, v:journalCourt(a1), w:journalCourt(a2)});
+      });
+      return;
+    }
+    var lib2 = k==='meteo' ? 'M\u00e9t\u00e9o' : k==='bud_note' ? 'Note budget' : 'Champ '+k;
+    var f=function(v){ return k==='meteo' ? ({1:'\ud83d\udfe2',2:'\ud83d\udfe1',3:'\ud83d\udd34'}[v]||journalCourt(v)) : journalCourt(v); };
+    sortie.push({c:cp, a:no, o:lib2, v:f(vx), w:f(vy)});
+  });
+}
+function journalListe(nom, lx, ly, sortie){
+  var ix={}, iy={};
+  (lx||[]).forEach(function(e){ if(e && e.id) ix[e.id]=e; });
+  (ly||[]).forEach(function(e){ if(e && e.id) iy[e.id]=e; });
+  Object.keys(iy).forEach(function(id){
+    var a=ix[id], b=iy[id];
+    if(nom==='IRVE_TACHES'){
+      if(!a){ sortie.push({a:b.aff, o:'T\u00e2che BO ajout\u00e9e', w:b.tache}); return; }
+      Object.keys(Object.assign({},a,b)).forEach(function(f){
+        if(f==='id' || memeContenu(a[f],b[f])) return;
+        var fv=function(v){ return f==='fait' ? (v?'oui':'non') : journalCourt(v); };
+        sortie.push({a:b.aff, o:'T\u00e2che BO '+b.tache+' : '+(f==='fait'?'faite':f), v:fv(a[f]), w:fv(b[f])});
+      });
+    } else if(nom==='IDEES'){
+      var lbl=function(s){ var x=(typeof IDEE_STATUTS!=='undefined'?IDEE_STATUTS:[]).filter(function(q){ return q.k===s; })[0]; return x?x.l:(s||''); };
+      if(!a){ sortie.push({o:'Proposition ajout\u00e9e', w:journalCourt(b.texte)}); return; }
+      if(a.statut!==b.statut) sortie.push({o:'Proposition '+journalCourt(b.texte).slice(0,40), v:lbl(a.statut), w:lbl(b.statut)});
+      if(a.texte!==b.texte) sortie.push({o:'Proposition modifi\u00e9e', v:journalCourt(a.texte), w:journalCourt(b.texte)});
+    }
+  });
+  Object.keys(ix).forEach(function(id){
+    if(iy[id]) return;
+    var a=ix[id];
+    if(nom==='IRVE_TACHES') sortie.push({a:a.aff, o:'T\u00e2che BO supprim\u00e9e', v:a.tache});
+    else if(nom==='IDEES') sortie.push({o:'Proposition supprim\u00e9e', v:journalCourt(a.texte)});
+  });
+}
+// Le point de journal : ce qui a change ici depuis le precedent.
+function journalPoint(){
+  if(!SYNC_PRET || !JOURNAL_REF){ journalReset(); return 0; }
+  if(SYNC_REV===JOURNAL_REV_PT) return 0;       // rien de saisi depuis le dernier point
+  var ref=JOURNAL_REF, neuf=journalInstantane(), sortie=[];
+  var parIdRef={}, parIdNeuf={};
+  Object.keys(ref.aff).forEach(function(k){ parIdRef[ref.aff[k].id]=ref.aff[k]; });
+  Object.keys(neuf.aff).forEach(function(k){ parIdNeuf[neuf.aff[k].id]=neuf.aff[k]; });
+  Object.keys(neuf.aff).forEach(function(k){
+    var n=neuf.aff[k], r=ref.aff[k];
+    if(r){ if(r.s!==n.s) journalAffaire(k, n.cp, JSON.parse(r.s), JSON.parse(n.s), sortie); return; }
+    var y=JSON.parse(n.s), autre=parIdRef[n.id];
+    if(autre && autre.cp!==n.cp){
+      sortie.push({c:n.cp, a:y.no||y.code, o:'Affaire r\u00e9affect\u00e9e',
+        v:(DATA[autre.cp]||{}).ini||autre.cp, w:(DATA[n.cp]||{}).ini||n.cp});
+      journalAffaire(k, n.cp, JSON.parse(autre.s), y, sortie);
+    } else sortie.push({c:n.cp, a:y.no||y.code, o:'Affaire cr\u00e9\u00e9e', w:y.addr||''});
+  });
+  Object.keys(ref.aff).forEach(function(k){
+    if(neuf.aff[k]) return;
+    var r=ref.aff[k], ailleurs=parIdNeuf[r.id];
+    if(ailleurs && ailleurs.cp!==r.cp) return;                 // deja notee : reaffectation
+    var x=JSON.parse(r.s);
+    sortie.push({c:r.cp, a:x.no||x.code, o:'Affaire supprim\u00e9e', v:x.addr||''});
+  });
+  Object.keys(ref.cles).concat(Object.keys(neuf.cles)).forEach(function(k, i, tout){
+    if(tout.indexOf(k)!==i) return;
+    if(ref.cles[k]===neuf.cles[k]) return;
+    var x=ref.cles[k]!==undefined?JSON.parse(ref.cles[k]):undefined;
+    var y=neuf.cles[k]!==undefined?JSON.parse(neuf.cles[k]):undefined;
+    if(memeContenu(x,y)) return;
+    if(k==='IRVE_TACHES' || k==='IDEES'){ journalListe(k, x, y, sortie); return; }
+    if(k==='COMMENTS' || k==='TASK_COMMENTS'){
+      Object.keys(y||{}).forEach(function(q){
+        var ay=(y||{})[q]||[], ax=(x||{})[q]||[];
+        if(ay.length>ax.length){
+          var der=ay[0]&&ay[0].ts>=((ay[ay.length-1]||{}).ts||0) ? ay[0] : ay[ay.length-1];
+          sortie.push({a:String(q).split('__').pop(), o:'Commentaire ajout\u00e9', w:journalCourt((der||{}).text||(der||{}).t||der)});
+        }
+      });
+      return;
+    }
+    if(k==='TIME_LOG'){ sortie.push({o:'Temps saisi'}); return; }
+    sortie.push({o:'Param\u00e8tre modifi\u00e9 : '+k});
+  });
+  JOURNAL_REF=neuf; JOURNAL_REV_PT=SYNC_REV;
+  var t=Date.now();
+  sortie.forEach(function(e){ e.t=t; journalAjouter(e); });
+  return sortie.length;
+}
+function vueJournal(){
+  var v=document.getElementById('v-journal');
+  if(v) return v;
+  var sc=document.getElementById('scroll'); if(!sc) return null;
+  v=document.createElement('div');
+  v.className='view'; v.id='v-journal';
+  sc.appendChild(v);
+  return v;
+}
+function boutonJournal(){
+  if(document.getElementById('nb-journal')) return;
+  var cfg=document.getElementById('nb-config'); if(!cfg || !cfg.parentNode) return;
+  var b=document.createElement('button');
+  b.className='nb'; b.id='nb-journal'; b.style.flex='1';
+  b.innerHTML='<svg viewBox="0 0 24 24"><path d="M4 4h12l4 4v12H4z"/><line x1="8" y1="11" x2="16" y2="11"/>'
+    +'<line x1="8" y1="15" x2="16" y2="15"/><line x1="8" y1="7" x2="12" y2="7"/></svg>Journal';
+  b.title='Journal d\u2019activit\u00e9 : qui a fait quoi, et quand';
+  cfg.parentNode.insertBefore(b, cfg.nextSibling);
+  b.addEventListener('click',function(){ showV('journal'); });
+}
+var JOURNAL_FILTRE={qui:'', jours:7, texte:''};
+function rJournal(){
+  var v=vueJournal(); if(!v) return;
+  v.innerHTML='';
+  var card=document.createElement('div');
+  card.style.cssText='background:var(--s);border:1.5px solid var(--b);border-radius:12px;overflow:hidden;margin:10px';
+  var hdr=document.createElement('div');
+  hdr.style.cssText='padding:10px 12px;background:var(--s2);border-bottom:1px solid var(--b);display:flex;align-items:center;gap:8px;flex-wrap:wrap';
+  var tit=document.createElement('span');
+  tit.style.cssText='font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--t2);flex:1;min-width:160px';
+  tit.textContent='Journal d\u2019activit\u00e9';
+  hdr.appendChild(tit);
+  function champ(el){ el.style.cssText='font-family:inherit;font-size:11px;padding:5px 8px;border:1px solid var(--b2);border-radius:8px;background:var(--bg);color:var(--t)'; return el; }
+  var selQ=champ(document.createElement('select'));
+  var noms={}; personnes().forEach(function(p){ noms[p.ini]=p.nom; });
+  var vus={}; JOURNAL.forEach(function(e){ if(e.u) vus[e.u]=1; });
+  Object.keys(noms).forEach(function(k){ vus[k]=1; });
+  [['','Tout le monde']].concat(Object.keys(vus).sort().map(function(k){ return [k, noms[k]?noms[k]+' ('+k+')':k]; }))
+    .forEach(function(o){ var op=document.createElement('option'); op.value=o[0]; op.textContent=o[1]; selQ.appendChild(op); });
+  selQ.value=JOURNAL_FILTRE.qui;
+  var selP=champ(document.createElement('select'));
+  [[1,'Aujourd\u2019hui'],[7,'7 derniers jours'],[30,'30 derniers jours'],[0,'Tout ('+JOURNAL_JOURS+' j)']]
+    .forEach(function(o){ var op=document.createElement('option'); op.value=String(o[0]); op.textContent=o[1]; selP.appendChild(op); });
+  selP.value=String(JOURNAL_FILTRE.jours);
+  var rech=champ(document.createElement('input'));
+  rech.type='search'; rech.placeholder='Affaire, t\u00e2che, mot\u2026'; rech.value=JOURNAL_FILTRE.texte;
+  rech.style.minWidth='150px';
+  hdr.appendChild(selQ); hdr.appendChild(selP); hdr.appendChild(rech);
+  card.appendChild(hdr);
+  var corps=document.createElement('div'); card.appendChild(corps);
+  var pied=document.createElement('div');
+  pied.style.cssText='padding:8px 12px;font-size:10px;color:var(--t3);border-top:1px solid var(--b)';
+  pied.textContent='Chaque action est not\u00e9e au nom de la personne choisie sur le poste. '
+    +'RADAR garde '+JOURNAL_JOURS+' jours ; l\u2019historique complet est archiv\u00e9 chaque heure dans le SharePoint.';
+  card.appendChild(pied);
+  v.appendChild(card);
+  function dessiner(){
+    corps.innerHTML='';
+    var lim = JOURNAL_FILTRE.jours ? (function(){ var d=new Date(); d.setHours(0,0,0,0);
+      return d.getTime()-(JOURNAL_FILTRE.jours-1)*86400000; })() : 0;
+    var mots=JOURNAL_FILTRE.texte.toLowerCase().split(/\s+/).filter(Boolean);
+    var l=JOURNAL.filter(function(e){
+      if(JOURNAL_FILTRE.qui && e.u!==JOURNAL_FILTRE.qui) return false;
+      if((e.t||0)<lim) return false;
+      if(mots.length){
+        var h=[e.a,e.o,e.v,e.w,e.u,e.c].join(' ').toLowerCase();
+        for(var i=0;i<mots.length;i++) if(h.indexOf(mots[i])<0) return false;
+      }
+      return true;
+    }).sort(function(x,y){ return (y.t||0)-(x.t||0); });
+    var info=document.createElement('div');
+    info.style.cssText='padding:8px 12px;font-size:10.5px;color:var(--t2);font-weight:700';
+    info.textContent=l.length+' action(s)'+(l.length>500?' \u2014 les 500 plus r\u00e9centes affich\u00e9es':'');
+    corps.appendChild(info);
+    if(!l.length) return;
+    var wrap=document.createElement('div'); wrap.style.cssText='overflow-x:auto';
+    var t=document.createElement('table');
+    t.style.cssText='width:100%;border-collapse:collapse;font-size:10.5px';
+    var th=document.createElement('tr');
+    ['Quand','Qui','Portef.','Affaire','Action','Changement'].forEach(function(h){
+      var c=document.createElement('th'); c.textContent=h;
+      c.style.cssText='text-align:left;padding:6px 8px;background:var(--s2);color:var(--t3);font-size:9.5px;'
+        +'text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid var(--b);white-space:nowrap';
+      th.appendChild(c);
+    });
+    t.appendChild(th);
+    l.slice(0,500).forEach(function(e){
+      var d=new Date(e.t||0), tr=document.createElement('tr');
+      var quand=d.toLocaleDateString('fr',{day:'2-digit',month:'2-digit'})+' '
+        +d.toLocaleTimeString('fr',{hour:'2-digit',minute:'2-digit'});
+      var chg=(e.v?e.v+' \u2192 ':'')+(e.w||'');
+      [quand, noms[e.u]||e.u||'?', e.c?((DATA[e.c]||{}).ini||e.c):'', e.a||'', e.o||'', chg]
+      .forEach(function(val, i){
+        var c=document.createElement('td'); c.textContent=val;
+        if(i===0) c.title=d.toLocaleString('fr');
+        c.style.cssText='padding:4px 6px;border-bottom:1px solid var(--b);vertical-align:top;'
+          +(i<3?'white-space:nowrap;':'')+(i===4?'font-weight:700;color:var(--t);':'color:var(--t2);');
+        tr.appendChild(c);
+      });
+      t.appendChild(tr);
+    });
+    wrap.appendChild(t); corps.appendChild(wrap);
+  }
+  selQ.addEventListener('change',function(){ JOURNAL_FILTRE.qui=selQ.value; dessiner(); });
+  selP.addEventListener('change',function(){ JOURNAL_FILTRE.jours=parseInt(selP.value,10)||0; dessiner(); });
+  var minut=null;
+  rech.addEventListener('input',function(){ clearTimeout(minut);
+    minut=setTimeout(function(){ JOURNAL_FILTRE.texte=rech.value.trim(); dessiner(); }, 200); });
+  dessiner();
+}
+
 function showV(v){
   if(v==='idees') vueIdees();          // la vue est créée à la demande
+  if(v==='journal') vueJournal();
   document.querySelectorAll('.view').forEach(function(el){el.classList.remove('on');});
   document.querySelectorAll('.nb').forEach(function(b){b.classList.remove('on');});
   var vue=document.getElementById('v-'+v);
@@ -20705,7 +21080,7 @@ function showV(v){
   // Masquer profil+stats dans Référent, restaurer ailleurs
   var appEl=document.querySelector('.app');
   if(appEl) appEl.classList.toggle('hide-profile', v==='ref');
-  if(v==='week')rWeek();else if(v==='ref'){ if(!refVerrouOk()){ demanderMdp(function(){ showV('ref'); }); return; } rRef(); }else if(v==='sc')rTDB();else if(v==='config')rConfig();else if(v==='links')rLinks();else if(v==='bo')rBO();else if(v==='idees')rIdees();else renderAll();
+  if(v==='week')rWeek();else if(v==='ref'){ if(!refVerrouOk()){ demanderMdp(function(){ showV('ref'); }); return; } rRef(); }else if(v==='sc')rTDB();else if(v==='config')rConfig();else if(v==='links')rLinks();else if(v==='bo')rBO();else if(v==='idees')rIdees();else if(v==='journal')rJournal();else renderAll();
 }
 
 // Sauvegarde à la fermeture de l'onglet.
@@ -25206,6 +25581,7 @@ function bootApp(){
     var vue=ongletMemo()||'week';
     showV(vue);
     try{ boutonIdees(); }catch(e){}
+    try{ boutonJournal(); }catch(e){}
     try{ if(vue==='week') rWeek(); dtSyncNav(); appliquerRole(); }catch(e){}
     if(!USER_INI) setTimeout(function(){ choisirUtilisateur(false); },500);
   }catch(e){}
@@ -25351,6 +25727,7 @@ function viderFileSync(){
       delete TASK_PENDING[k];
     });
   }catch(e){}
+  try{ journalPoint(); }catch(e){}
   try{ lsSaveNow(); }catch(e){}
   if(SYNC_ENABLED && SB_TOKEN && syncModifie() && !SYNC_BUSY){
     if(SYNC_DEBOUNCE) clearTimeout(SYNC_DEBOUNCE);
@@ -25376,7 +25753,7 @@ window.addEventListener('beforeunload', function(e){
 // On ne recharge jamais de force, une saisie en cours serait perdue :
 // on propose, la personne choisit son moment.
 // ══════════════════════════════════════════════════════════════
-var APP_VERSION='2026-09-30-1';
+var APP_VERSION='2026-09-30-2';
 var MAJ_VUE=false;
 // La version en ligne, des qu'on la connait. Tant qu'elle vaut null, on ne
 // sait pas, et on n'empeche rien.
