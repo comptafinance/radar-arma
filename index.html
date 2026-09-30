@@ -2545,11 +2545,12 @@ function rIrveGrid(){
     return;
   }
   var tbl=document.createElement('table'); tbl.className='ag-tbl irv-tbl';
-  var total=IRVE_COLS.reduce(function(s,c){ return s+c.w; },0)+66;
+  var total=IRVE_COLS.reduce(function(s,c){ return s+c.w; },0)+66+IRVE_UO_ORDRE.length*IRVE_W_UO;
   tbl.style.width=total+'px';
   var cg=document.createElement('colgroup');
   var xc=document.createElement('col'); xc.style.width='46px'; cg.appendChild(xc);
   IRVE_COLS.forEach(function(c){ var x=document.createElement('col'); x.style.width=c.w+'px'; cg.appendChild(x); });
+  IRVE_UO_ORDRE.forEach(function(){ var x=document.createElement('col'); x.style.width=IRVE_W_UO+'px'; cg.appendChild(x); });
   tbl.appendChild(cg);
 
   var thead=document.createElement('thead'); var tr=document.createElement('tr');
@@ -2560,6 +2561,14 @@ function rIrveGrid(){
     var th=document.createElement('th');
     th.className='irv-th'+(i===0?' irv-sticky':'');
     th.textContent=c.l; tr.appendChild(th);
+  });
+  // Avancement de chaque UO, a droite, avec la lecture d'ARMA
+  IRVE_UO_ORDRE.forEach(function(u){
+    var th=document.createElement('th'); th.className='irv-th';
+    th.textContent=IRVE_UO_COURT[u];
+    th.title='Avancement de l\u2019UO '+IRVE_UO_LIB[u]+'\nFond vert : factur\u00e9 \u2014 orange : prochain UO \u00e0 facturer'
+      +'\ngris clair : les autres \u2014 gris fonc\u00e9 : sans objet (NA)';
+    tr.appendChild(th);
   });
   thead.appendChild(tr); tbl.appendChild(thead);
 
@@ -2752,6 +2761,10 @@ function rIrveGrid(){
       }
       row.appendChild(td);
     });
+    (function(){
+      var cp=cpOf[a.code+'|'+(a.no||'')]||CCP;
+      IRVE_UO_ORDRE.forEach(function(u){ try{ row.appendChild(irveCaseUo(cp, a, u)); }catch(e){} });
+    })();
     tb.appendChild(row);
   });
   tbl.appendChild(tb); wrap.appendChild(tbl);
@@ -3285,6 +3298,10 @@ function rMecaGrid(){
         c.style.fontWeight='800';
         c.style.color=p>=100?'var(--green)':p>0?'var(--amber)':'var(--b2)';
         c.title=u.l+'\n'+u.prix+' \u20ac \u2014 avancement '+p+' %\nCliquer pour saisir';
+        // Livrable deja facture : la case passe en vert (proposition d'Alexis du 30/09/2026)
+        var fact=!!(((a.meca||{}).fa||{})[u.k]);
+        c.style.background=fact?FOND_UO.facture:'';
+        if(fact) c.title=u.l+' \u2014 factur\u00e9\n'+u.prix+' \u20ac \u2014 avancement '+p+' %\nCliquer pour saisir';
       }
       paint(); c.style.cursor='pointer';
       c.addEventListener('click',function(){
@@ -6284,6 +6301,7 @@ function rIrveTrxGrid(){
   var wrap=document.getElementById('ag-wrap'); if(!wrap) return;
   wrap.innerHTML='';
   var pairs=selAffaires();
+  var cpOfT={}; pairs.forEach(function(p){ cpOfT[p.a.code+'|'+(p.a.no||'')]=p.cp; });
   // Seuls les dossiers NOUVEAUX passés en « 6 - En travaux » entrent ici.
   // Les historiques n'ont pas de suivi travaux : leur facturation est
   // régularisée et le tableau restait encombré pour rien.
@@ -6354,6 +6372,7 @@ function rIrveTrxGrid(){
       var p=irvePhasePct(a,ph);
       c.textContent=p===null?'\u2014':p+'%';
       c.style.color=p===null?'var(--t3)':(p===100?'var(--green)':p>0?'var(--orange)':'var(--t3)');
+      try{ irvePeindrePhase(c, cpOfT[a.code+'|'+(a.no||'')]||CCP, a, ph); }catch(e){}
       trP.appendChild(c);
     });
     tb.appendChild(trP);
@@ -9254,6 +9273,56 @@ function agFondPhase(a, ph){
   if(fact.some(Boolean) && fact.every(function(f,i){ return f||na[i]; }))
     return {bg:FOND_UO.facture, t:ph+' \u2014 UO factur\u00e9'};
   return {bg:FOND_UO.autre, t:''};
+}
+// IRVE : la meme lecture, sur ses quatre UO (proposition d'Alexis du
+// 30/09/2026, 12h45). Un UO que la complexite du dossier n'ouvre pas, ou
+// marque NA, est sans objet : gris fonce. Facture des qu'une part l'est.
+var IRVE_UO_ORDRE=['ETD','CRD','TRX','RCP'];
+var IRVE_UO_LIB={ETD:'\u00c9tude', CRD:'Coordination', TRX:'Travaux', RCP:'R\u00e9ception'};
+var IRVE_UO_COURT={ETD:'\u00c9tude', CRD:'Coord.', TRX:'Travaux', RCP:'R\u00e9cep.'};
+var IRVE_W_UO=48;
+function irveEtatUo(cp, a, u){
+  if(!(irvePlafond(a,u)>0)) return 'na';
+  var f=0; try{ f=uoFacture(cp, a, irveProfil(a)+'_'+u); }catch(e){}
+  if(f<0) return 'na';
+  return f>0 ? 'facture' : 'afaire';
+}
+function irveProchainUo(cp, a){
+  if(irvePhaseNum(a)===0) return null;          // dossier supprime : plus rien a facturer
+  for(var i=0;i<IRVE_UO_ORDRE.length;i++){
+    if(irveEtatUo(cp, a, IRVE_UO_ORDRE[i])==='afaire') return IRVE_UO_ORDRE[i];
+  }
+  return null;
+}
+function irveFondUo(cp, a, u){
+  var e=irveEtatUo(cp, a, u), p=null, lib=IRVE_UO_LIB[u];
+  try{ p=circAv(cp, a, irveProfil(a)+'_'+u); }catch(e2){}
+  if(e==='facture') return {bg:FOND_UO.facture, t:lib+' \u2014 UO factur\u00e9', p:p};
+  if(e==='na') return {bg:FOND_UO.na, fg:'#FFFFFF', p:null,
+    t:lib+' \u2014 sans objet (NA, ou non ouvert par la complexit\u00e9 du dossier)'};
+  if(irveProchainUo(cp, a)===u) return {bg:FOND_UO.prochain, p:p,
+    t:lib+' \u2014 prochain UO \u00e0 facturer'+(p!==null && p>=100?' : \u00e0 100 %, \u00e0 comptabiliser':'')};
+  return {bg:FOND_UO.autre, t:lib, p:p};
+}
+// Case d'avancement d'un UO IRVE, dans la grille des dossiers
+function irveCaseUo(cp, a, u){
+  var td=document.createElement('td');
+  td.className='irv-td';
+  var f=irveFondUo(cp, a, u), p=f.p;
+  td.textContent = p===null ? '\u2014' : Math.round(p)+'%';
+  td.style.cssText+=';text-align:center;font-weight:800;background:'+f.bg+';color:'
+    +(f.fg || (p===null?'var(--t3)':(p>=100?'var(--green)':p>0?'var(--orange)':'var(--t3)')));
+  td.title=f.t;
+  return td;
+}
+// Ligne de phase de la vue travaux IRVE : le fond de l'UO correspondant
+var IRVE_UO_DE_PHASE={'Coordination':'CRD', 'Travaux':'TRX', 'R\u00e9ception':'RCP'};
+function irvePeindrePhase(c, cp, a, ph){
+  var u=IRVE_UO_DE_PHASE[ph]; if(!u) return;
+  var f=irveFondUo(cp, a, u);
+  c.style.background=f.bg;
+  if(f.fg) c.style.color=f.fg;
+  c.title=f.t;
 }
 function agPeindrePhase(c, a, ph){
   var f=agFondPhase(a, ph);
@@ -25787,7 +25856,7 @@ window.addEventListener('beforeunload', function(e){
 // On ne recharge jamais de force, une saisie en cours serait perdue :
 // on propose, la personne choisit son moment.
 // ══════════════════════════════════════════════════════════════
-var APP_VERSION='2026-09-30-4';
+var APP_VERSION='2026-09-30-5';
 var MAJ_VUE=false;
 // La version en ligne, des qu'on la connait. Tant qu'elle vaut null, on ne
 // sait pas, et on n'empeche rien.
