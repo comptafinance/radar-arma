@@ -20979,16 +20979,31 @@ function vueJournal(){
   sc.appendChild(v);
   return v;
 }
+var ICONE_JOURNAL='<svg viewBox="0 0 24 24"><path d="M4 4h12l4 4v12H4z"/><line x1="8" y1="11" x2="16" y2="11"/>'
+  +'<line x1="8" y1="15" x2="16" y2="15"/><line x1="8" y1="7" x2="12" y2="7"/></svg>';
 function boutonJournal(){
-  if(document.getElementById('nb-journal')) return;
-  var cfg=document.getElementById('nb-config'); if(!cfg || !cfg.parentNode) return;
-  var b=document.createElement('button');
-  b.className='nb'; b.id='nb-journal'; b.style.flex='1';
-  b.innerHTML='<svg viewBox="0 0 24 24"><path d="M4 4h12l4 4v12H4z"/><line x1="8" y1="11" x2="16" y2="11"/>'
-    +'<line x1="8" y1="15" x2="16" y2="15"/><line x1="8" y1="7" x2="12" y2="7"/></svg>Journal';
-  b.title='Journal d\u2019activit\u00e9 : qui a fait quoi, et quand';
-  cfg.parentNode.insertBefore(b, cfg.nextSibling);
-  b.addEventListener('click',function(){ showV('journal'); });
+  // Vue telephone : la barre du bas
+  var cfg=document.getElementById('nb-config');
+  if(!document.getElementById('nb-journal') && cfg && cfg.parentNode){
+    var b=document.createElement('button');
+    b.className='nb'; b.id='nb-journal'; b.style.flex='1';
+    b.innerHTML=ICONE_JOURNAL+'Journal';
+    b.title='Journal d\u2019activit\u00e9 : qui a fait quoi, et quand';
+    cfg.parentNode.insertBefore(b, cfg.nextSibling);
+    b.addEventListener('click',function(){ showV('journal'); });
+  }
+  // Vue ordinateur : la colonne de gauche, sous Referent
+  var nav=document.getElementById('dt-nav');
+  if(nav && !nav.querySelector('.dt-nav-btn[data-view="journal"]')){
+    var d=document.createElement('button');
+    d.className='dt-nav-btn'; d.setAttribute('data-view','journal');
+    d.innerHTML=ICONE_JOURNAL+'Journal d\u2019activit\u00e9';
+    d.title='Qui a fait quoi, et quand';
+    d.addEventListener('click',function(){ showV('journal'); try{ dtSyncNav(); }catch(e){} });
+    var ref=nav.querySelector('.dt-nav-btn[data-view="ref"]');
+    if(ref && ref.parentNode) ref.parentNode.insertBefore(d, ref.nextSibling);
+    else nav.appendChild(d);
+  }
 }
 var JOURNAL_FILTRE={qui:'', jours:7, texte:''};
 function rJournal(){
@@ -25591,6 +25606,7 @@ function bootApp(){
   // sans ce garde-fou, chaque renouvellement rechargeait le serveur par-dessus
   // le travail en cours.
   if(!BOOT_FAIT){ BOOT_FAIT=true; try{ sbLoad(); }catch(e){ console.error('sbLoad',e); } }
+  try{ boutonJournal(); }catch(e){}
   try{
     var uc=document.getElementById('user-chip'); if(uc) uc.textContent=USER_INI||'?';
     // On rouvre l'onglet quitté la dernière fois, Référent compris : son
@@ -25771,7 +25787,7 @@ window.addEventListener('beforeunload', function(e){
 // On ne recharge jamais de force, une saisie en cours serait perdue :
 // on propose, la personne choisit son moment.
 // ══════════════════════════════════════════════════════════════
-var APP_VERSION='2026-09-30-3';
+var APP_VERSION='2026-09-30-4';
 var MAJ_VUE=false;
 // La version en ligne, des qu'on la connait. Tant qu'elle vaut null, on ne
 // sait pas, et on n'empeche rien.
