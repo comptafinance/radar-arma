@@ -1173,6 +1173,7 @@ function serializeState(){
     HISTORY:HISTORY,
     SYNO_DATA:SYNO_DATA,
     TASK_COMMENTS:TASK_COMMENTS,
+    APPV:APP_VERSION,
     ts:Date.now()
   });
 }
@@ -1326,18 +1327,167 @@ function lsSaveBientot(){
   if(LS_ATTENDU) clearTimeout(LS_ATTENDU);
   LS_ATTENDU=setTimeout(function(){ LS_ATTENDU=null; try{ lsSaveNow(); }catch(e){} }, 400);
 }
+// ── La reference commune voyage avec la copie locale ──────────────────
+// Incident du 30/09/2026 a 9h45 : un poste a rouvert RADAR avec une saisie
+// restee en attente depuis la veille au soir. Faute de savoir ce qu'il avait
+// lui-meme change, la reprise imposait TOUTE sa memoire, affaire par affaire :
+// elle a defait 262 statuts saisis par d'autres pendant la nuit et additionne
+// deux listes de taches back-office (280 + 238 = 518).
+// Desormais le poste garde, a cote de sa copie, la version serveur de ce
+// qu'il a modifie, et seulement cela. A la reprise, la fusion retrouve sa
+// reference commune et ne rejoue que les saisies de ce poste.
+var LS_BASE='radar_base_v1';
+var BASE_OBJ=null, BASE_OBJ_DE=null;
+function baseObjet(){
+  if(!SYNC_BASE) return null;
+  if(BASE_OBJ_DE!==SYNC_BASE){ BASE_OBJ=JSON.parse(SYNC_BASE); BASE_OBJ_DE=SYNC_BASE; }
+  return BASE_OBJ;
+}
+// Egalite de contenu, quel que soit l'ordre des champs : deux postes
+// n'ecrivent pas les champs d'une affaire dans le meme ordre.
+function jCanon(x){
+  if(x===null || typeof x!=='object') return JSON.stringify(x);
+  if(Array.isArray(x)) return '['+x.map(function(v){ return v===undefined?'null':jCanon(v); }).join(',')+']';
+  return '{'+Object.keys(x).sort().filter(function(k){ return x[k]!==undefined; })
+    .map(function(k){ return JSON.stringify(k)+':'+jCanon(x[k]); }).join(',')+'}';
+}
+function memeContenu(a,b){
+  if(a===b) return true;
+  try{ if(JSON.stringify(a)===JSON.stringify(b)) return true; }catch(e){}
+  try{ return jCanon(a)===jCanon(b); }catch(e){ return false; }
+}
+var ABSENT_BASE={__absent__:1};
+function basePartielle(etatStr){
+  if(!syncModifie()) return {v:1, vide:1};
+  var b=baseObjet();
+  if(!b) return {v:1, sansBase:1};
+  var loc=JSON.parse(etatStr), p={v:1, cles:{}, data:{}};
+  Object.keys(b).concat(Object.keys(loc)).forEach(function(k){
+    if(k==='DATA' || k==='ts' || k==='APPV' || (k in p.cles)) return;
+    if(!memeContenu(b[k], loc[k])) p.cles[k]=(k in b)?b[k]:ABSENT_BASE;
+  });
+  var bD=b.DATA||{}, lD=loc.DATA||{};
+  Object.keys(bD).concat(Object.keys(lD)).forEach(function(cp){
+    if(cp in p.data) return;
+    if(!bD[cp]){ p.data[cp]={absent:1}; return; }
+    if(!lD[cp]){ p.data[cp]={entier:bD[cp]}; return; }
+    var d={champs:{}, aff:{}}, vu=false;
+    Object.keys(bD[cp]).concat(Object.keys(lD[cp])).forEach(function(c){
+      if(c==='affaires' || (c in d.champs)) return;
+      if(!memeContenu(bD[cp][c], lD[cp][c])){ d.champs[c]=(c in bD[cp])?bD[cp][c]:ABSENT_BASE; vu=true; }
+    });
+    var ib={}, il={};
+    (bD[cp].affaires||[]).forEach(function(a){ var k=affKey(cp,a); if(!(k in ib)) ib[k]=a; });
+    (lD[cp].affaires||[]).forEach(function(a){ var k=affKey(cp,a); if(!(k in il)) il[k]=a; });
+    Object.keys(ib).concat(Object.keys(il)).forEach(function(k){
+      if(k in d.aff) return;
+      if(!(k in ib)){ d.aff[k]=null; vu=true; return; }
+      if(!(k in il) || !memeContenu(ib[k], il[k])){ d.aff[k]=ib[k]; vu=true; }
+    });
+    if(vu) p.data[cp]=d;
+  });
+  return p;
+}
+// Avant la premiere lecture serveur, la reference de la visite precedente
+// n'est pas touchee : c'est elle que la reprise va chercher.
+function ecrireBasePartielle(etatStr){
+  if(!SYNC_PRET && !REPRISE_EN_COURS) return;
+  localStorage.setItem(LS_BASE, JSON.stringify(basePartielle(etatStr)));
+}
+// Les clics de statut faits ici et que le serveur ignore, rejoues sur l'etat
+// du serveur deja applique. Rend le nombre de clics repris.
+function rejouerClicsNonPartis(localObj, srvObj){
+  var srvH=(srvObj && srvObj.HISTORY)||{}, locH=(localObj && localObj.HISTORY)||{};
+  function cle(k,e){ return k+'|'+e.ts+'|'+e.action+'|'+e.detail; }
+  var connues={}, dernier={};
+  Object.keys(srvH).forEach(function(k){
+    (srvH[k]||[]).forEach(function(e){
+      connues[cle(k,e)]=1;
+      var t=k+'|'+e.detail; if(!dernier[t] || e.ts>dernier[t]) dernier[t]=e.ts;
+    });
+  });
+  var seuil=0;
+  Object.keys(locH).forEach(function(k){
+    (locH[k]||[]).forEach(function(e){ if(e && connues[cle(k,e)] && e.ts>seuil) seuil=e.ts; });
+  });
+  var aRejouer=[];
+  Object.keys(locH).forEach(function(k){
+    (locH[k]||[]).forEach(function(e){
+      if(!e || !e.action || e.action.indexOf('\u2192')<0 || /^UO /.test(e.action)) return;
+      if(connues[cle(k,e)] || !(e.ts>seuil)) return;
+      aRejouer.push({k:k, e:e});
+    });
+  });
+  aRejouer.sort(function(x,y){ return (x.e.ts||0)-(y.e.ts||0); });
+  var n=0, neuf={};
+  aRejouer.forEach(function(r){
+    var t=r.k+'|'+r.e.detail;
+    if(dernier[t] && dernier[t]>r.e.ts) return;            // plus recent ailleurs
+    var i=r.k.indexOf('__'); if(i<0) return;
+    var cp=r.k.slice(0,i), code=r.k.slice(i+2);
+    var affs=(gAff(cp)||[]).filter(function(a){ return String(a.code)===code; });
+    if(affs.length!==1) return;
+    var ts=(affs[0].tasks||[]).filter(function(x){
+      return String(x.n||'').replace(/\[.*?\]/g,'').trim()===r.e.detail; });
+    if(ts.length!==1) return;
+    ts[0].s=r.e.action.split('\u2192')[1];
+    if(!neuf[r.k]) neuf[r.k]=(srvH[r.k]||[]).slice();
+    neuf[r.k].push(r.e);
+    dernier[t]=r.e.ts;
+    n++;
+  });
+  Object.keys(neuf).forEach(function(k){
+    var vus={}, l=neuf[k].filter(function(e){ var c=cle(k,e); if(vus[c]) return false; vus[c]=1; return true; });
+    l.sort(function(x,y){ return (y.ts||0)-(x.ts||0); });
+    HISTORY[k]=l.slice(0,50);
+  });
+  return n;
+}
+// La reference de la visite precedente, reconstituee sur la copie locale.
+// Rend null si elle manque : la reprise ne peut alors rien prouver.
+function reconstruireBase(){
+  var raw=localStorage.getItem(LS_KEY), p=JSON.parse(localStorage.getItem(LS_BASE)||'null');
+  if(!raw || !p || p.v!==1 || p.sansBase) return null;
+  if(p.vide) return raw;
+  var loc=JSON.parse(raw);
+  function poser(o, k, v){ if(v && v.__absent__) delete o[k]; else o[k]=v; }
+  Object.keys(p.cles||{}).forEach(function(k){ poser(loc, k, p.cles[k]); });
+  if(!loc.DATA) loc.DATA={};
+  Object.keys(p.data||{}).forEach(function(cp){
+    var d=p.data[cp];
+    if(d.absent){ delete loc.DATA[cp]; return; }
+    if(d.entier){ loc.DATA[cp]=d.entier; return; }
+    var c=loc.DATA[cp] || (loc.DATA[cp]={affaires:[]});
+    Object.keys(d.champs||{}).forEach(function(f){ poser(c, f, d.champs[f]); });
+    var arr=c.affaires || (c.affaires=[]);
+    Object.keys(d.aff||{}).forEach(function(k){
+      var i=-1;
+      for(var j=0;j<arr.length;j++){ if(affKey(cp,arr[j])===k){ i=j; break; } }
+      var v=d.aff[k];
+      if(v===null){ if(i>=0) arr.splice(i,1); }
+      else if(i>=0) arr[i]=v;
+      else arr.push(v);
+    });
+  });
+  return JSON.stringify(loc);
+}
 function lsSaveNow(){
   if(LS_ATTENDU){ clearTimeout(LS_ATTENDU); LS_ATTENDU=null; }
   if(!LS_LU) return;                     // jamais ecrire avant d'avoir lu
+  var etatStr=serializeState();
+  // La reference d'abord : si elle ne peut pas s'ecrire, on l'efface plutot
+  // que de laisser une reference plus vieille que la copie.
+  try{ ecrireBasePartielle(etatStr); }
+  catch(e){ try{ localStorage.removeItem(LS_BASE); }catch(e2){} }
   try{
-    localStorage.setItem(LS_KEY, serializeState());
+    localStorage.setItem(LS_KEY, etatStr);
     lsIndicator('\u2713','var(--green)','Enregistr\u00e9 localement \u2014 '+new Date().toLocaleTimeString('fr'));
   }catch(e){
     // Plus de place sur le poste. L'etat courant passe avant tout : la copie
     // de secours est le premier poste sacrifie, puis on reessaie.
     try{
       localStorage.removeItem(LS_SECOURS);
-      localStorage.setItem(LS_KEY, serializeState());
+      localStorage.setItem(LS_KEY, etatStr);
       lsIndicator('\u2713','var(--green)','Enregistr\u00e9 localement \u2014 '+new Date().toLocaleTimeString('fr'));
       return;
     }catch(e2){}
@@ -4223,11 +4373,14 @@ function fusionner(remoteStr){
       SYNC_BASE=remoteStr;
       return true;
     }
+    // Sans reference, l'union imposait tout le poste aux autres : c'est ce
+    // qui a defait le travail de la nuit le 30/09/2026. Le serveur fait foi,
+    // la memoire du poste part en copie de secours.
     sauvegardeSecours('fusion sans référence commune');
-    var uni=JSON.stringify(unionEtats(local, remote));
-    applyState(uni);
-    SYNC_BASE=remoteStr;        // meme regle : la base est celle du serveur
-    showToast('Reprise de la liaison — vos saisies ont été conservées');
+    applyState(remoteStr);
+    SYNC_BASE=remoteStr;
+    SYNC_REV_OK=SYNC_REV; leverAttente();
+    showToast('Liaison reprise — saisies sans référence gardées en copie de secours');
     return true;
   }
 
@@ -4330,9 +4483,12 @@ function sbLoad(){
       leverAttente();
     }
   }
+  var REPRISE_BASE=null;
   if(enAttente){
     REPRISE_EN_COURS=true;
+    try{ REPRISE_BASE=reconstruireBase(); }catch(e){ REPRISE_BASE=null; }
     try{ lsLoad(); SYNC_REV++; }catch(e){ console.warn('reprise attente',e); }
+    if(REPRISE_BASE) SYNC_BASE=REPRISE_BASE;
     showToast('Saisies non partag\u00e9es retrouv\u00e9es sur ce poste : elles sont conserv\u00e9es');
   }
   fetch(SB_URL+'/rest/v1/arma_state?id=eq.'+SB_ROW_ID+'&select=data,updated_at',{headers:sbHeaders()})
@@ -4343,12 +4499,39 @@ function sbLoad(){
         // saisies de la visite precedente attendent, retrouvees sur le poste.
         // La decision tient au marqueur SEUL : un premier affichage remet le
         // compteur a zero avant la lecture, et syncModifie() mentait alors.
-        if(enAttente){
+        if(enAttente && REPRISE_BASE){
           // fusionner() regarde syncModifie() : on garantit qu'il voit la saisie
           if(!syncModifie()) SYNC_REV_OK=SYNC_REV-1;
-          fusionner(rows[0].data);
+          fusionner(rows[0].data);      // a trois voies, sur la reference retrouvee
           SYNC_REV++;
           REPRISE_EN_COURS=false;
+          setTimeout(function(){ try{ if(syncModifie()) sbSaveNow(); }catch(e){} }, 300);
+        }
+        else if(enAttente){
+          // Pas de reference : impossible de distinguer ce que ce poste a
+          // change de ce que les autres ont fait depuis. Le serveur fait foi,
+          // et la memoire du poste est gardee en copie de secours.
+          var localObj=null;
+          try{ localObj=JSON.parse(serializeState()); }catch(e){}
+          try{ sauvegardeSecours('saisies de la derniere visite, sans reference commune'); }catch(e){}
+          applyState(rows[0].data); SYNC_BASE=rows[0].data;
+          SYNC_REV_OK=SYNC_REV; leverAttente();
+          var repris=0;
+          try{ repris=rejouerClicsNonPartis(localObj, JSON.parse(rows[0].data)); }catch(e){ console.warn('rejeu',e); }
+          if(repris){
+            SYNC_REV++; poserAttente();
+            setTimeout(function(){ try{ if(syncModifie()) sbSaveNow(); }catch(e){} }, 300);
+          }
+          REPRISE_EN_COURS=false;
+          setTimeout(function(){
+            try{ uiAlert('Saisies de la derni\u00e8re visite',
+              'Des saisies faites sur ce poste lors de votre derni\u00e8re visite n\u2019\u00e9taient pas '
+              +'parties sur le serveur.\n\n'
+              +(repris ? repris+' changement(s) de statut ont \u00e9t\u00e9 repris et partent sur le serveur.\n\n' : '')
+              +'Le reste n\u2019a pas \u00e9t\u00e9 repris automatiquement, pour ne pas effacer le travail '
+              +'des autres : il est gard\u00e9 en copie de secours sur ce poste. Signalez-le si '
+              +'quelque chose manque.'); }catch(e){}
+          }, 900);
         }
         else {
           applyState(rows[0].data); SYNC_BASE=rows[0].data;
@@ -25193,7 +25376,7 @@ window.addEventListener('beforeunload', function(e){
 // On ne recharge jamais de force, une saisie en cours serait perdue :
 // on propose, la personne choisit son moment.
 // ══════════════════════════════════════════════════════════════
-var APP_VERSION='2026-09-29-9';
+var APP_VERSION='2026-09-30-1';
 var MAJ_VUE=false;
 // La version en ligne, des qu'on la connait. Tant qu'elle vaut null, on ne
 // sait pas, et on n'empeche rien.
