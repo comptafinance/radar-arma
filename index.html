@@ -7418,20 +7418,8 @@ function rAffGrid(){
       var p=phasePctFactu(a,ph);
       c.textContent = p===null ? '\u2014' : p+'%';
       c.style.color = p===null ? 'var(--t3)' : (p===100?'var(--green)':p>0?'var(--orange)':'var(--t3)');
-      // Fond vert quand l'UO de la phase est déjà facturé, fond orange quand
-      // il est acquis et pas encore facturé, donc à comptabiliser.
-      try{
-        var uPh=UO_DE_PHASE[ph];
-        if(uPh && (a.svc||'ARMA')==='ARMA'){
-          if(faCoef(faGetVal(a,uPh))>0){
-            c.style.background='#DCFCE7';
-            c.title=ph+' \u2014 UO d\u00e9j\u00e0 factur\u00e9';
-          } else if(uoAFacturerArma(a,uPh)){
-            c.style.background='#FFEDD5';
-            c.title=ph+' \u2014 acquis, pas encore factur\u00e9 : \u00e0 comptabiliser';
-          }
-        }
-      }catch(e){}
+      // Le fond dit ou en est la facturation de l'UO : voir agFondPhase.
+      try{ agPeindrePhase(c, a, ph); }catch(e){}
       trP.appendChild(c);
     });
     tb.appendChild(trP);
@@ -8140,14 +8128,7 @@ function rAffGridRefreshPct(a,ph,colIdx){
         var p=phasePctFactu(a,ph);
         cell.textContent = p===null?'\u2014':p+'%';
         cell.style.color = p===null?'var(--t3)':(p===100?'var(--green)':p>0?'var(--orange)':'var(--t3)');
-        try{
-          var uPh=UO_DE_PHASE[ph];
-          cell.style.background='';
-          if(uPh && (a.svc||'ARMA')==='ARMA'){
-            if(faCoef(faGetVal(a,uPh))>0) cell.style.background='#DCFCE7';
-            else if(uoAFacturerArma(a,uPh)) cell.style.background='#FFEDD5';
-          }
-        }catch(e){}
+        try{ cell.style.background='var(--b)'; cell.title=''; agPeindrePhase(cell, a, ph); }catch(e){}
       }
       return;
     }
@@ -9243,6 +9224,43 @@ function uoAFacturerArma(a, uo){
   if(v==='NA' || faCoef(v)>0) return false;
   var p=null; try{ p=uoPct(a, FA_KEY[uo]); }catch(e){ return false; }
   return p!==null && Math.round(p*100)>=100;
+}
+// FOND DES POURCENTAGES DE LA GRILLE ARMA
+// Proposition d'Alexis du 30/09/2026 : quatre fonds, et seulement eux.
+//   vert        UO facture
+//   orange      prochain UO a facturer, dans l'ordre Primo, Etude,
+//               Coordination, Travaux, Reception
+//   gris clair  les autres UO
+//   gris fonce  UO en NA dans la facturation
+// La ligne Etude porte aussi l'UO Coordination, qui n'a pas de phase a elle.
+// Avant, l'orange marquait tout UO a 100 % non facture, et un NA restait gris
+// clair : plusieurs oranges par affaire, et rien pour reperer la suite.
+var UO_DE_LIGNE={'Primo':['PRIMO'], 'Etude':['ETD','CRD'], 'Travaux':['TRX'], 'R\u00e9ception':['RCP']};
+var FOND_UO={facture:'#DCFCE7', prochain:'#FFEDD5', autre:'var(--b)', na:'#94A3B8'};
+function agFondPhase(a, ph){
+  var l=UO_DE_LIGNE[ph];
+  if(!l || (a.svc||'ARMA')!=='ARMA') return null;
+  var vals=l.map(function(u){ return faGetVal(a,u); });
+  var fact=vals.map(function(v){ return faCoef(v)>0; });
+  var na=vals.map(function(v){ return v==='NA'; });
+  var suite=prochainUoArma(a);
+  if(suite && l.indexOf(suite)>=0){
+    var p=null; try{ p=uoPct(a, FA_KEY[suite]); }catch(e){}
+    var plein=(p!==null && Math.round(p*100)>=100);
+    return {bg:FOND_UO.prochain, t:ph+' \u2014 prochain UO \u00e0 facturer ('+FA_LABEL[suite]+')'
+      +(plein?' : \u00e0 100 %, \u00e0 comptabiliser':'')};
+  }
+  if(na.every(Boolean)) return {bg:FOND_UO.na, fg:'#FFFFFF', t:ph+' \u2014 UO sans objet (NA)'};
+  if(fact.some(Boolean) && fact.every(function(f,i){ return f||na[i]; }))
+    return {bg:FOND_UO.facture, t:ph+' \u2014 UO factur\u00e9'};
+  return {bg:FOND_UO.autre, t:''};
+}
+function agPeindrePhase(c, a, ph){
+  var f=agFondPhase(a, ph);
+  if(!f) return;
+  c.style.background=f.bg;
+  if(f.fg) c.style.color=f.fg;
+  c.title=f.t;
 }
 // Premier UO ni facturé ni sans objet, dans l'ordre de production.
 function prochainUoArma(a){
@@ -25753,7 +25771,7 @@ window.addEventListener('beforeunload', function(e){
 // On ne recharge jamais de force, une saisie en cours serait perdue :
 // on propose, la personne choisit son moment.
 // ══════════════════════════════════════════════════════════════
-var APP_VERSION='2026-09-30-2';
+var APP_VERSION='2026-09-30-3';
 var MAJ_VUE=false;
 // La version en ligne, des qu'on la connait. Tant qu'elle vaut null, on ne
 // sait pas, et on n'empeche rien.
