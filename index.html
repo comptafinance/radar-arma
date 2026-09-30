@@ -2470,6 +2470,12 @@ function rBoGrid(){
     });
     tdA.appendChild(del);
     row.appendChild(tdA);
+    // Tache facturee (CRD pose dans la facturation) : la ligne passe en vert.
+    // Proposition d'Alexis du 30/09/2026. Les cases d'alerte gardent leur rouge.
+    if(t.crd){
+      [].slice.call(row.children).forEach(function(td){ if(!td.style.background) td.style.background=FOND_UO.facture; });
+      row.title='T\u00e2che factur\u00e9e (CRD '+t.crd+')';
+    }
     tb.appendChild(row);
   });
   tbl.appendChild(tb);
@@ -9350,12 +9356,13 @@ function prochainUoArma(a){
 // phase dont aucune tâche à losange ne s'applique — sinon elle tomberait à zéro
 // alors qu'elle est bien avancée.
 // Taches a losange qui comptent pour un autre UO que celui de leur phase.
-// Proposition d'Alexis du 30/09/2026, arbitree par Steve : l'UO Travaux est
-// acquis quand les travaux sont faits (programmation, CMD, DMR, ICP/PPS). Les
-// receptions PGOC et AAT et la facturation client, qui suivent le chantier,
-// comptent pour l'UO Reception. Avant, une affaire aux travaux termines
-// restait a 57 % tant que ces trois pieces n'etaient pas cochees.
-var UO_TACHE_AUTRE_PHASE={'PGOC réceptionné':'Réception','AAT réceptionné':'Réception','Facturation client':'Réception'};
+// VIDE depuis le 30/09/2026 a 14h : chaque tache a losange compte pour la
+// phase ou elle est affichee. Le matin, PGOC receptionne, AAT receptionne et
+// Facturation client avaient ete rattaches a la Reception ; une affaire
+// affichait alors Travaux a 100 % avec des taches en gras en NOK sous
+// Travaux. Le reperage de l'UO a facturer passe desormais par le fond orange
+// (prochain UO), qui n'a pas besoin de ce rattachement. Decision de Steve.
+var UO_TACHE_AUTRE_PHASE={};
 function phaseFactuDe(t){ return UO_TACHE_AUTRE_PHASE[t.n] || t.phase; }
 function phasePctFactu(a, ph){
   if((a.svc||'ARMA')!=='ARMA') return phasePct(a, ph);
@@ -25856,7 +25863,7 @@ window.addEventListener('beforeunload', function(e){
 // On ne recharge jamais de force, une saisie en cours serait perdue :
 // on propose, la personne choisit son moment.
 // ══════════════════════════════════════════════════════════════
-var APP_VERSION='2026-09-30-5';
+var APP_VERSION='2026-09-30-6';
 var MAJ_VUE=false;
 // La version en ligne, des qu'on la connait. Tant qu'elle vaut null, on ne
 // sait pas, et on n'empeche rien.
