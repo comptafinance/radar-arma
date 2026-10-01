@@ -2062,7 +2062,7 @@ function uiAlert(title, message){
 // PHASE COURANTE D'UNE AFFAIRE ET SA COULEUR
 // Travaux  = Primo + Étude + Coordination à 100 %
 // Étude    = Primo à 100 %
-// Réception = phase Réception entamée
+// Réception = phase Réception entamée, ou UO Travaux à 100 % (01/10/2026)
 // ══════════════════════════════════════════════════════════════
 var AG_PHASE_COLORS = {
   'Primo':     {fg:'#854D0E', bg:'#FEF08A', l:'Primo'},
@@ -7484,6 +7484,7 @@ function rAffGrid(){
             c.textContent=agStatusTxt(t.s);
             c.style.fontStyle='normal'; c.style.opacity='1';
             rAffGridRefreshPct(a,ph,affs.indexOf(a));
+            try{ agMajPhaseAffaire(a, affs.indexOf(a)); }catch(e){}
             try{ refreshAllBadges(); }catch(e){}
           });
         }
@@ -8122,6 +8123,7 @@ function agDeplacerAffaire(src, cible, apres){
 }
 function agRendreGlissable(th, a, ombre){
   th.draggable=true;
+  th.dataset.ombre=ombre;
   th.style.cursor='grab';
   th.title+='\nGlisser pour changer de colonne';
   th.addEventListener('dragstart',function(ev){
@@ -8136,10 +8138,10 @@ function agRendreGlissable(th, a, ombre){
     th.dataset.apres=apres?'1':'';
     th.style.boxShadow=(apres?'inset -4px 0 0 ':'inset 4px 0 0 ')+'var(--brand)';
   });
-  th.addEventListener('dragleave',function(){ th.style.boxShadow=ombre; });
+  th.addEventListener('dragleave',function(){ th.style.boxShadow=th.dataset.ombre||ombre; });
   th.addEventListener('drop',function(ev){
     ev.preventDefault();
-    th.style.boxShadow=ombre;
+    th.style.boxShadow=th.dataset.ombre||ombre;
     var s=AG_GLISSE; AG_GLISSE=null;
     if(!s || s===a) return;
     agDeplacerAffaire(s, a, th.dataset.apres==='1');
@@ -8163,6 +8165,38 @@ function rAffGridRefreshPct(a,ph,colIdx){
       return;
     }
   }
+}
+// Apres un clic, la phase d'une affaire peut changer : une seule tache suffit
+// (UO Travaux a 100 % = Reception). Le clic ne rafraichissait que les %, et la
+// couleur de la colonne, l'anciennete de phase, la legende et le filtre par
+// phase restaient faux jusqu'au prochain changement de vue. Vu en test
+// d'usage le 01/10/2026.
+function agMajPhaseAffaire(a, colIdx){
+  var wrap=document.getElementById('ag-wrap'); if(!wrap) return;
+  var ph=agPhaseOf(a), col=AG_PHASE_COLORS[ph]||AG_PHASE_COLORS['Primo'];
+  var th=wrap.querySelectorAll('thead th.ag-code')[colIdx];
+  if(th){
+    var ombre='inset 0 -3px 0 '+col.fg;
+    th.style.background=col.bg; th.style.color=col.fg; th.style.boxShadow=ombre;
+    th.dataset.ombre=ombre;
+  }
+  var rows=wrap.querySelectorAll('tbody tr');
+  for(var i=0;i<rows.length;i++){
+    var l=rows[i].querySelector('td.ag-lbl');
+    if(!l || l.textContent.indexOf('Anciennet')<0) continue;
+    var c=rows[i].children[colIdx+1];
+    if(c){
+      var n=ancPhase(a);
+      var ABR={'Primo':'PRI','Etude':'ETD','Travaux':'TRX','R\u00e9ception':'RCP','Cl\u00f4tur\u00e9e':'CLO'};
+      var p2=(a.cycle&&a.cycle.phase)||'Primo';
+      c.textContent = n===null?'\u2014':((ABR[p2]||p2)+'='+n+'j');
+      c.style.color = n===null?'var(--b2)':(n>120?'var(--red)':n>60?'var(--amber)':'#3730A3');
+      c.title=p2+(n!==null?' depuis '+n+' jours':'');
+    }
+    break;
+  }
+  try{ agRenderLegend(); }catch(e){}
+  try{ rPhaseBar(); }catch(e){}
 }
 
 
@@ -20932,6 +20966,45 @@ function journalInstantane(){
 }
 var JOURNAL_REV_PT=-1;
 function journalReset(){ JOURNAL_REF=journalInstantane(); JOURNAL_REV_PT=SYNC_REV; }
+// Le circuit de facturation, lu en clair dans le journal. Avant, une demande
+// de facture s'y affichait en code (« fdem TRX {"d":...} »). Test d'usage du
+// 01/10/2026.
+function journalUo(cp, k){
+  var s=''; try{ s=svcOf(cp); }catch(e){}
+  var l=k; try{ l=circLib(cp,k)||k; }catch(e){}
+  return s==='MECA' ? l : 'UO '+l;
+}
+function journalMois(v){
+  if(!v) return '';
+  if(v===PREV_NC) return 'non compt\u00e9';
+  try{ var i=moisIndex(v); if(i!==null && i!==undefined && !isNaN(i)) return moisLabel(i); }catch(e){}
+  return String(v);
+}
+function journalSab(v){ return v===1||v==='1' ? 'pos\u00e9' : v===0||v==='0' ? 'retir\u00e9' : ''; }
+function journalDemande(sortie, cp, no, k, x, y){
+  var uo=journalUo(cp,k);
+  if(!x && y){ sortie.push({c:cp, a:no, o:'Facture demand\u00e9e, '+uo, w:'facturation de '+journalMois(y.m)}); return; }
+  if(x && !y){ sortie.push({c:cp, a:no, o:'Demande de facture annul\u00e9e, '+uo, v:'facturation de '+journalMois(x.m)}); return; }
+  if(!x || !y) return;
+  if(!x.v && y.v){ sortie.push({c:cp, a:no, o:'Facture valid\u00e9e, '+uo, w:'retour re\u00e7u le '+dFR(y.v)}); return; }
+  if(x.v && !y.v){ sortie.push({c:cp, a:no, o:'Facture remise en attente, '+uo}); return; }
+  if(x.m!==y.m) sortie.push({c:cp, a:no, o:'Mois de la facture, '+uo, v:journalMois(x.m), w:journalMois(y.m)});
+}
+// Les lignes ecrites avant ce correctif, traduites a l'affichage
+function journalLisible(e){
+  var m=String(e.o||'').match(/^(sab|prev|fdem) (\S+)$/);
+  if(!m) return e;
+  var k=m[2], r={};
+  if(m[1]==='sab'){ r.o='Sablier, '+journalUo(e.c,k); r.v=journalSab(e.v); r.w=journalSab(e.w); }
+  else if(m[1]==='prev'){ r.o='Mois de facturation pr\u00e9vu, '+journalUo(e.c,k); r.v=journalMois(e.v)||'auto'; r.w=journalMois(e.w)||'auto'; }
+  else {
+    var mm=function(x){ var q=String(x||'').match(/"m":"(\d{4}-\d{2})"/); return q?journalMois(q[1]):''; };
+    if(!e.v && e.w){ r.o='Facture demand\u00e9e, '+journalUo(e.c,k); r.v=''; r.w='facturation de '+mm(e.w); }
+    else if(e.v && !e.w){ r.o='Demande de facture annul\u00e9e, '+journalUo(e.c,k); r.v='facturation de '+mm(e.v); r.w=''; }
+    else { r.o='Facture, '+journalUo(e.c,k); r.v=''; r.w=''; }
+  }
+  return Object.assign({}, e, r);
+}
 function journalAffaire(nomAff, cp, x, y, sortie){
   var no=(y||x).no||(y||x).code||'';
   // Les taches, par nom
@@ -20952,6 +21025,19 @@ function journalAffaire(nomAff, cp, x, y, sortie){
       Object.keys(sc).forEach(function(s){
         var a1=(vx||{})[s], a2=(vy||{})[s];
         if(memeContenu(a1,a2)) return;
+        if(k==='fdem'){ journalDemande(sortie, cp, no, s, a1, a2); return; }
+        if(k==='sab'){ sortie.push({c:cp, a:no, o:'Sablier, '+journalUo(cp,s), v:journalSab(a1), w:journalSab(a2)}); return; }
+        if(k==='prev'){ sortie.push({c:cp, a:no, o:'Mois de facturation pr\u00e9vu, '+journalUo(cp,s), v:journalMois(a1)||'auto', w:journalMois(a2)||'auto'}); return; }
+        if((k==='irve' || k==='meca') && s==='fa'){
+          var fz={}; Object.keys(a1||{}).concat(Object.keys(a2||{})).forEach(function(z){ fz[z]=1; });
+          Object.keys(fz).forEach(function(z){
+            var b1=(a1||{})[z], b2=(a2||{})[z];
+            if(memeContenu(b1,b2)) return;
+            var fv=function(v){ return k==='meca' ? (v?'factur\u00e9':'') : journalCourt(v); };
+            sortie.push({c:cp, a:no, o:'Facturation '+journalUo(cp,z), v:fv(b1), w:fv(b2)});
+          });
+          return;
+        }
         var lib = k==='facture_uo' ? 'Facturation UO '+s
                 : k==='dates' ? 'Date '+(JOURNAL_DATES[s]||s)
                 : k==='fin' ? 'Budget '+s.replace('budget_','')
@@ -20965,13 +21051,19 @@ function journalAffaire(nomAff, cp, x, y, sortie){
           });
           return;
         }
-        sortie.push({c:cp, a:no, o:lib, v:journalCourt(a1), w:journalCourt(a2)});
+        // Rien de visible (vide contre absent) : pas de ligne. Un texte coupe
+        // n'est jamais compare, il peut cacher une vraie difference.
+        var c1=journalCourt(a1), c2=journalCourt(a2);
+        if(c1===c2 && c1.slice(-1)!=='\u2026') return;
+        sortie.push({c:cp, a:no, o:lib, v:c1, w:c2});
       });
       return;
     }
     var lib2 = k==='meteo' ? 'M\u00e9t\u00e9o' : k==='bud_note' ? 'Note budget' : 'Champ '+k;
     var f=function(v){ return k==='meteo' ? ({1:'\ud83d\udfe2',2:'\ud83d\udfe1',3:'\ud83d\udd34'}[v]||journalCourt(v)) : journalCourt(v); };
-    sortie.push({c:cp, a:no, o:lib2, v:f(vx), w:f(vy)});
+    var d1=String(f(vx)), d2=String(f(vy));
+    if(d1===d2 && d1.slice(-1)!=='\u2026') return;    // rien de visible
+    sortie.push({c:cp, a:no, o:lib2, v:d1, w:d2});
   });
 }
 function journalListe(nom, lx, ly, sortie){
@@ -20984,6 +21076,14 @@ function journalListe(nom, lx, ly, sortie){
       if(!a){ sortie.push({a:b.aff, o:'T\u00e2che BO ajout\u00e9e', w:b.tache}); return; }
       Object.keys(Object.assign({},a,b)).forEach(function(f){
         if(f==='id' || memeContenu(a[f],b[f])) return;
+        if(f==='fdem'){
+          var x1=a.fdem, y1=b.fdem;
+          var lb=(!x1&&y1)?'facture demand\u00e9e':(x1&&!y1)?'demande annul\u00e9e'
+                :(x1&&y1&&!x1.v&&y1.v)?'facture valid\u00e9e':(x1&&y1&&x1.v&&!y1.v)?'facture remise en attente':null;
+          if(lb) sortie.push({a:b.aff, o:'T\u00e2che BO '+b.tache+' : '+lb, w:(y1&&y1.m&&!x1)?('facturation de '+journalMois(y1.m)):''});
+          return;
+        }
+        if(f==='sab'){ sortie.push({a:b.aff, o:'T\u00e2che BO '+b.tache+' : sablier', v:journalSab((a.sab||{}).BO), w:journalSab((b.sab||{}).BO)}); return; }
         var fv=function(v){ return f==='fait' ? (v?'oui':'non') : journalCourt(v); };
         sortie.push({a:b.aff, o:'T\u00e2che BO '+b.tache+' : '+(f==='fait'?'faite':f), v:fv(a[f]), w:fv(b[f])});
       });
@@ -21152,7 +21252,8 @@ function rJournal(){
       th.appendChild(c);
     });
     t.appendChild(th);
-    l.slice(0,500).forEach(function(e){
+    l.slice(0,500).forEach(function(e0){
+      var e=journalLisible(e0);
       var d=new Date(e.t||0), tr=document.createElement('tr');
       var quand=d.toLocaleDateString('fr',{day:'2-digit',month:'2-digit'})+' '
         +d.toLocaleTimeString('fr',{hour:'2-digit',minute:'2-digit'});
@@ -25868,7 +25969,7 @@ window.addEventListener('beforeunload', function(e){
 // On ne recharge jamais de force, une saisie en cours serait perdue :
 // on propose, la personne choisit son moment.
 // ══════════════════════════════════════════════════════════════
-var APP_VERSION='2026-10-01-1';
+var APP_VERSION='2026-10-01-2';
 var MAJ_VUE=false;
 // La version en ligne, des qu'on la connait. Tant qu'elle vaut null, on ne
 // sait pas, et on n'empeche rien.
