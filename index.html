@@ -2112,6 +2112,11 @@ function agPhaseOf(a){
   var pC=0;
   try{ pC=uoPct(a,'Coordination')*100; }catch(e){}
   if(pR!==null && pR>0) return 'Réception';
+  // UO Travaux a 100 % : l'affaire compte en Reception, meme si aucune tache
+  // de Reception n'est encore faite. Proposition d'Alexis du 30/09/2026.
+  // L'UO se lit comme dans la grille, sur les taches a losange.
+  var uT=null; try{ uT=uoPct(a,'Travaux'); }catch(e){}
+  if(uT!==null && Math.round(uT*100)>=100) return 'Réception';
   if(pP===100 && pE===100 && pC===100) return 'Travaux';
   if(pT!==null && pT>0) return 'Travaux';
   if(pP===100) return 'Etude';
@@ -25863,7 +25868,7 @@ window.addEventListener('beforeunload', function(e){
 // On ne recharge jamais de force, une saisie en cours serait perdue :
 // on propose, la personne choisit son moment.
 // ══════════════════════════════════════════════════════════════
-var APP_VERSION='2026-09-30-6';
+var APP_VERSION='2026-10-01-1';
 var MAJ_VUE=false;
 // La version en ligne, des qu'on la connait. Tant qu'elle vaut null, on ne
 // sait pas, et on n'empeche rien.
