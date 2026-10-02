@@ -84,6 +84,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .ag-band-plan td{background:#DBEAFE!important;color:#1E40AF!important}
 .ag-band-bud  td{background:#FEF3C7!important;color:#92400E!important}
 .ag-band-qual td{background:#DCFCE7!important;color:#166534!important}
+.ag-band-delai td{background:#E0E7FF!important;color:#3730A3!important}
 .ag-band-rev  td{background:#E9D5FF!important;color:#6B21A8!important}
 .ag-band-syno td{background:#D1FAE5!important;color:#065F46!important}
 .ag-band-tps td{background:#E0E7FF!important;color:#3730A3!important}
@@ -1903,8 +1904,10 @@ var AG_MODULES = [
   {id:'syno',     label:'\ud83d\udcd0 Synoptique',            cls:'ag-band-syno'},
   {id:'revue',    label:'\ud83d\uddd3\ufe0f Revue / Auto-revue', cls:'ag-band-rev'},
   {id:'planning', label:'\ud83d\udcc5 Planning',              cls:'ag-band-plan'},
-  {id:'qualite',  label:'\u2705 Contr\u00f4le qualit\u00e9',   cls:'ag-band-qual'},
-  {id:'budget',   label:'\ud83d\udcb0 Budget',                cls:'ag-band-bud'}
+  {id:'budget',   label:'\ud83d\udcb0 Budget',                cls:'ag-band-bud'},
+  // A part, pour le referent (proposition d'Alexis du 02/10/2026)
+  {id:'delais',   label:'\u23f1 Suivi des d\u00e9lais',       cls:'ag-band-delai', aPart:true},
+  {id:'qualite',  label:'\u2705 Contr\u00f4le qualit\u00e9',   cls:'ag-band-qual',  aPart:true}
 ];
 
 
@@ -4134,6 +4137,7 @@ function fusionAffaire(base, loc, dist){
   function fondre(b, l, r){
     if(eq(r,b)) return {v:l, pris:0, conf:0};
     if(eq(l,b)) return {v:r, pris:1, conf:0};
+    if(eq(l,r)) return {v:l, pris:0, conf:0};      // meme changement des deux cotes
     if(estObjet(l) && estObjet(r)){
       var out={}, p=0, c=0, cles={};
       if(estObjet(b)) Object.keys(b).forEach(function(k){ cles[k]=1; });
@@ -4583,6 +4587,8 @@ function sbLoad(){
         }
         SYNC_PRET=true;
         buildTabs(); renderAll();
+        // Valorisation quotidienne : point de depart, ou saisies d'un poste ancien
+        try{ if(valoReleve(true).n) sbSave(); }catch(e){ console.warn('valo',e); }
         var dm=document.getElementById('dark-toggle');
         if(dm) dm.textContent=DARK_MODE?'\u2600\ufe0f':'\ud83c\udf19';
         try{ rSvcBar(); rCpSelBar(); }catch(e){}
@@ -4656,6 +4662,7 @@ function majFactu(){
   if(FACTU_REFRESH) clearTimeout(FACTU_REFRESH);
   FACTU_REFRESH=setTimeout(function(){
     try{ rSynthFactu(); }catch(e){ console.warn('majFactu rSynthFactu',e); }
+    try{ rValoJour(); }catch(e){ console.warn('majFactu rValoJour',e); }
     try{ rPrevFactu();  }catch(e){ console.warn('majFactu rPrevFactu',e); }
     try{ rPrevCharge(); }catch(e){}
   }, 250);
@@ -4687,6 +4694,7 @@ function sbSave(){
 
 // Écriture : on relit d'abord le serveur pour fusionner, puis on écrit
 function sbSaveNow(){
+  try{ valoReleve(true); }catch(e){ console.warn('valo',e); }
   try{ journalPoint(); }catch(e){ console.warn('journal',e); }
   if(!SYNC_ENABLED){ lsSaveNow(); SYNC_REV_OK=SYNC_REV; return Promise.resolve(true); }
   try{ lsSaveNow(); }catch(e){}                  // le local d'abord, toujours
@@ -5106,42 +5114,71 @@ function planDelais(a){
   res.CRD=res.ETD;
   return res;
 }
+// Delai d'un UO en jours : vert s'il est realise, orange s'il est en cours
+// (proposition d'Alexis du 02/10/2026). L'infobulle donne la cible et l'ecart.
 function delaiPeindre(c, a, k){
-  var r=planDelais(a)[k]||{}, lib=DELAI_LIB[k], cible=r.cible;
-  c.style.fontWeight='800'; c.style.fontSize='8px';
+  var r=planDelais(a)[k]||{}, cible=r.cible;
+  var lib=(k==='ETD') ? '\u00c9tude / Coordination' : DELAI_LIB[k];
+  c.style.fontWeight='800'; c.style.fontSize='8.5px';
   if(r.etat==='na'){ c.textContent='NA'; c.style.color='var(--b2)'; c.title=lib+' \u2014 UO sans objet'; return; }
   if(r.etat==='fait'){
+    c.style.color='var(--green)';
     if(r.duree!==null){
       c.textContent=r.duree+'j';
-      c.style.color = (!cible || r.duree<=cible) ? 'var(--green)' : 'var(--red)';
-      c.title=lib+' termin\u00e9 le '+dFR(r.fin)+' en '+r.duree+' jours (cible '+cible+' jours)';
-    } else if(r.fin){
-      c.textContent='\u2713 '+dFR(r.fin).slice(0,5); c.style.color='var(--t3)';
-      c.title=lib+' termin\u00e9 le '+dFR(r.fin)+'. Dur\u00e9e inconnue : '
-        +(k==='PRIMO' ? 'renseigner la date d\u2019affectation.' : 'le d\u00e9but de l\u2019UO n\u2019est pas dat\u00e9.');
+      c.title=lib+' r\u00e9alis\u00e9 en '+r.duree+' jours, termin\u00e9 le '+dFR(r.fin)
+        +(cible ? (r.duree<=cible ? ' (cible de '+cible+' jours tenue)'
+                                  : ' (cible de '+cible+' jours d\u00e9pass\u00e9e de '+(r.duree-cible)+' jours)') : '');
     } else {
-      c.textContent='\u2713'; c.style.color='var(--t3)';
-      c.title=lib+' termin\u00e9 avant le '+dFR(DELAI_SUIVI_DEPUIS)+', d\u00e9but du suivi : dur\u00e9e inconnue.';
+      c.textContent='\u2713';
+      c.title=lib+' r\u00e9alis\u00e9'+(r.fin ? ' le '+dFR(r.fin) : ' avant le '+dFR(DELAI_SUIVI_DEPUIS))
+        +'. Dur\u00e9e inconnue : '+(k==='PRIMO' ? 'la date d\u2019affectation manque.'
+          : (r.fin ? 'le d\u00e9but de l\u2019UO n\u2019est pas dat\u00e9.' : 'le suivi a commenc\u00e9 le '+dFR(DELAI_SUIVI_DEPUIS)+'.'));
     }
     return;
   }
   if(r.etat==='encours'){
+    c.style.color='#C2410C';
     if(r.ecoule!==null){
       var reste=cible-r.ecoule;
-      c.textContent='J+'+r.ecoule;
-      c.style.color = (cible && reste<0) ? 'var(--red)' : '#3730A3';
-      c.title=lib+' en cours depuis le '+dFR(r.debut)+' : '+r.ecoule+' jours sur '+cible+' pr\u00e9vus.\n'
-        +(cible ? (reste>=0 ? 'Reste '+reste+' jours.' : 'En retard de '+(-reste)+' jours.') : '');
+      c.textContent=r.ecoule+'j';
+      c.title=lib+' en cours depuis le '+dFR(r.debut)+' : '+r.ecoule+' jours'
+        +(cible ? (reste>=0 ? ', reste '+reste+' jours sur '+cible+'.'
+                            : ', '+(-reste)+' jours au-del\u00e0 de la cible de '+cible+'.') : '.');
     } else {
-      c.textContent='en cours'; c.style.color='var(--t3)'; c.style.fontWeight='600';
+      c.textContent='en cours'; c.style.fontWeight='700';
       c.title=lib+' en cours, date de d\u00e9but inconnue. '
-        +(k==='PRIMO' ? 'Renseigner la date d\u2019affectation pour lancer le compte \u00e0 rebours.'
-                      : 'L\u2019UO pr\u00e9c\u00e9dent a \u00e9t\u00e9 termin\u00e9 avant le suivi.');
+        +(k==='PRIMO' ? 'Renseigner la date d\u2019affectation, dans le module Planning.'
+                      : 'L\u2019UO pr\u00e9c\u00e9dent a \u00e9t\u00e9 termin\u00e9 avant le d\u00e9but du suivi.');
     }
     return;
   }
   c.textContent='\u2014'; c.style.color='var(--b2)'; c.style.fontWeight='600';
   c.title=lib+' pas commenc\u00e9.'+(r.finPrevue ? ' Fin pr\u00e9vue vers le '+dFR(r.finPrevue)+'.' : '');
+}
+// Module Suivi des delais : une ligne par UO
+function agRowsDelais(affs){
+  var LIB={PRIMO:'Primo', ETD:'\u00c9tude / Coordination', TRX:'Travaux', RCP:'R\u00e9ception'};
+  return DELAI_UOS.map(function(k){
+    var tr=agMakeRow(LIB[k], affs, function(c,a){
+      try{ touchCycle(a); }catch(e){}
+      delaiPeindre(c, a, k);
+    },'ag-date');
+    tr.dataset.delai=k;
+    return tr;
+  });
+}
+// Ligne d'espace avant les modules du referent
+function agSeparateur(affs, libelle){
+  var tr=document.createElement('tr');
+  var td=document.createElement('td'); td.className='ag-lbl';
+  td.style.cssText+=';padding-top:14px;font-size:8.5px;font-weight:900;letter-spacing:.06em;'
+    +'text-transform:uppercase;color:var(--t3);background:var(--bg)';
+  td.textContent=libelle; tr.appendChild(td);
+  affs.forEach(function(){
+    var c=document.createElement('td'); c.style.cssText='background:var(--bg);border:none;height:24px';
+    tr.appendChild(c);
+  });
+  return tr;
 }
 function ancPhase(a){
   var c=a.cycle||{};
@@ -7349,6 +7386,15 @@ function agModFill(mod,a){
     toutes.forEach(function(b){ if(f[b.k]>0) c++; });
     return c===0?'empty':(c===toutes.length?'full':'part');
   }
+  if(mod==='delais'){
+    var pl=null; try{ pl=planDelais(a); }catch(e){}
+    if(!pl) return 'empty';
+    var ks=DELAI_UOS.filter(function(k){ return pl[k] && pl[k].etat!=='na'; });
+    if(!ks.length) return 'empty';
+    var faits=ks.filter(function(k){ return pl[k].etat==='fait'; }).length;
+    if(faits===ks.length) return 'full';
+    return (faits || ks.some(function(k){ return pl[k].etat==='encours'; })) ? 'part' : 'empty';
+  }
   if(mod==='qualite'){
     var qq=a.qualite||{}, nq=QUALITE_ITEMS.filter(function(it){ return qq[it.k]; }).length;
     return nq===0?'empty':(nq>=QUALITE_ITEMS.length?'full':'part');
@@ -7377,12 +7423,23 @@ var QUALITE_NIV={
   rep:{l:'\u00c0 reprendre',    s:'\u26a0', fg:'#B45309', bg:'#FEF3C7'},
   nc: {l:'Non conforme',          s:'\u2717', fg:'#B91C1C', bg:'#FEE2E2'}
 };
+// Le controle peut se faire quand la tache associee est OK : toutes celles
+// qui ne sont pas en N/A, et au moins une. Le DIE, quand le budget alloue et
+// le realise sont saisis. Proposition d'Alexis du 02/10/2026.
+function qualitePrete(a, it){
+  if(it.k==='DIE'){ var m=dieMontants(a); return !!(m.die && m.reel); }
+  var ts=it.t.map(function(nom){ return (a.tasks||[]).filter(function(x){ return x.n===nom; })[0]; })
+             .filter(Boolean);
+  var utiles=ts.filter(function(t){ return t.s!=='na'; });
+  return utiles.length>0 && utiles.every(function(t){ return t.s==='ok'; });
+}
 function qualitePeindre(c, a, it){
   var q=((a.qualite||{})[it.k])||null, n=q&&QUALITE_NIV[q.n];
-  c.textContent=n?n.s:'\u00b7';
+  var prete=!n && qualitePrete(a, it);
+  c.textContent=n?n.s:(prete?'\u25cf':'\u00b7');
   c.style.fontWeight='800';
-  c.style.color=n?n.fg:'var(--b2)';
-  c.style.background=n?n.bg:'';
+  c.style.color=n?n.fg:(prete?'#C2410C':'var(--b2)');
+  c.style.background=n?n.bg:(prete?'#FFEDD5':'');
   var etat=it.t.map(function(nom){
     var t=(a.tasks||[]).filter(function(x){ return x.n===nom; })[0];
     return t ? (nom+' : '+(JOURNAL_STATUTS[t.s]||t.s)) : '';
@@ -7391,7 +7448,7 @@ function qualitePeindre(c, a, it){
     var m=dieMontants(a);
     etat='DIE '+(m.die?fmtEur(m.die):'non saisi')+', r\u00e9alis\u00e9 '+(m.reel?fmtEur(m.reel):'non saisi');
   }
-  c.title=it.l+' \u2014 '+(n?n.l:'non not\u00e9')+(q&&q.c?'\n'+q.c:'')
+  c.title=it.l+' \u2014 '+(n?n.l:(prete?'contr\u00f4le \u00e0 r\u00e9aliser, la t\u00e2che est OK':'non not\u00e9'))+(q&&q.c?'\n'+q.c:'')
     +(q&&q.u?'\nNot\u00e9 par '+q.u+' le '+dFR(q.d):'')+(etat?'\n'+etat:'')
     +(estReferent()?'\nCliquer pour noter':'');
 }
@@ -7435,11 +7492,13 @@ function qualiteNoter(c, a, it, affs){
 }
 function agRowsQualite(affs){
   return QUALITE_ITEMS.map(function(it){
-    return agMakeRow(it.l, affs, function(c,a){
+    var tr=agMakeRow(it.l, affs, function(c,a){
       qualitePeindre(c, a, it);
       c.style.cursor='pointer';
       c.addEventListener('click',function(){ qualiteNoter(c, a, it, affs); });
     },'ag-date');
+    tr.dataset.qualite=it.k;
+    return tr;
   });
 }
 function agFillMark(state){
@@ -7614,7 +7673,15 @@ function rAffGrid(){
   // ══════════════════════════════════════════════════════
   // MODULES REPLIABLES (en tête, fermés par défaut)
   // ══════════════════════════════════════════════════════
+  // Les modules du referent viennent a part, apres un petit espace. Ils ne
+  // valent que pour ARMA (proposition d'Alexis du 02/10/2026).
+  var avecArma=affs.some(function(a){ try{ return svcOf(affCp(a))==='ARMA'; }catch(e){ return false; } });
+  var sepPose=false;
   AG_MODULES.forEach(function(mod){
+    if(mod.aPart){
+      if(!avecArma) return;
+      if(!sepPose){ sepPose=true; tb.appendChild(agSeparateur(affs, 'Suivi du r\u00e9f\u00e9rent')); }
+    }
     var open=agModOpen(mod.id);
     var rows=[];   // lignes du corps du module
 
@@ -7646,6 +7713,7 @@ function rAffGrid(){
     else if(mod.id==='revue')    rows=agRowsRevue(affs);
     else if(mod.id==='planning') rows=agRowsPlanning(affs);
     else if(mod.id==='qualite')  rows=agRowsQualite(affs);
+    else if(mod.id==='delais')   rows=agRowsDelais(affs);
     else if(mod.id==='budget')   rows=agRowsBudget(affs);
     rows.forEach(function(r){ r.style.display=open?'':'none'; tb.appendChild(r); });
 
@@ -8010,16 +8078,6 @@ function agRowsPlanning(affs){
       ? 'Aucune date exploitable sur ce dossier'
       : ('Derni\u00e8re action le '+dFR(d)+', il y a '+n+' jours');
   },'ag-date'));
-  // Delais de realisation de chaque UO (proposition d'Alexis du 01/10/2026)
-  DELAI_UOS.forEach(function(k){
-    var tr=agMakeRow('\u23f1 D\u00e9lai '+DELAI_LIB[k],affs,function(c,a){
-      try{ touchCycle(a); }catch(e){}
-      delaiPeindre(c, a, k);
-    },'ag-date');
-    tr.dataset.delai=k;
-    tr.style.background='#F5F3FF';
-    rows.push(tr);
-  });
   // 4. Date d'affectation
   rows.push(agMakeRow("\ud83d\udccc Date d'affectation",affs,function(c,a){
     if(!a.cycle) a.cycle={};
@@ -8430,6 +8488,12 @@ function agMajPhaseAffaire(a, colIdx){
   // Les delais des UO suivent eux aussi le clic
   [].slice.call(wrap.querySelectorAll('tbody tr[data-delai]')).forEach(function(tr){
     var cd=tr.children[colIdx+1]; if(cd){ try{ delaiPeindre(cd, a, tr.dataset.delai); }catch(e){} }
+  });
+  // Le controle qualite passe en orange des que la tache devient OK
+  [].slice.call(wrap.querySelectorAll('tbody tr[data-qualite]')).forEach(function(tr){
+    var cq=tr.children[colIdx+1];
+    var it=QUALITE_ITEMS.filter(function(x){ return x.k===tr.dataset.qualite; })[0];
+    if(cq && it){ try{ qualitePeindre(cq, a, it); }catch(e){} }
   });
   try{ agRenderLegend(); }catch(e){}
   try{ rPhaseBar(); }catch(e){}
@@ -13180,6 +13244,292 @@ var MECA_COURT = {
 // synthèses enregistrées.
 // ══════════════════════════════════════════════════════════════
 var FACTU_HIST = [];
+
+// ══════════════════════════════════════════════════════════════
+// VALORISATION QUOTIDIENNE PAR CHARGE D'AFFAIRES
+// Proposition d'Alexis du 02/10/2026. Chaque jour, de minuit a minuit, ce
+// que l'avancement des UO a produit, au prix de l'UO : un UO Travaux qui
+// passe de 20 % a 35 % compte 15 % de son prix. Objectif : 500 EUR par jour.
+// Un OK retire fait reculer l'avancement : la valeur du jour devient negative.
+//
+// Chaque affaire garde dans a.valoq l'avancement de ses UO au dernier releve
+// (p, de 0 a 1) et ce qu'elle a produit, jour par jour et par personne (h).
+// Le releve passe avant chaque enregistrement, sur le poste qui saisit : la
+// valeur est datee du jour de la saisie et comptee a celui qui porte
+// l'affaire a ce moment. Une affaire transferee laisse a l'ancien charge
+// d'affaires ce qu'il a produit. Un changement de prix ou de complexite ne
+// produit rien, seul l'avancement compte. Une tache back-office compte son
+// montant le jour ou elle est faite, pour ceux qui l'ont faite.
+// Range dans l'affaire plutot qu'a part : un poste reste sur une ancienne
+// version garde les champs d'une affaire, mais il effacerait une cle neuve.
+// ══════════════════════════════════════════════════════════════
+var VALO_OBJECTIF_JOUR = 500;
+var VALO_DEPUIS = '2026-10-02';        // mise en ligne : journee partielle
+var VALO_GARDE_JOURS = 400;            // historique garde dans chaque affaire
+function jourLocal(d){
+  d=d||new Date();
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+function estJourOuvre(iso){ var j=new Date(iso+'T12:00:00').getDay(); return j!==0 && j!==6; }
+// Jours de debut (inclus) a fin (exclue)
+function valoJoursEntre(debut, fin){
+  var out=[], d=new Date(debut+'T12:00:00');
+  while(jourLocal(d)<fin){ out.push(jourLocal(d)); d.setDate(d.getDate()+1); }
+  return out;
+}
+// UO d'une affaire : avancement p (de 0 a 1) et valeur x de l'UO entier
+function valoUos(cp, a){
+  var svc=svcOf(cp), out={};
+  if(svc==='ARMA'){
+    FA_UOS.forEach(function(u){
+      var p=null; try{ p=uoPct(a, FA_KEY[u]); }catch(e){}
+      out[u]={p:p===null?0:Math.max(0,Math.min(1,p)), x:UO_PRIX[FA_KEY[u]]||0};
+    });
+  } else if(svc==='IRVE'){
+    // Cle sans le profil : un changement de complexite ne cree pas d'UO neuf
+    circCles(cp,a).forEach(function(k){
+      var av=0, pl=0, px=0;
+      try{ av=(circAv(cp,a,k)||0)/100; pl=+circPlafond(cp,a,k)||0; px=circPrix(cp,a,k)||0; }catch(e){}
+      out[k.slice(-3)]={p:Math.max(0,Math.min(1,av)), x:px*Math.max(0,pl)};
+    });
+  } else {
+    MECA_UOS.forEach(function(u){ out[u.k]={p:mecaPctUo(a,u.k)/100, x:u.prix||0}; });
+  }
+  return out;
+}
+// Releve de ce qui a bouge depuis le precedent. ecrire=false calcule sans
+// rien toucher : c'est la part de la journee pas encore enregistree.
+// Rend {n: elements mis a jour, parIni: {ini: euros}}.
+function valoReleve(ecrire){
+  var res={n:0, parIni:{}};
+  if(typeof SYNC_PRET!=='undefined' && !SYNC_PRET) return res;
+  var j=jourLocal(), lim=jourLocal(new Date(Date.now()-VALO_GARDE_JOURS*86400000));
+  function noter(q, ini, eur){
+    eur=Math.round(eur*100)/100; if(!eur) return;
+    res.parIni[ini]=(res.parIni[ini]||0)+eur;
+    if(!ecrire) return;
+    if(!q.h) q.h={};
+    if(!q.h[j]) q.h[j]={};
+    q.h[j][ini]=Math.round(((+q.h[j][ini]||0)+eur)*100)/100;
+    Object.keys(q.h).forEach(function(d){ if(d<lim) delete q.h[d]; });
+  }
+  Object.keys(DATA).forEach(function(cp){
+    var ini=DATA[cp].ini||cp, irve=svcOf(cp)==='IRVE';
+    (gAff(cp)||[]).forEach(function(a){
+      if(irve && irvePhaseNum(a)===0) return;            // dossier supprime : fige
+      var u=valoUos(cp,a), p={};
+      Object.keys(u).forEach(function(k){ if(u[k].p) p[k]=Math.round(u[k].p*10000)/10000; });
+      var q=a.valoq;
+      if(!q || !q.p || typeof q.p!=='object'){            // premier releve : point de depart
+        if(ecrire){ a.valoq={p:p, h:(q&&q.h)||{}}; res.n++; }
+        return;
+      }
+      var eur=0, bouge=false;
+      Object.keys(Object.assign({}, q.p, p)).forEach(function(k){
+        var d=(p[k]||0)-(+q.p[k]||0);
+        if(Math.abs(d)<0.00005) return;
+        bouge=true; eur+=d*((u[k]||{}).x||0);
+      });
+      if(!bouge) return;
+      noter(q, ini, eur);
+      if(ecrire){ q.p=p; res.n++; }
+    });
+  });
+  var mt=tacheMontant(), connus={};
+  personnes().forEach(function(x){ connus[x.ini]=1; });
+  IRVE_TACHES.forEach(function(t){
+    if(!t) return;
+    var fait=tacheOuverte(t)?0:1, q=t.valoq;
+    if(!q || typeof q.p!=='number'){
+      if(ecrire){ t.valoq={p:fait, h:(q&&q.h)||{}}; res.n++; }
+      return;
+    }
+    if(q.p===fait) return;
+    var qui=iniDeTache(t.cp).filter(function(i){ return connus[i]; });
+    qui.forEach(function(i){ noter(q, i, (fait-q.p)*mt/qui.length); });
+    if(ecrire){ q.p=fait; res.n++; }
+  });
+  return res;
+}
+// Valeur produite, jour par jour et par personne : {jour: {ini: euros}}
+function valoParJour(){
+  var jours={};
+  function ajouter(h){
+    Object.keys(h||{}).forEach(function(d){
+      var o=h[d]||{}; if(!jours[d]) jours[d]={};
+      Object.keys(o).forEach(function(i){ jours[d][i]=(jours[d][i]||0)+(+o[i]||0); });
+    });
+  }
+  Object.keys(DATA).forEach(function(cp){
+    (gAff(cp)||[]).forEach(function(a){ if(a.valoq) ajouter(a.valoq.h); });
+  });
+  IRVE_TACHES.forEach(function(t){ if(t && t.valoq) ajouter(t.valoq.h); });
+  var att=valoReleve(false).parIni;                    // saisi, pas encore enregistre
+  if(Object.keys(att).length){ var o={}; o[jourLocal()]=att; ajouter(o); }
+  return jours;
+}
+// Les jours de la courbe : six semaines au plus, les jours ouvres, et un
+// samedi ou un dimanche seulement si quelqu'un y a produit
+function valoJoursCourbe(jours){
+  var auj=jourLocal(), d=new Date(auj+'T12:00:00');
+  d.setDate(d.getDate()-41);
+  var debut=jourLocal(d); if(debut<VALO_DEPUIS) debut=VALO_DEPUIS;
+  return valoJoursEntre(debut, auj).concat([auj]).filter(function(j){
+    var o=jours[j]||{};
+    return j===auj || estJourOuvre(j) || Object.keys(o).some(function(i){ return Math.round(o[i]); });
+  });
+}
+function svgValoJour(jl, jours, pers, largeur){
+  var W=Math.max(300, Math.round(largeur||400)), H=180, gL=40, gR=8, gH=10, gB=20, n=jl.length, auj=jourLocal();
+  function val(j, ini){ return Math.round(((jours[j]||{})[ini])||0); }
+  var vals=[0, VALO_OBJECTIF_JOUR];
+  pers.forEach(function(p){ jl.forEach(function(j){ vals.push(val(j,p.ini)); }); });
+  var maxV=Math.max.apply(null, vals)*1.12, minV=Math.min.apply(null, vals);
+  if(minV<0) minV*=1.12;
+  function x(i){ return gL + (n<=1 ? (W-gL-gR)/2 : i*(W-gL-gR)/(n-1)); }
+  function y(v){ return gH + (maxV-v)*(H-gH-gB)/((maxV-minV)||1); }
+  var s='<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;display:block" role="img"'
+    +' aria-label="Valorisation quotidienne par charg\u00e9 d\u2019affaires">';
+  s+='<line x1="'+gL+'" x2="'+(W-gR)+'" y1="'+y(0)+'" y2="'+y(0)+'" style="stroke:var(--b2);stroke-width:1"/>';
+  s+='<text x="'+(gL-6)+'" y="'+(y(0)+3)+'" text-anchor="end" style="font-size:9px;fill:var(--t3)">0 \u20ac</text>';
+  s+='<line x1="'+gL+'" x2="'+(W-gR)+'" y1="'+y(VALO_OBJECTIF_JOUR)+'" y2="'+y(VALO_OBJECTIF_JOUR)
+    +'" style="stroke:var(--green);stroke-width:1.5;stroke-dasharray:5 4"/>';
+  s+='<text x="'+(gL-6)+'" y="'+(y(VALO_OBJECTIF_JOUR)+3)+'" text-anchor="end" style="font-size:9px;font-weight:700;fill:var(--green)">'
+    +fmtEur(VALO_OBJECTIF_JOUR)+'</text>';
+  var pas=Math.max(1, Math.ceil(n/6));
+  jl.forEach(function(j,i){
+    if(i===n-1 || (i%pas===0 && n-1-i>=pas/2))
+      s+='<text x="'+x(i)+'" y="'+(H-7)+'" text-anchor="middle" style="font-size:9px;fill:var(--t3)">'
+        +(j===auj ? 'auj.' : dFR(j).slice(0,5))+'</text>';
+  });
+  // Un repere au plus haut, pour lire l'echelle
+  var haut=Math.max.apply(null, vals);
+  if(haut>VALO_OBJECTIF_JOUR*1.3)
+    s+='<text x="'+(gL-6)+'" y="'+(y(haut)+3)+'" text-anchor="end" style="font-size:9px;fill:var(--t3)">'+fmtEur(haut)+'</text>';
+  pers.forEach(function(p){
+    if(n>1) s+='<polyline points="'+jl.map(function(j,i){ return x(i)+','+y(val(j,p.ini)); }).join(' ')
+      +'" style="fill:none;stroke:'+p.coul+';stroke-width:2;stroke-linejoin:round"/>';
+    jl.forEach(function(j,i){
+      var enCours=(j===auj);
+      s+='<circle cx="'+x(i)+'" cy="'+y(val(j,p.ini))+'" r="3.4" style="fill:'+(enCours?'var(--s)':p.coul)
+        +';stroke:'+p.coul+';stroke-width:1.6"><title>'+p.ini+' \u2014 '+dFR(j)+' : '+fmtEur(val(j,p.ini))
+        +(enCours?' (journ\u00e9e en cours)':'')+'</title></circle>';
+    });
+  });
+  return s+'</svg>';
+}
+function rValoJour(){
+  var ancre=document.getElementById('ref-synthfactu'); if(!ancre || !ancre.parentNode) return;
+  var host=document.getElementById('ref-valojour');
+  if(!host){ host=document.createElement('div'); host.id='ref-valojour'; ancre.parentNode.insertBefore(host, ancre.nextSibling); }
+  host.innerHTML='';
+  var jours=valoParJour(), auj=jourLocal(), jl=valoJoursCourbe(jours);
+  var pers=personnes().map(function(p){
+    var av=AVC[p.cps[0]]||['#6B7280','#F9FAFB'];
+    return {ini:p.ini, nom:p.nom, cps:p.cps, coul:av[0]};
+  });
+  var card=document.createElement('div');
+  card.style.cssText='background:var(--s);border:1.5px solid var(--b);border-radius:12px;overflow:hidden;margin:0 10px 12px';
+  var hdr=document.createElement('div');
+  hdr.style.cssText='padding:9px 12px;background:var(--s2);border-bottom:1px solid var(--b);display:flex;align-items:center;gap:8px;flex-wrap:wrap';
+  var tit=document.createElement('span');
+  tit.style.cssText='font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--t2)';
+  tit.textContent='\ud83d\udcc8 Valorisation quotidienne par charg\u00e9 d\u2019affaires';
+  hdr.appendChild(tit); card.appendChild(hdr);
+  var body=document.createElement('div'); card.appendChild(body);
+  var info=document.createElement('div');
+  info.style.cssText='font-size:10px;color:var(--t3);padding:8px 12px 4px;line-height:1.5';
+  info.textContent='Chaque jour, de minuit \u00e0 minuit, ce que l\u2019avancement des UO a produit, au prix de l\u2019UO : '
+    +'un UO Travaux qui passe de 20 % \u00e0 35 % compte 15 % de son prix. Un OK retir\u00e9 donne une valeur n\u00e9gative. '
+    +'Une t\u00e2che back-office compte son montant le jour o\u00f9 elle est faite. Objectif : '+fmtEur(VALO_OBJECTIF_JOUR)+' par jour.';
+  body.appendChild(info);
+  var zone=document.createElement('div'); zone.style.cssText='padding:4px 12px 2px';
+  body.appendChild(zone);                // dessinee plus bas, une fois la carte a l'ecran
+  var leg=document.createElement('div');
+  leg.style.cssText='display:flex;gap:12px;flex-wrap:wrap;padding:2px 12px 6px;font-size:9.5px;font-weight:700;color:var(--t2)';
+  pers.forEach(function(p){
+    var sp=document.createElement('span'), pt=document.createElement('span');
+    pt.style.cssText='display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px;vertical-align:-1px;background:'+p.coul;
+    sp.appendChild(pt); sp.appendChild(document.createTextNode(p.ini+' '+p.nom)); leg.appendChild(sp);
+  });
+  var obj=document.createElement('span'); obj.style.color='var(--green)';
+  obj.textContent='- - objectif '+fmtEur(VALO_OBJECTIF_JOUR); leg.appendChild(obj);
+  body.appendChild(leg);
+  // Moyenne : les jours ouvres termines, apres la journee partielle de mise en ligne
+  var d0=new Date(VALO_DEPUIS+'T12:00:00'); d0.setDate(d0.getDate()+1);
+  var joursMoy=valoJoursEntre(jourLocal(d0), auj);
+  var nbOuvres=joursMoy.filter(estJourOuvre).length;
+  var premier=joursMoy.filter(estJourOuvre)[0]||null;
+  var wrap=document.createElement('div'); wrap.style.cssText='overflow-x:auto;padding:0 10px 6px';
+  var t=document.createElement('table'); t.className='fa-tbl';
+  var th=document.createElement('thead'), trh=document.createElement('tr');
+  [['','l'],['Aujourd\u2019hui',''],['Moyenne / jour',''],['Total',''],['D\u00e9lais tenus',''],['Qualit\u00e9','']]
+  .forEach(function(c){ var x=document.createElement('th'); if(c[1]) x.className=c[1]; x.textContent=c[0]; trh.appendChild(x); });
+  th.appendChild(trh); t.appendChild(th);
+  var tb=document.createElement('tbody');
+  function cel(txt, coul, gras, titre){
+    var td=document.createElement('td');
+    td.style.cssText='font-size:10px;font-weight:'+(gras?'800':'600')+';color:'+(coul||'var(--t2)')+';white-space:nowrap';
+    td.textContent=txt; if(titre) td.title=titre; return td;
+  }
+  pers.forEach(function(p){
+    function v(j){ return ((jours[j]||{})[p.ini])||0; }
+    var ajd=Math.round(v(auj));
+    var somme=joursMoy.reduce(function(s,j){ return s+v(j); }, 0);
+    var moy = nbOuvres ? Math.round(somme/nbOuvres) : null;
+    var total=Math.round(Object.keys(jours).filter(function(j){ return j>=VALO_DEPUIS; })
+                .reduce(function(s,j){ return s+v(j); }, 0));
+    // Delais et qualite, sur les portefeuilles ARMA de la personne
+    var faits=0, tenus=0, retard=0, qn=0, qok=0, qrep=0, qnc=0;
+    p.cps.forEach(function(cp){
+      if(svcOf(cp)!=='ARMA') return;
+      (gAff(cp)||[]).forEach(function(a){
+        var pl=null; try{ pl=planDelais(a); }catch(e){}
+        if(pl) DELAI_UOS.forEach(function(k){
+          var r=pl[k]; if(!r) return;
+          if(r.etat==='fait' && r.duree!==null){ faits++; if(!r.cible || r.duree<=r.cible) tenus++; }
+          if(r.etat==='encours' && r.ecoule!==null && r.cible && r.ecoule>r.cible) retard++;
+        });
+      });
+      var qq=qualiteNotes(cp); qn+=qq.n; qok+=qq.ok; qrep+=qq.rep; qnc+=qq.nc;
+    });
+    var row=document.createElement('tr');
+    var c0=document.createElement('td'); c0.className='l'; c0.style.whiteSpace='nowrap';
+    var pt=document.createElement('span');
+    pt.style.cssText='display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px;background:'+p.coul;
+    var b=document.createElement('b'); b.textContent=p.ini;
+    var nm=document.createElement('span'); nm.style.cssText='font-size:9px;color:var(--t3);margin-left:4px'; nm.textContent=p.nom;
+    c0.appendChild(pt); c0.appendChild(b); c0.appendChild(nm);
+    row.appendChild(c0);
+    row.appendChild(cel(fmtEur(ajd), ajd<0?'var(--amber)':'var(--t)', true, 'Depuis minuit, journ\u00e9e en cours'));
+    row.appendChild(cel(moy===null?'\u2014':fmtEur(moy),
+      moy===null ? 'var(--b2)' : (moy>=VALO_OBJECTIF_JOUR ? 'var(--green)' : 'var(--amber)'), true,
+      nbOuvres ? ('Sur '+nbOuvres+' jour(s) ouvr\u00e9(s) termin\u00e9(s), depuis le '+dFR(premier)) : 'Pas encore de journ\u00e9e compl\u00e8te termin\u00e9e'));
+    row.appendChild(cel(fmtEur(total), 'var(--t2)', false, 'Depuis le '+dFR(VALO_DEPUIS)+', journ\u00e9e en cours comprise'));
+    var pctD = faits ? Math.round(tenus/faits*100) : null;
+    row.appendChild(cel((pctD===null?'\u2014':pctD+' %')+(retard?' \u00b7 '+retard+' en retard':''),
+      pctD===null ? (retard?'var(--amber)':'var(--b2)') : (pctD>=80 && !retard ? 'var(--green)' : 'var(--amber)'), true,
+      (faits ? tenus+' UO tenu(s) sur '+faits+' r\u00e9alis\u00e9(s) avec un d\u00e9but et une fin connus'
+             : 'Aucun UO r\u00e9alis\u00e9 avec des dates connues')
+      +(retard ? '\n'+retard+' UO en cours au-del\u00e0 du d\u00e9lai cible' : '')));
+    var pctQ = qn ? Math.round(qok/qn*100) : null;
+    row.appendChild(cel(pctQ===null?'\u2014':pctQ+' %',
+      pctQ===null ? 'var(--b2)' : (pctQ>=90 ? 'var(--green)' : 'var(--amber)'), true,
+      qn ? (qok+' conforme(s), '+qrep+' \u00e0 reprendre, '+qnc+' non conforme(s), sur '+qn+' note(s)') : 'Aucune note de contr\u00f4le qualit\u00e9'));
+    tb.appendChild(row);
+  });
+  t.appendChild(tb); wrap.appendChild(t); body.appendChild(wrap);
+  var pied=document.createElement('div');
+  pied.style.cssText='padding:4px 12px 10px;font-size:9.5px;color:var(--t3);line-height:1.5';
+  pied.textContent='Suivi depuis la mise en ligne du '+dFR(VALO_DEPUIS)+'. La moyenne prend les jours ouvr\u00e9s termin\u00e9s'
+    +(premier ? ' depuis le '+dFR(premier) : '')+' : une journ\u00e9e o\u00f9 rien n\u2019avance compte z\u00e9ro, '
+    +'ce qui est produit un samedi ou un dimanche s\u2019y ajoute. D\u00e9lais UO et contr\u00f4le qualit\u00e9 : affaires ARMA, '
+    +'d\u00e9tail dans l\u2019onglet Affaires.';
+  body.appendChild(pied);
+  host.appendChild(card);
+  zone.innerHTML=svgValoJour(jl, jours, pers, zone.clientWidth-24);
+  try{ makeCollapsibleRef(hdr, body, 'valojour_referent'); }catch(e){}
+}
 
 function synthFactu(){
   var f=[revueArma(), revueIrve(), revueIrveBo(), revueMeca()];
@@ -17998,6 +18348,7 @@ function rRef(){
   // Reaffectation retiree de l'onglet Referent le 09/09/2026 : elle se fait
   // desormais depuis la colonne CP des tableaux d'affaires.
   try{ rSynthFactu(); }catch(e){ console.warn('rSynthFactu',e); }
+  try{ rValoJour(); }catch(e){ console.warn('rValoJour',e); }
   try{ rPrevFactu(); }catch(e){ console.warn('rPrevFactu',e); }
   try{ rMarche(); }catch(e){ console.warn('rMarche',e); }
   try{ rFactu(); }catch(e){ console.warn('rFactu',e); }
@@ -21203,7 +21554,7 @@ var JOURNAL_REF=null;
 var JOURNAL_CLES_MUETTES={ts:1, APPV:1, JOURNAL:1, HISTORY:1, DXP:1, ENGAGE_HIST:1, HISTO_SEM:1,
   SVC_CUR:1, MIGR:1, AVC:1, FACTU_HIST:1, GEN_HISTO:1};
 var JOURNAL_CHAMPS_MUETS={tasks:1, cycle:1, phase:1, ordre:1, okSouad0928avant:1, rep0924avant:1,
-  closed:1, en_cours:1, xpGiven:1};
+  closed:1, en_cours:1, xpGiven:1, valoq:1};
 var JOURNAL_STATUTS={todo:'\u00c0 faire', ok:'OK', nok:'NOK', na:'N/A', attente:'En attente'};
 var JOURNAL_DATES={debut_trx_ext:'d\u00e9but travaux ext.', fin_trx_ext:'fin travaux ext.',
   date_trx_client:'travaux client', date_trx_int:'travaux int.', date_ecome:'ECOME',
@@ -21370,7 +21721,7 @@ function journalListe(nom, lx, ly, sortie){
     if(nom==='IRVE_TACHES'){
       if(!a){ sortie.push({a:b.aff, o:'T\u00e2che BO ajout\u00e9e', w:b.tache}); return; }
       Object.keys(Object.assign({},a,b)).forEach(function(f){
-        if(f==='id' || memeContenu(a[f],b[f])) return;
+        if(f==='id' || f==='valoq' || memeContenu(a[f],b[f])) return;
         if(f==='fdem'){
           var x1=a.fdem, y1=b.fdem;
           var lb=(!x1&&y1)?'facture demand\u00e9e':(x1&&!y1)?'demande annul\u00e9e'
@@ -26264,7 +26615,7 @@ window.addEventListener('beforeunload', function(e){
 // On ne recharge jamais de force, une saisie en cours serait perdue :
 // on propose, la personne choisit son moment.
 // ══════════════════════════════════════════════════════════════
-var APP_VERSION='2026-10-02-1';
+var APP_VERSION='2026-10-02-2';
 var MAJ_VUE=false;
 // La version en ligne, des qu'on la connait. Tant qu'elle vaut null, on ne
 // sait pas, et on n'empeche rien.
