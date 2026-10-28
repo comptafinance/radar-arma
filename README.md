@@ -1,4 +1,1 @@
-# RADAR
-
-Application interne d'Astridsen. Code proprietaire et confidentiel : toute copie,
-reproduction ou reutilisation, meme partielle, est interdite sans accord ecrit.
+RADAR a déménagé : https://proud-tree-04753b20f.5.azurestaticapps.net/
